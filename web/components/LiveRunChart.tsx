@@ -36,7 +36,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
     <div>
       <div className="metrics-grid">
         <Metric label="Status" value={connected ? "● live" : "○ closed"} />
-        <Metric label="RPS" value={fmt(last?.rps)} />
+        <Metric label="QPS" value={fmt(last?.rps)} />
         <Metric label="Active VUs" value={last ? String(last.active_vus) : "–"} />
         <Metric label="Error rate" value={last ? (last.error_rate * 100).toFixed(2) + "%" : "–"} />
         <Metric label="p50" value={fmt(last?.p50_ms) + " ms"} />
@@ -45,9 +45,9 @@ export default function LiveRunChart({ runId }: { runId: string }) {
       </div>
 
       <div className="panel" style={{ marginTop: 16 }}>
-        <h2>Throughput (req/s)</h2>
+        <h2>Throughput (QPS)</h2>
         <LineChart
-          series={[{ label: "rps", color: "#2f81f7", data: ticks.map((t) => t.rps) }]}
+          series={[{ label: "qps", color: "#2f81f7", data: ticks.map((t) => t.rps) }]}
         />
       </div>
 

@@ -56,9 +56,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
         {terminal && (
           <div>
             <div className="panel">
-              <h2>Throughput (req/s)</h2>
+              <h2>Throughput (QPS)</h2>
               <LineChart
-                series={[{ label: "rps", color: "#2f81f7", data: series.map((p) => p.rps) }]}
+                series={[{ label: "qps", color: "#2f81f7", data: series.map((p) => p.rps) }]}
               />
             </div>
             <div className="panel">
