@@ -13,7 +13,10 @@ import (
 	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/worker/executor"
 	"github.com/dreambe/loadify/internal/worker/protocols"
-	_ "github.com/dreambe/loadify/internal/worker/protocols/httpd" // register HTTP driver
+	_ "github.com/dreambe/loadify/internal/worker/protocols/grpcd" // register gRPC driver
+	_ "github.com/dreambe/loadify/internal/worker/protocols/httpd" // register HTTP/HTTPS drivers
+	_ "github.com/dreambe/loadify/internal/worker/protocols/ssed"  // register SSE driver
+	_ "github.com/dreambe/loadify/internal/worker/protocols/wsd"   // register WebSocket driver
 	"github.com/dreambe/loadify/internal/worker/sampler"
 	"google.golang.org/grpc"
 )
@@ -102,7 +105,13 @@ func (a *Agent) session(ctx context.Context, client loadifyv1.WorkerServiceClien
 		WorkerId:  a.workerID,
 		Region:    a.region,
 		CpuCores:  int32(runtime.NumCPU()),
-		Supported: []loadifyv1.Protocol{loadifyv1.Protocol_PROTOCOL_HTTP, loadifyv1.Protocol_PROTOCOL_HTTPS},
+		Supported: []loadifyv1.Protocol{
+			loadifyv1.Protocol_PROTOCOL_HTTP,
+			loadifyv1.Protocol_PROTOCOL_HTTPS,
+			loadifyv1.Protocol_PROTOCOL_GRPC,
+			loadifyv1.Protocol_PROTOCOL_WEBSOCKET,
+			loadifyv1.Protocol_PROTOCOL_SSE,
+		},
 	}}})
 
 	// Heartbeats.
