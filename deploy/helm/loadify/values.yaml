@@ -1,0 +1,95 @@
+# Default values for the loadify chart.
+
+image:
+  registry: ghcr.io
+  repository: dreambe/loadify
+  tag: latest
+  pullPolicy: IfNotPresent
+  # Each service is a separate image: <registry>/<repository>-<component>:<tag>
+  # e.g. ghcr.io/dreambe/loadify-apisrv:latest
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Data stores. loadify does not bundle stateful databases; point these at your
+# managed Postgres and ClickHouse (or in-cluster operators).
+database:
+  # The Postgres DSN is read from a Secret (see secret.dataPostgresDSN below).
+  clickhouse:
+    addr: clickhouse:9000
+    database: loadify
+    username: default
+    password: ""
+
+# Sensitive values are placed into a Secret. Override these in production or
+# set existingSecret to reuse one you manage out of band.
+secret:
+  create: true
+  existingSecret: ""
+  postgresDSN: "postgres://loadify:loadify@postgres:5432/loadify?sslmode=disable"
+  jwtSecret: "change-me-in-production"
+  feishuAppID: ""
+  feishuAppSecret: ""
+  adminEmail: "admin@loadify.local"
+  adminPassword: "admin12345"
+
+config:
+  jwtTTLHours: 24
+  feishuRedirectURL: ""
+  # Public URL the browser uses to reach apisrv; baked into the web bundle.
+  apiBase: "http://localhost:8080"
+  frontendURL: "http://localhost:3000"
+
+apisrv:
+  replicas: 2
+  port: 8080
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+coordinatord:
+  replicas: 1 # single scheduler; run state is in-memory
+  grpcPort: 7070
+  httpPort: 7071
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: "2", memory: 1Gi }
+
+workerd:
+  replicas: 3
+  httpPort: 8090
+  region: k8s
+  resources:
+    requests: { cpu: 500m, memory: 256Mi }
+    limits: { cpu: "4", memory: 2Gi }
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 50
+    targetCPUUtilizationPercentage: 70
+
+web:
+  enabled: true
+  replicas: 2
+  port: 3000
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: "500m", memory: 512Mi }
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # The web SPA is served at host/, the API under host/api (and /healthz).
+  host: loadify.example.com
+  tls: []
+
+serviceAccount:
+  create: true
+  name: ""
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

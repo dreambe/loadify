@@ -1,0 +1,27 @@
+loadify {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }}".
+
+Components:
+  - apisrv       ({{ .Values.apisrv.replicas }} replica(s))   REST + WebSocket API
+  - coordinatord ({{ .Values.coordinatord.replicas }} replica)     run scheduler / aggregator
+  - workerd      ({{ if .Values.workerd.autoscaling.enabled }}HPA {{ .Values.workerd.autoscaling.minReplicas }}-{{ .Values.workerd.autoscaling.maxReplicas }}{{ else }}{{ .Values.workerd.replicas }} replica(s){{ end }})  load generators
+  {{- if .Values.web.enabled }}
+  - web          ({{ .Values.web.replicas }} replica(s))   Next.js dashboard
+  {{- end }}
+
+This chart does NOT deploy Postgres or ClickHouse. Point the chart at your
+managed instances via:
+  --set secret.postgresDSN=...   --set database.clickhouse.addr=...
+
+{{- if .Values.ingress.enabled }}
+
+The UI/API are exposed at: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}/
+{{- else }}
+
+Access the API locally:
+  kubectl port-forward svc/{{ include "loadify.fullname" . }}-apisrv {{ .Values.apisrv.port }}:{{ .Values.apisrv.port }}
+{{- if .Values.web.enabled }}
+  kubectl port-forward svc/{{ include "loadify.fullname" . }}-web {{ .Values.web.port }}:{{ .Values.web.port }}
+{{- end }}
+{{- end }}
+
+Bootstrap admin: {{ .Values.secret.adminEmail }} (change the password in production!).
