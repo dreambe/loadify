@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package loadify.v1;
+
+import "loadify/v1/common.proto";
+
+// Sample is a single (optionally sub-sampled) request observation.
+message Sample {
+  int64 ts_unix_ms = 1;
+  string group = 2;
+  string name = 3;
+  Protocol protocol = 4;
+  int32 status = 5;
+  bool ok = 6;
+  int64 latency_us = 7;
+  int64 dns_us = 8;
+  int64 connect_us = 9;
+  int64 tls_us = 10;
+  int64 ttfb_us = 11;
+  int64 sent_bytes = 12;
+  int64 recv_bytes = 13;
+  string error_kind = 14;
+}
+
+// AggSlice is a mergeable per-second rollup for one (group, status_class) key.
+// hdr_histogram holds a serialized HdrHistogram so percentiles merge exactly
+// across workers.
+message AggSlice {
+  string group = 1;
+  Protocol protocol = 2;
+  string status_class = 3; // 2xx / 4xx / 5xx / err
+  int64 count = 4;
+  int64 errors = 5;
+  int64 sent_bytes = 6;
+  int64 recv_bytes = 7;
+  bytes hdr_histogram = 8;
+}
+
+// MetricBatch is what a worker streams to the coordinator each second.
+message MetricBatch {
+  string run_id = 1;
+  string worker_id = 2;
+  int64 bucket_unix_ms = 3;
+  int64 active_vus = 4;
+  repeated Sample samples = 5; // only when raw capture is enabled
+  repeated AggSlice agg = 6;
+}

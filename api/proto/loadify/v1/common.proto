@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package loadify.v1;
+
+// Protocol enumerates the load-generation protocols a worker can drive.
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_HTTP = 1;
+  PROTOCOL_HTTPS = 2;
+  PROTOCOL_GRPC = 3;
+  PROTOCOL_WEBSOCKET = 4;
+  PROTOCOL_SSE = 5;
+}
+
+// RampStage is one segment of the virtual-user (or arrival-rate) curve.
+// Stages execute sequentially. target_vus drives the closed model; target_rps
+// (when non-zero) drives the open / arrival-rate model.
+message RampStage {
+  int64 duration_ms = 1;
+  int64 target_vus = 2;
+  int64 target_rps = 3;
+}
+
+// ScriptBundle carries the user's goja JavaScript for a run.
+message ScriptBundle {
+  string main_js = 1;
+  map<string, string> modules = 2;
+}

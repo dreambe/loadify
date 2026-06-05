@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package loadify.v1;
+
+import "loadify/v1/common.proto";
+
+// CoordinatorService is the internal control API consumed by apisrv.
+service CoordinatorService {
+  rpc StartRun(StartRunRequest) returns (StartRunResponse);
+  rpc StopRun(StopRunRequest) returns (StopRunResponse);
+  rpc GetRunState(RunStateRequest) returns (RunState);
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+  // StreamLive pushes live aggregates for a run (coordinator -> apisrv -> browser).
+  rpc StreamLive(LiveRequest) returns (stream LiveTick);
+}
+
+message StartRunRequest {
+  string run_id = 1;
+  Protocol protocol = 2;
+  bytes plan_json = 3;
+  repeated RampStage ramp = 4;
+  ScriptBundle script = 5;
+  int32 desired_workers = 6;
+  map<string, string> env = 7;
+}
+
+message StartRunResponse {
+  string run_id = 1;
+  int32 assigned_workers = 2;
+}
+
+message StopRunRequest {
+  string run_id = 1;
+  bool graceful = 2;
+}
+
+message StopRunResponse {
+  string run_id = 1;
+}
+
+message RunStateRequest {
+  string run_id = 1;
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_PENDING = 1;
+  RUN_STATUS_RUNNING = 2;
+  RUN_STATUS_COMPLETED = 3;
+  RUN_STATUS_FAILED = 4;
+  RUN_STATUS_ABORTED = 5;
+}
+
+message RunState {
+  string run_id = 1;
+  RunStatus status = 2;
+  int32 active_workers = 3;
+  int64 active_vus = 4;
+  int64 started_at_unix_ms = 5;
+  int64 ended_at_unix_ms = 6;
+}
+
+message ListWorkersRequest {}
+
+message WorkerInfo {
+  string worker_id = 1;
+  string addr = 2;
+  string region = 3;
+  string status = 4; // healthy / unhealthy / draining
+  int64 active_vus = 5;
+  int64 last_seen_unix_ms = 6;
+}
+
+message ListWorkersResponse {
+  repeated WorkerInfo workers = 1;
+}
+
+message LiveRequest {
+  string run_id = 1;
+}
+
+message GroupTick {
+  double rps = 1;
+  double error_rate = 2;
+  double p50_ms = 3;
+  double p90_ms = 4;
+  double p95_ms = 5;
+  double p99_ms = 6;
+}
+
+message LiveTick {
+  string run_id = 1;
+  int64 ts_unix_ms = 2;
+  double rps = 3;
+  double error_rate = 4;
+  int64 active_vus = 5;
+  double p50_ms = 6;
+  double p90_ms = 7;
+  double p95_ms = 8;
+  double p99_ms = 9;
+  map<string, GroupTick> groups = 10;
+}
