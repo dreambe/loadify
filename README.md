@@ -1,12 +1,9 @@
 # Loadify — 分布式压测平台 / Distributed Load-Testing Platform
 
-`loadify` is a distributed load-testing platform supporting HTTP/HTTPS, gRPC,
-WebSocket and SSE, with a declarative test builder plus embedded JavaScript
-(goja) scripting, real-time + historical dashboards, JWT/RBAC + Feishu OAuth,
-and Docker Compose / Kubernetes (Helm) deployment.
-
-It lives in its own top-level directory and is independent of the rest of the
-repository (the MediaCrawler downloader).
+`loadify` is a distributed load-testing platform supporting **HTTP/HTTPS, gRPC,
+WebSocket and SSE**, with a declarative test builder plus embedded **JavaScript
+(goja) scripting**, real-time + historical dashboards, **JWT/RBAC + Feishu
+OAuth**, and Docker Compose / Kubernetes (Helm) deployment.
 
 ## Components
 
@@ -15,33 +12,114 @@ repository (the MediaCrawler downloader).
 | `apisrv`        | Public REST + WebSocket API, auth, metadata, metrics queries      |
 | `coordinatord`  | Run scheduler: worker registry, VU sharding, metric aggregation   |
 | `workerd`       | Stateless load generator (goroutine VU pool, protocol drivers)    |
-| `loadifyctl`     | CLI to drive runs from a terminal / CI                            |
+| `loadifyctl`    | CLI to drive runs from a terminal / CI                            |
+| `web/`          | Next.js dashboard (live charts, test builder, user management)    |
 
 ## Data stores
 
 - **PostgreSQL** — metadata & RBAC (users, test definitions, runs).
 - **ClickHouse** — time-series metrics (per-second rollups, sampled raw rows).
 
-## Quick start (dev)
+## Capabilities
+
+- **Protocols** — HTTP/HTTPS (httptrace phase timings), gRPC (dynamic unary
+  invocation from a descriptor set or the global registry), WebSocket
+  (persistent per-VU sessions), SSE (event streaming).
+- **Scripting** — write a goja JS `iteration()` function using an injected
+  `http` API; runs as a load scenario with per-iteration metrics.
+- **Distribution** — coordinator shards the ramp across workers, merges
+  per-second HdrHistograms exactly, and streams live ticks; apisrv relays them
+  to the browser over WebSocket. Historical series are queried from ClickHouse.
+- **Auth** — local email/password (bcrypt) and Feishu OAuth login, HS256 JWTs,
+  and `viewer < operator < admin` role-based access control.
+
+## Quick start (Docker Compose)
 
 ```bash
-make proto          # regenerate gRPC stubs (requires buf + protoc plugins)
-make build          # build all binaries
-make test           # unit tests
-docker compose -f deploy/compose/docker-compose.yml up --build
+docker compose -f deploy/compose/docker-compose.yml up --build --scale workerd=2
+# UI:   http://localhost:3000   (admin@loadify.local / admin12345)
+# API:  http://localhost:8080
 ```
 
-See `/root/.claude/plans` (design) and the `Makefile` for the full task list.
+Drive a run from the CLI:
+
+```bash
+go run ./cmd/loadifyctl \
+  --api http://localhost:8080 \
+  --email admin@loadify.local --password admin12345 \
+  --url http://echo-target:8088/ --vus 50 --duration 15s
+```
+
+Run a scripted scenario:
+
+```bash
+cat > scenario.js <<'JS'
+function iteration() {
+  var r = http.get("http://echo-target:8088/");
+  if (!r.ok) throw "bad status " + r.status;
+  http.post("http://echo-target:8088/", "payload");
+}
+JS
+go run ./cmd/loadifyctl --api http://localhost:8080 \
+  --email admin@loadify.local --password admin12345 \
+  --script scenario.js --vus 25 --duration 20s
+```
+
+## Development
+
+```bash
+make build        # build all Go binaries into ./bin
+make test         # go test -race ./...
+make vet          # go vet ./...
+make web-install  # install frontend deps
+make web-build    # build the Next.js frontend
+make proto        # regenerate gRPC stubs (needs buf + protoc plugins)
+```
+
+Generated gRPC stubs under `api/gen/` are gitignored; CI regenerates them with
+`buf generate`.
+
+## Kubernetes (Helm)
+
+```bash
+helm lint deploy/helm/loadify
+helm install loadify deploy/helm/loadify \
+  --set secret.postgresDSN="postgres://user:pass@pg:5432/loadify?sslmode=disable" \
+  --set database.clickhouse.addr="clickhouse:9000" \
+  --set secret.jwtSecret="$(openssl rand -hex 32)" \
+  --set ingress.enabled=true --set ingress.host=loadify.example.com \
+  --set workerd.autoscaling.enabled=true
+```
+
+Postgres and ClickHouse are expected to be provided externally (managed service
+or in-cluster operator).
+
+## Configuration (env, `LOADIFY_` prefix)
+
+| Var | Default | Used by |
+|-----|---------|---------|
+| `LOADIFY_API_HTTP_ADDR` | `:8080` | apisrv |
+| `LOADIFY_COORDINATOR_GRPC` | `coordinatord:7070` | apisrv, workerd |
+| `LOADIFY_POSTGRES_DSN` | `postgres://loadify:loadify@postgres:5432/loadify?sslmode=disable` | apisrv |
+| `LOADIFY_CLICKHOUSE_ADDR` | `clickhouse:9000` | apisrv, coordinatord |
+| `LOADIFY_JWT_SECRET` | `dev-insecure-secret-change-me` | apisrv |
+| `LOADIFY_JWT_TTL_HOURS` | `24` | apisrv |
+| `LOADIFY_FEISHU_APP_ID` / `_APP_SECRET` / `_REDIRECT_URL` | — | apisrv |
+| `LOADIFY_FRONTEND_URL` | `http://localhost:3000` | apisrv (OAuth redirect) |
+| `LOADIFY_ADMIN_EMAIL` / `_ADMIN_PASSWORD` | — | apisrv (bootstrap admin) |
+| `LOADIFY_WORKER_REGION` | `default` | workerd |
 
 ## Layout
 
 ```
-platform/
-├── api/proto/loadify/v1   # gRPC/proto contracts (source of truth)
-├── cmd/                  # thin entrypoints (apisrv, coordinatord, workerd, loadifyctl)
-├── internal/             # private packages (apisrv, coordinator, worker, plan, metrics, ...)
-├── migrations/           # postgres + clickhouse schema migrations
-├── deploy/               # docker, compose, helm
-├── test/                 # echo target + integration/e2e harness
-└── web/                  # Next.js frontend
+api/proto/loadify/v1   # gRPC/proto contracts (source of truth)
+cmd/                   # thin entrypoints (apisrv, coordinatord, workerd, loadifyctl)
+internal/              # private packages (apisrv, coordinator, worker, plan, auth, script, ...)
+  worker/protocols/    # httpd, grpcd, wsd, ssed drivers
+  script/              # goja scripting engine
+  auth/                # JWT, RBAC, Feishu OAuth, password hashing
+migrations/            # postgres + clickhouse schema migrations
+deploy/                # docker, compose, helm
+web/                   # Next.js frontend
+test/                  # multi-protocol echo target + e2e harness
 ```

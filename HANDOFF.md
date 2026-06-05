@@ -41,16 +41,30 @@ git push -u origin main
   phase timings; per-second HdrHistogram sampler; coordinator registry/sharding/
   exact cross-worker histogram merge + rollups + live ticks; apisrv REST +
   WebSocket live stream; ClickHouse series/summary queries.
+- **M2**: finishing touches — `loadifyctl` authenticates (token or login) and
+  drives HTTP/script runs; Makefile web/helm targets; run stop endpoint.
+- **M3**: gRPC (dynamic unary), WebSocket (persistent per-VU) and SSE drivers,
+  registered with the worker; multi-protocol echo target; driver unit tests.
+- **M4**: embedded goja JavaScript scripting — per-VU runtimes, an injected
+  `http` API, and a `script` plan protocol selected automatically per run.
+- **M5**: Next.js frontend — login (local + Feishu), runs list/detail with
+  live WebSocket charts + historical series, test builder, workers, user admin.
+- **M6**: HS256 JWT, viewer/operator/admin RBAC, bcrypt local login, Feishu
+  OAuth, users table + admin bootstrap.
+- **M7**: Helm chart (apisrv/coordinatord/workerd/web + Secret, optional
+  HPA + Ingress); verified with `helm lint`/`template`.
 
-## Next milestones (not yet built)
+## Verified
 
-M2 finishing touches → M3 gRPC/WebSocket/SSE drivers → M4 goja scripting →
-M5 frontend (Next.js) + dashboards → M6 JWT/RBAC + Feishu OAuth → M7 Helm/K8s.
+`go build ./...`, `go vet ./...`, `go test -race ./...` all pass; `next build`
+compiles the frontend; `helm lint`/`helm template` validate the chart.
 
 ## Try it (needs Docker daemon)
 
 ```bash
 docker compose -f deploy/compose/docker-compose.yml up --build --scale workerd=2
-# then drive a run:
-go run ./cmd/loadifyctl --api http://localhost:8080 --url http://localhost:8088 --vus 50 --duration 15s
+# UI at http://localhost:3000 (admin@loadify.local / admin12345); then drive a run:
+go run ./cmd/loadifyctl --api http://localhost:8080 \
+  --email admin@loadify.local --password admin12345 \
+  --url http://echo-target:8088/ --vus 50 --duration 15s
 ```

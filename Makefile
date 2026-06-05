@@ -2,7 +2,7 @@ SHELL := /bin/bash
 GOPATH_BIN := $(shell go env GOPATH)/bin
 BINS := apisrv coordinatord workerd loadifyctl
 
-.PHONY: all build proto tidy test vet lint run-echo clean help
+.PHONY: all build proto tidy test vet lint run-echo clean help web-install web-build web-dev helm-lint
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -32,5 +32,17 @@ lint: ## golangci-lint (if installed)
 run-echo: ## Run the multi-protocol echo target server
 	go run ./test/echo
 
+web-install: ## Install frontend dependencies
+	cd web && npm ci
+
+web-build: ## Build the Next.js frontend
+	cd web && npm run build
+
+web-dev: ## Run the frontend dev server
+	cd web && npm run dev
+
+helm-lint: ## Lint the Helm chart (requires helm)
+	helm lint deploy/helm/loadify
+
 clean: ## Remove build artifacts
-	rm -rf bin
+	rm -rf bin web/.next web/node_modules
