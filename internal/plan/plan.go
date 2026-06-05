@@ -17,6 +17,10 @@ const (
 	GRPC      Protocol = "grpc"
 	WebSocket Protocol = "websocket"
 	SSE       Protocol = "sse"
+	// Script marks a plan whose traffic is generated entirely by a goja script
+	// (see ScriptBundle); the script issues its own requests, so the plan needs
+	// no protocol-specific target config.
+	Script Protocol = "script"
 )
 
 // Plan is the top-level test definition.
@@ -112,6 +116,8 @@ func (p *Plan) Validate() error {
 		if p.SSE == nil || p.SSE.URL == "" {
 			return fmt.Errorf("plan: sse.url is required")
 		}
+	case Script:
+		// A script plan carries no protocol target; the script generates traffic.
 	default:
 		return fmt.Errorf("plan: unknown protocol %q", p.Protocol)
 	}

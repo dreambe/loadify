@@ -1,0 +1,100 @@
+package script_test
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/script"
+	"github.com/dreambe/loadify/internal/worker/protocols"
+)
+
+func TestScriptDriverRunsHTTP(t *testing.T) {
+	var hits int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		if r.Method == http.MethodPost {
+			if r.Header.Get("X-Test") != "1" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	src := `
+		function iteration() {
+			var r = http.get(BASE + "/a");
+			if (!r.ok) { throw "get failed"; }
+			http.post(BASE + "/b", "payload", { headers: { "X-Test": "1" } });
+		}`
+	// Inject the base URL as a global by prepending a var declaration.
+	src = "var BASE = " + jsString(srv.URL) + ";\n" + src
+
+	p, _ := plan.Parse([]byte(`{"protocol":"script"}`))
+	drv, err := script.New(&loadifyv1.ScriptBundle{MainJs: src}, p, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := drv.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer drv.Teardown(context.Background())
+
+	res := drv.Exec(ctx, &protocols.VU{ID: 1})
+	if !res.OK {
+		t.Fatalf("iteration not ok: kind=%q", res.ErrorKind)
+	}
+	if res.RecvBytes == 0 || res.SentBytes == 0 {
+		t.Errorf("expected sent and recv bytes, got sent=%d recv=%d", res.SentBytes, res.RecvBytes)
+	}
+	if atomic.LoadInt64(&hits) != 2 {
+		t.Errorf("server hits = %d, want 2", atomic.LoadInt64(&hits))
+	}
+}
+
+func TestScriptDriverThrowMarksFailure(t *testing.T) {
+	src := `function iteration() { throw new Error("boom"); }`
+	drv, err := script.New(&loadifyv1.ScriptBundle{MainJs: src}, nil, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := drv.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer drv.Teardown(ctx)
+	res := drv.Exec(ctx, &protocols.VU{ID: 1})
+	if res.OK {
+		t.Fatal("expected failure when the script throws")
+	}
+}
+
+func TestScriptCompileError(t *testing.T) {
+	_, err := script.New(&loadifyv1.ScriptBundle{MainJs: "function ("}, nil, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+	if err == nil {
+		t.Fatal("expected a compile error")
+	}
+}
+
+// jsString quotes a Go string as a JS string literal.
+func jsString(s string) string {
+	out := []byte{'"'}
+	for _, r := range s {
+		switch r {
+		case '"', '\\':
+			out = append(out, '\\', byte(r))
+		default:
+			out = append(out, []byte(string(r))...)
+		}
+	}
+	return string(append(out, '"'))
+}

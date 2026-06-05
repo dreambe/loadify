@@ -11,6 +11,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/script"
 	"github.com/dreambe/loadify/internal/worker/executor"
 	"github.com/dreambe/loadify/internal/worker/protocols"
 	_ "github.com/dreambe/loadify/internal/worker/protocols/grpcd" // register gRPC driver
@@ -162,7 +163,12 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 		log.Error("invalid plan", "err", err)
 		return
 	}
-	drv, err := protocols.New(asg.Protocol, p)
+	var drv protocols.Driver
+	if asg.Script != nil && asg.Script.MainJs != "" {
+		drv, err = script.New(asg.Script, p, asg.Protocol)
+	} else {
+		drv, err = protocols.New(asg.Protocol, p)
+	}
 	if err != nil {
 		log.Error("driver init failed", "err", err)
 		return

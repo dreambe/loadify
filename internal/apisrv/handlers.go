@@ -268,6 +268,10 @@ func protoEnum(p plan.Protocol) loadifyv1.Protocol {
 		return loadifyv1.Protocol_PROTOCOL_WEBSOCKET
 	case plan.SSE:
 		return loadifyv1.Protocol_PROTOCOL_SSE
+	case plan.Script:
+		// Script runs are protocol-agnostic; UNSPECIFIED lets the scheduler use
+		// any healthy worker and the worker selects the script driver.
+		return loadifyv1.Protocol_PROTOCOL_UNSPECIFIED
 	default:
 		return loadifyv1.Protocol_PROTOCOL_UNSPECIFIED
 	}
