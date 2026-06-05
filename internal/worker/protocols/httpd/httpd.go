@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"strings"
+	"sync"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
@@ -82,15 +83,19 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 	}
 	res.SentBytes = int64(len(d.cfg.Body))
 
-	var dnsStart, connStart, tlsStart, firstByte time.Time
+	// Phase timings are populated from httptrace callbacks, which the transport
+	// may invoke on background dial goroutines (including losing parallel dials)
+	// concurrently with this goroutine. Guard all of that shared state with a
+	// mutex so reads after Do are race-free.
+	ph := &phase{}
 	trace := &httptrace.ClientTrace{
-		DNSStart:             func(httptrace.DNSStartInfo) { dnsStart = time.Now() },
-		DNSDone:              func(httptrace.DNSDoneInfo) { res.DNSUs = sinceUs(dnsStart) },
-		ConnectStart:         func(_, _ string) { connStart = time.Now() },
-		ConnectDone:          func(_, _ string, _ error) { res.ConnectUs = sinceUs(connStart) },
-		TLSHandshakeStart:    func() { tlsStart = time.Now() },
-		TLSHandshakeDone:     func(tls.ConnectionState, error) { res.TLSUs = sinceUs(tlsStart) },
-		GotFirstResponseByte: func() { firstByte = time.Now() },
+		DNSStart:             func(httptrace.DNSStartInfo) { ph.markStart(&ph.dnsStart) },
+		DNSDone:              func(httptrace.DNSDoneInfo) { ph.markDone(&ph.dnsStart, &ph.dnsUs) },
+		ConnectStart:         func(_, _ string) { ph.markStart(&ph.connStart) },
+		ConnectDone:          func(_, _ string, _ error) { ph.markDone(&ph.connStart, &ph.connectUs) },
+		TLSHandshakeStart:    func() { ph.markStart(&ph.tlsStart) },
+		TLSHandshakeDone:     func(tls.ConnectionState, error) { ph.markDone(&ph.tlsStart, &ph.tlsUs) },
+		GotFirstResponseByte: func() { ph.markFirstByte() },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
@@ -104,6 +109,8 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 	defer resp.Body.Close()
 	n, _ := io.Copy(io.Discard, resp.Body)
 	res.LatencyUs = sinceUs(start)
+	dnsUs, connectUs, tlsUs, firstByte := ph.snapshot()
+	res.DNSUs, res.ConnectUs, res.TLSUs = dnsUs, connectUs, tlsUs
 	if !firstByte.IsZero() {
 		res.TTFBUs = firstByte.Sub(start).Microseconds()
 	}
@@ -125,6 +132,40 @@ func (d *Driver) Teardown(_ context.Context) error {
 		d.client.CloseIdleConnections()
 	}
 	return nil
+}
+
+// phase accumulates httptrace phase timings safely across the goroutines the
+// HTTP transport may use for dialing and reading.
+type phase struct {
+	mu                          sync.Mutex
+	dnsStart, connStart, tlsStart, firstByte time.Time
+	dnsUs, connectUs, tlsUs     int64
+}
+
+func (p *phase) markStart(field *time.Time) {
+	p.mu.Lock()
+	*field = time.Now()
+	p.mu.Unlock()
+}
+
+func (p *phase) markDone(start *time.Time, out *int64) {
+	p.mu.Lock()
+	*out = sinceUs(*start)
+	p.mu.Unlock()
+}
+
+func (p *phase) markFirstByte() {
+	p.mu.Lock()
+	if p.firstByte.IsZero() {
+		p.firstByte = time.Now()
+	}
+	p.mu.Unlock()
+}
+
+func (p *phase) snapshot() (dnsUs, connectUs, tlsUs int64, firstByte time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.dnsUs, p.connectUs, p.tlsUs, p.firstByte
 }
 
 func sinceUs(t time.Time) int64 {

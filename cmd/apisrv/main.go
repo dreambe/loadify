@@ -11,6 +11,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/apisrv"
+	"github.com/dreambe/loadify/internal/auth"
 	"github.com/dreambe/loadify/internal/config"
 	"github.com/dreambe/loadify/internal/obs"
 	chstore "github.com/dreambe/loadify/internal/store/clickhouse"
@@ -48,6 +49,20 @@ func main() {
 	defer pg.Close()
 	log.Info("postgres ready")
 
+	// Bootstrap the admin account from env, if configured.
+	if cfg.AdminEmail != "" && cfg.AdminPassword != "" {
+		hash, herr := auth.HashPassword(cfg.AdminPassword)
+		if herr != nil {
+			log.Error("hash admin password", "err", herr)
+			return
+		}
+		if created, aerr := pg.EnsureAdmin(ctx, cfg.AdminEmail, "Administrator", hash); aerr != nil {
+			log.Warn("ensure admin failed", "err", aerr)
+		} else if created {
+			log.Info("bootstrap admin created", "email", cfg.AdminEmail)
+		}
+	}
+
 	// ClickHouse (read-only for apisrv; coordinator owns migrations/writes).
 	var ch *chstore.Store
 	if err := obs.Retry(ctx, "clickhouse", log, func(c context.Context) error {
@@ -72,7 +87,21 @@ func main() {
 	defer conn.Close()
 	coord := loadifyv1.NewCoordinatorServiceClient(conn)
 
-	srv := apisrv.New(apisrv.Config{Postgres: pg, ClickHouse: ch, Coordinator: coord, Logger: log})
+	feishu := &auth.FeishuClient{
+		AppID:       cfg.FeishuAppID,
+		AppSecret:   cfg.FeishuAppSecret,
+		RedirectURL: cfg.FeishuRedirectURL,
+	}
+	srv := apisrv.New(apisrv.Config{
+		Postgres:    pg,
+		ClickHouse:  ch,
+		Coordinator: coord,
+		Logger:      log,
+		JWTSecret:   cfg.JWTSecret,
+		JWTTTL:      time.Duration(cfg.JWTTTLHours) * time.Hour,
+		Feishu:      feishu,
+		FrontendURL: cfg.FrontendURL,
+	})
 	httpSrv := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {

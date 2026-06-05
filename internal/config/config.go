@@ -22,13 +22,18 @@ type ClickHouse struct {
 
 // APIServer configures the public REST/WS plane.
 type APIServer struct {
-	HTTPAddr       string
-	CoordinatorGRPC string
-	JWTSecret      string
-	FeishuAppID    string
-	FeishuAppSecret string
-	Postgres       Postgres
-	ClickHouse     ClickHouse
+	HTTPAddr          string
+	CoordinatorGRPC   string
+	JWTSecret         string
+	JWTTTLHours       int
+	FeishuAppID       string
+	FeishuAppSecret   string
+	FeishuRedirectURL string
+	FrontendURL       string
+	AdminEmail        string
+	AdminPassword     string
+	Postgres          Postgres
+	ClickHouse        ClickHouse
 }
 
 // Coordinator configures the scheduler plane.
@@ -50,13 +55,18 @@ type Worker struct {
 // LoadAPIServer builds APIServer config from the environment.
 func LoadAPIServer() APIServer {
 	return APIServer{
-		HTTPAddr:        env("LOADIFY_API_HTTP_ADDR", ":8080"),
-		CoordinatorGRPC: env("LOADIFY_COORDINATOR_GRPC", "coordinatord:7070"),
-		JWTSecret:       env("LOADIFY_JWT_SECRET", "dev-insecure-secret-change-me"),
-		FeishuAppID:     env("LOADIFY_FEISHU_APP_ID", ""),
-		FeishuAppSecret: env("LOADIFY_FEISHU_APP_SECRET", ""),
-		Postgres:        loadPostgres(),
-		ClickHouse:      loadClickHouse(),
+		HTTPAddr:          env("LOADIFY_API_HTTP_ADDR", ":8080"),
+		CoordinatorGRPC:   env("LOADIFY_COORDINATOR_GRPC", "coordinatord:7070"),
+		JWTSecret:         env("LOADIFY_JWT_SECRET", "dev-insecure-secret-change-me"),
+		JWTTTLHours:       EnvInt("LOADIFY_JWT_TTL_HOURS", 24),
+		FeishuAppID:       env("LOADIFY_FEISHU_APP_ID", ""),
+		FeishuAppSecret:   env("LOADIFY_FEISHU_APP_SECRET", ""),
+		FeishuRedirectURL: env("LOADIFY_FEISHU_REDIRECT_URL", ""),
+		FrontendURL:       env("LOADIFY_FRONTEND_URL", "http://localhost:3000"),
+		AdminEmail:        env("LOADIFY_ADMIN_EMAIL", ""),
+		AdminPassword:     env("LOADIFY_ADMIN_PASSWORD", ""),
+		Postgres:          loadPostgres(),
+		ClickHouse:        loadClickHouse(),
 	}
 }
 

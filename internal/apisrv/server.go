@@ -10,6 +10,7 @@ import (
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/auth"
 	"github.com/dreambe/loadify/internal/store/clickhouse"
 	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
@@ -18,11 +19,16 @@ import (
 
 // Server wires the REST/WS API.
 type Server struct {
-	pg    *postgres.Store
-	ch    *clickhouse.Store
-	coord loadifyv1.CoordinatorServiceClient
-	log   *slog.Logger
-	mux   *chi.Mux
+	pg          *postgres.Store
+	ch          *clickhouse.Store
+	coord       loadifyv1.CoordinatorServiceClient
+	log         *slog.Logger
+	mux         *chi.Mux
+	authmw      auth.Middleware
+	feishu      *auth.FeishuClient
+	jwtSecret   string
+	jwtTTL      time.Duration
+	frontendURL string
 }
 
 // Config configures the Server.
@@ -31,6 +37,10 @@ type Config struct {
 	ClickHouse  *clickhouse.Store
 	Coordinator loadifyv1.CoordinatorServiceClient
 	Logger      *slog.Logger
+	JWTSecret   string
+	JWTTTL      time.Duration
+	Feishu      *auth.FeishuClient
+	FrontendURL string
 }
 
 // New builds the Server and its routes.
@@ -39,7 +49,18 @@ func New(c Config) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &Server{pg: c.Postgres, ch: c.ClickHouse, coord: c.Coordinator, log: log}
+	ttl := c.JWTTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	s := &Server{
+		pg: c.Postgres, ch: c.ClickHouse, coord: c.Coordinator, log: log,
+		authmw:      auth.Middleware{Secret: c.JWTSecret},
+		feishu:      c.Feishu,
+		jwtSecret:   c.JWTSecret,
+		jwtTTL:      ttl,
+		frontendURL: c.FrontendURL,
+	}
 	s.routes()
 	return s
 }
@@ -55,18 +76,34 @@ func (s *Server) routes() {
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 
+	viewer := s.authmw.Require(auth.RoleViewer)
+	operator := s.authmw.Require(auth.RoleOperator)
+	admin := s.authmw.Require(auth.RoleAdmin)
+
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/tests", s.handleCreateTest)
-		r.Get("/tests", s.handleListTests)
-		r.Get("/tests/{id}", s.handleGetTest)
+		// Public auth endpoints.
+		r.Post("/auth/login", s.handleLogin)
+		r.Get("/auth/feishu/login", s.handleFeishuLogin)
+		r.Get("/auth/feishu/callback", s.handleFeishuCallback)
+		r.With(viewer).Get("/auth/me", s.handleMe)
 
-		r.Post("/runs", s.handleStartRun)
-		r.Get("/runs", s.handleListRuns)
-		r.Get("/runs/{id}", s.handleGetRun)
-		r.Get("/runs/{id}/series", s.handleRunSeries)
-		r.Get("/runs/{id}/live", s.handleRunLive) // websocket
+		// Reads require a viewer (or higher).
+		r.With(viewer).Get("/tests", s.handleListTests)
+		r.With(viewer).Get("/tests/{id}", s.handleGetTest)
+		r.With(viewer).Get("/runs", s.handleListRuns)
+		r.With(viewer).Get("/runs/{id}", s.handleGetRun)
+		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)
+		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
+		r.With(viewer).Get("/workers", s.handleListWorkers)
 
-		r.Get("/workers", s.handleListWorkers)
+		// Mutations require an operator (or higher).
+		r.With(operator).Post("/tests", s.handleCreateTest)
+		r.With(operator).Post("/runs", s.handleStartRun)
+		r.With(operator).Post("/runs/{id}/stop", s.handleStopRun)
+
+		// User management is admin-only.
+		r.With(admin).Get("/users", s.handleListUsers)
+		r.With(admin).Post("/users", s.handleCreateUser)
 	})
 	s.mux = r
 }
