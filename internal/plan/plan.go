@@ -33,6 +33,9 @@ type Plan struct {
 	SSE      *SSEConfig  `json:"sse,omitempty"`
 	// ThinkTimeMs is the per-iteration pause applied after each request.
 	ThinkTimeMs int64 `json:"think_time_ms,omitempty"`
+	// MaxVUs caps the worker pool for the open (arrival-rate) model. 0 lets the
+	// worker derive a safe bound from the peak target rate.
+	MaxVUs int `json:"max_vus,omitempty"`
 }
 
 // HTTPConfig describes a single HTTP/HTTPS request template.

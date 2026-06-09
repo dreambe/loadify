@@ -26,6 +26,56 @@ func NewRamp(stages []*loadifyv1.RampStage) *Ramp {
 // Total returns the full ramp duration.
 func (r *Ramp) Total() time.Duration { return r.total }
 
+// IsArrival reports whether this ramp drives an open (arrival-rate) model:
+// any stage specifies a target request rate.
+func (r *Ramp) IsArrival() bool {
+	for _, s := range r.stages {
+		if s.TargetRps > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// PeakRPS returns the highest target rate across stages.
+func (r *Ramp) PeakRPS() int64 {
+	var peak int64
+	for _, s := range r.stages {
+		if s.TargetRps > peak {
+			peak = s.TargetRps
+		}
+	}
+	return peak
+}
+
+// RateAt returns the desired arrival rate (req/s) at elapsed time t, linearly
+// interpolating from the previous stage's target_rps (the open-model analogue
+// of TargetAt).
+func (r *Ramp) RateAt(t time.Duration) float64 {
+	if len(r.stages) == 0 {
+		return 0
+	}
+	var prev float64
+	var acc time.Duration
+	for _, s := range r.stages {
+		dur := time.Duration(s.DurationMs) * time.Millisecond
+		target := float64(s.TargetRps)
+		if t < acc+dur || dur == 0 {
+			if dur == 0 {
+				return target
+			}
+			frac := float64(t-acc) / float64(dur)
+			if frac < 0 {
+				frac = 0
+			}
+			return prev + frac*(target-prev)
+		}
+		acc += dur
+		prev = target
+	}
+	return prev
+}
+
 // TargetAt returns the desired active VU count at elapsed time t.
 func (r *Ramp) TargetAt(t time.Duration) int {
 	if len(r.stages) == 0 {

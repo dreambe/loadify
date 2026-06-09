@@ -3,66 +3,106 @@
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 
-// Stage mirrors a backend RampStage as authored in the UI (duration in seconds).
+// Stage is one segment of the load profile: a target (VUs or req/s depending on
+// the mode) reached over a duration, linearly interpolated from the previous.
 export interface Stage {
-  target_vus: number;
+  target: number;
   duration_s: number;
 }
 
-// RampBuilder edits a load profile as a table of stages (each: target VUs over a
-// duration, linearly interpolated from the previous target — the k6 model). It
-// also offers a "stepped" generator: N rounds, a per-round VU step, and a hold
-// duration, producing a staircase profile.
+export interface RampSpec {
+  mode: "vu" | "rps"; // closed (VU) or open (arrival-rate) model
+  maxVus: number; // pool cap for the open model (0 = derive)
+  stages: Stage[];
+}
+
+export const defaultRamp: RampSpec = {
+  mode: "vu",
+  maxVus: 0,
+  stages: [
+    { target: 20, duration_s: 10 },
+    { target: 50, duration_s: 20 },
+  ],
+};
+
 export default function RampBuilder({
   value,
   onChange,
 }: {
-  value: Stage[];
-  onChange: (s: Stage[]) => void;
+  value: RampSpec;
+  onChange: (s: RampSpec) => void;
 }) {
   const { t } = useI18n();
-  const [startVus, setStartVus] = useState(0);
+  const [startN, setStartN] = useState(0);
   const [step, setStep] = useState(10);
   const [rounds, setRounds] = useState(3);
   const [hold, setHold] = useState(30);
 
-  function update(i: number, patch: Partial<Stage>) {
-    onChange(value.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  const isRPS = value.mode === "rps";
+  const targetLabel = isRPS ? t("ramp.targetRps") : t("ramp.targetVus");
+
+  const set = (patch: Partial<RampSpec>) => onChange({ ...value, ...patch });
+  function updateStage(i: number, patch: Partial<Stage>) {
+    set({ stages: value.stages.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) });
   }
   function addStage() {
-    const last = value[value.length - 1];
-    onChange([...value, { target_vus: last ? last.target_vus : 10, duration_s: 30 }]);
+    const last = value.stages[value.stages.length - 1];
+    set({ stages: [...value.stages, { target: last ? last.target : 10, duration_s: 30 }] });
   }
   function removeStage(i: number) {
-    onChange(value.filter((_, idx) => idx !== i));
+    set({ stages: value.stages.filter((_, idx) => idx !== i) });
   }
   function generate() {
     const stages: Stage[] = [];
     for (let r = 1; r <= Math.max(1, rounds); r++) {
-      stages.push({ target_vus: startVus + step * r, duration_s: hold });
+      stages.push({ target: startN + step * r, duration_s: hold });
     }
-    onChange(stages);
+    set({ stages });
   }
 
-  const peak = value.reduce((m, s) => Math.max(m, s.target_vus), 0);
-  const total = value.reduce((sum, s) => sum + s.duration_s, 0);
+  const peak = value.stages.reduce((m, s) => Math.max(m, s.target), 0);
+  const total = value.stages.reduce((sum, s) => sum + s.duration_s, 0);
 
   return (
     <div>
+      {/* Model toggle */}
+      <div className="row" style={{ alignItems: "center", marginBottom: 10 }}>
+        <span className="muted">{t("ramp.model")}:</span>
+        <button
+          type="button"
+          className={value.mode === "vu" ? "" : "secondary"}
+          onClick={() => set({ mode: "vu" })}
+        >
+          {t("ramp.modeVu")}
+        </button>
+        <button
+          type="button"
+          className={value.mode === "rps" ? "" : "secondary"}
+          onClick={() => set({ mode: "rps" })}
+        >
+          {t("ramp.modeRps")}
+        </button>
+        {isRPS && (
+          <div>
+            <label style={{ margin: 0 }}>{t("ramp.maxVus")}</label>
+            <input
+              type="number"
+              min={0}
+              value={value.maxVus}
+              onChange={(e) => set({ maxVus: parseInt(e.target.value || "0", 10) })}
+              style={{ width: 100 }}
+            />
+          </div>
+        )}
+      </div>
+
       {/* Stepped generator */}
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          padding: 12,
-          marginBottom: 12,
-        }}
-      >
+      <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12, marginBottom: 12 }}>
         <div className="muted" style={{ marginBottom: 8 }}>
           {t("ramp.stepped")}
         </div>
         <div className="row">
-          <NumField label={t("ramp.startVus")} value={startVus} onChange={setStartVus} min={0} />
+          <NumField label={isRPS ? t("ramp.startRps") : t("ramp.startVus")} value={startN} onChange={setStartN} min={0} />
           <NumField label={t("ramp.step")} value={step} onChange={setStep} min={1} />
           <NumField label={t("ramp.rounds")} value={rounds} onChange={setRounds} min={1} />
           <NumField label={t("ramp.hold")} value={hold} onChange={setHold} min={1} />
@@ -77,21 +117,21 @@ export default function RampBuilder({
         <thead>
           <tr>
             <th style={{ width: 60 }}>{t("ramp.stage")}</th>
-            <th>{t("ramp.targetVus")}</th>
+            <th>{targetLabel}</th>
             <th>{t("ramp.durationS")}</th>
             <th style={{ width: 80 }}></th>
           </tr>
         </thead>
         <tbody>
-          {value.map((s, i) => (
+          {value.stages.map((s, i) => (
             <tr key={i}>
               <td className="muted">#{i + 1}</td>
               <td>
                 <input
                   type="number"
                   min={0}
-                  value={s.target_vus}
-                  onChange={(e) => update(i, { target_vus: parseInt(e.target.value || "0", 10) })}
+                  value={s.target}
+                  onChange={(e) => updateStage(i, { target: parseInt(e.target.value || "0", 10) })}
                   style={{ width: 120 }}
                 />
               </td>
@@ -100,7 +140,7 @@ export default function RampBuilder({
                   type="number"
                   min={1}
                   value={s.duration_s}
-                  onChange={(e) => update(i, { duration_s: parseInt(e.target.value || "1", 10) })}
+                  onChange={(e) => updateStage(i, { duration_s: parseInt(e.target.value || "1", 10) })}
                   style={{ width: 120 }}
                 />
               </td>
@@ -119,7 +159,7 @@ export default function RampBuilder({
           + {t("ramp.addStage")}
         </button>
         <span className="muted">
-          {t("ramp.peak")}: {peak} VU · {t("ramp.total")}: {total}s
+          {t("ramp.peak")}: {peak} {isRPS ? "req/s" : "VU"} · {t("ramp.total")}: {total}s
         </span>
       </div>
     </div>

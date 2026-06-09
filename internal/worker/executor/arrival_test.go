@@ -1,0 +1,63 @@
+package executor_test
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/worker/executor"
+	"github.com/dreambe/loadify/internal/worker/protocols"
+	_ "github.com/dreambe/loadify/internal/worker/protocols/httpd"
+	"github.com/dreambe/loadify/internal/worker/sampler"
+)
+
+// TestArrivalExecutorHitsTargetRate drives the open model at ~200 req/s against
+// a fast local server and asserts the achieved throughput is close to target.
+func TestArrivalExecutorHitsTargetRate(t *testing.T) {
+	var hits int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p, err := plan.Parse([]byte(`{"protocol":"http","http":{"url":"` + srv.URL + `"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drv, err := protocols.New(loadifyv1.Protocol_PROTOCOL_HTTP, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const rate = 300
+	smp := sampler.New("run", "worker", loadifyv1.Protocol_PROTOCOL_HTTP)
+	// Short ramp to the target, then hold steady — a near-constant arrival rate.
+	stages := []*loadifyv1.RampStage{
+		{DurationMs: 200, TargetRps: rate},
+		{DurationMs: 1800, TargetRps: rate},
+	}
+	ex := executor.NewArrival(executor.ArrivalConfig{Driver: drv, Ramp: executor.NewRamp(stages), Sampler: smp})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ex.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	// Analytic expectation: triangle over the 0.2s ramp + rectangle over 1.8s.
+	want := int64(0.5*0.2*rate + 1.8*rate) // ~570
+	got := atomic.LoadInt64(&hits)
+	if got < want*7/10 || got > want*13/10 {
+		t.Errorf("hits = %d, want ~%d (±30%%)", got, want)
+	}
+	if d := ex.Dropped(); d > want/2 {
+		t.Errorf("too many dropped iterations: %d", d)
+	}
+	t.Logf("hits=%d target=%d dropped=%d", got, want, ex.Dropped())
+}

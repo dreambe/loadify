@@ -175,13 +175,28 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 	}
 
 	smp := sampler.New(asg.RunId, a.workerID, asg.Protocol)
-	exec := executor.New(executor.Config{
-		Driver:    drv,
-		Ramp:      executor.NewRamp(asg.Ramp),
-		Sampler:   smp,
-		ThinkTime: p.ThinkTime(),
-		Logger:    log,
-	})
+	ramp := executor.NewRamp(asg.Ramp)
+	// An open (arrival-rate) ramp drives a target req/s; otherwise scale VUs.
+	var exec interface {
+		Run(context.Context) error
+	}
+	if ramp.IsArrival() {
+		exec = executor.NewArrival(executor.ArrivalConfig{
+			Driver:  drv,
+			Ramp:    ramp,
+			Sampler: smp,
+			MaxVUs:  p.MaxVUs,
+			Logger:  log,
+		})
+	} else {
+		exec = executor.New(executor.Config{
+			Driver:    drv,
+			Ramp:      ramp,
+			Sampler:   smp,
+			ThinkTime: p.ThinkTime(),
+			Logger:    log,
+		})
+	}
 
 	runCtx, cancel := context.WithCancel(parent)
 	a.mu.Lock()

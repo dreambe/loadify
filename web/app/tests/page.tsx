@@ -5,7 +5,7 @@ import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import RampBuilder, { type Stage } from "@/components/RampBuilder";
+import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
 import HttpRequestBuilder, {
   emptyHttpRequest,
   httpRequestToPlan,
@@ -18,10 +18,6 @@ const SAMPLE_PLAN = `{
   "protocol": "grpc",
   "grpc": { "target": "echo:8089", "full_method": "/grpc.health.v1.Health/Check", "plaintext": true }
 }`;
-const DEFAULT_STAGES: Stage[] = [
-  { target_vus: 20, duration_s: 10 },
-  { target_vus: 50, duration_s: 20 },
-];
 
 export default function TestsPage() {
   const { t } = useI18n();
@@ -31,7 +27,7 @@ export default function TestsPage() {
   const [protocol, setProtocol] = useState("http");
   const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest, url: "http://echo:8088/" });
   const [plan, setPlan] = useState(SAMPLE_PLAN);
-  const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
+  const [ramp, setRamp] = useState<RampSpec>(defaultRamp);
   const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
   const [script, setScript] = useState("");
   const [err, setErr] = useState("");
@@ -50,7 +46,7 @@ export default function TestsPage() {
     e.preventDefault();
     setErr("");
     setOk("");
-    let planObj: unknown;
+    let planObj: any;
     if (protocol === "script") {
       planObj = { protocol: "script" };
     } else if (isHTTP) {
@@ -63,10 +59,15 @@ export default function TestsPage() {
         return;
       }
     }
-    const rampObj = stages.map((s) => ({
-      duration_ms: s.duration_s * 1000,
-      target_vus: s.target_vus,
-    }));
+    const rampObj = ramp.stages.map((s) =>
+      ramp.mode === "rps"
+        ? { duration_ms: s.duration_s * 1000, target_rps: s.target }
+        : { duration_ms: s.duration_s * 1000, target_vus: s.target }
+    );
+    // The open model's pool cap is a plan-level field.
+    if (ramp.mode === "rps" && ramp.maxVus > 0 && planObj && typeof planObj === "object") {
+      planObj.max_vus = ramp.maxVus;
+    }
     try {
       await api.createTest({
         name,
@@ -123,7 +124,7 @@ export default function TestsPage() {
               </>
             )}
             <label>{t("tests.ramp")}</label>
-            <RampBuilder value={stages} onChange={setStages} />
+            <RampBuilder value={ramp} onChange={setRamp} />
             <label>{t("tests.thresholds")}</label>
             <ThresholdsEditor value={thresholds} onChange={setThresholds} />
             {protocol === "script" && (
