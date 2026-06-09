@@ -49,22 +49,27 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 // TestDefinition is a stored declarative test.
 type TestDefinition struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Protocol  string          `json:"protocol"`
-	PlanJSON  json.RawMessage `json:"plan"`
-	RampJSON  json.RawMessage `json:"ramp"`
-	ScriptJS  string          `json:"script,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Protocol   string          `json:"protocol"`
+	PlanJSON   json.RawMessage `json:"plan"`
+	RampJSON   json.RawMessage `json:"ramp"`
+	ScriptJS   string          `json:"script,omitempty"`
+	Thresholds json.RawMessage `json:"thresholds,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // CreateTestDefinition inserts a test definition and returns its id.
 func (s *Store) CreateTestDefinition(ctx context.Context, td *TestDefinition) (string, error) {
 	var id string
+	thresholds := td.Thresholds
+	if len(thresholds) == 0 {
+		thresholds = json.RawMessage("[]")
+	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO test_definitions (name, protocol, plan_json, ramp_json, script_js)
-		VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS).Scan(&id)
+		INSERT INTO test_definitions (name, protocol, plan_json, ramp_json, script_js, thresholds_json)
+		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds).Scan(&id)
 	return id, err
 }
 
@@ -72,9 +77,9 @@ func (s *Store) CreateTestDefinition(ctx context.Context, td *TestDefinition) (s
 func (s *Store) GetTestDefinition(ctx context.Context, id string) (*TestDefinition, error) {
 	td := &TestDefinition{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, protocol, plan_json, ramp_json, coalesce(script_js,''), created_at
+		SELECT id, name, protocol, plan_json, ramp_json, coalesce(script_js,''), coalesce(thresholds_json,'[]'), created_at
 		FROM test_definitions WHERE id = $1`, id).
-		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.CreatedAt)
+		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +92,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, protocol, plan_json, ramp_json, coalesce(script_js,''), created_at
+		SELECT id, name, protocol, plan_json, ramp_json, coalesce(script_js,''), coalesce(thresholds_json,'[]'), created_at
 		FROM test_definitions ORDER BY created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -96,7 +101,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 	var out []TestDefinition
 	for rows.Next() {
 		var td TestDefinition
-		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.CreatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, td)

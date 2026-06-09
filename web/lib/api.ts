@@ -63,6 +63,7 @@ export const api = {
     plan: unknown;
     ramp: unknown;
     script?: string;
+    thresholds?: unknown;
   }) => req<{ id: string }>("/api/v1/tests", { method: "POST", body: JSON.stringify(body) }),
 
   listRuns: () => req<Run[]>("/api/v1/runs"),

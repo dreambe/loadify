@@ -76,6 +76,38 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 ]}
               />
             </div>
+            {run?.summary?.checks && run.summary.checks.length > 0 && (
+              <div className="panel">
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <h2 style={{ margin: 0 }}>{t("run.sla")}</h2>
+                  <span className={`badge ${run.summary.passed ? "completed" : "failed"}`}>
+                    {run.summary.passed ? t("run.passed") : t("run.failed")}
+                  </span>
+                </div>
+                <table style={{ marginTop: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>{t("sla.metric")}</th>
+                      <th>{t("sla.op")}</th>
+                      <th>{t("sla.value")}</th>
+                      <th>{t("sla.actual")}</th>
+                      <th>{t("sla.ok")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {run.summary.checks.map((c, i) => (
+                      <tr key={i} style={{ color: c.ok ? "var(--green)" : "var(--red)" }}>
+                        <td>{c.metric}</td>
+                        <td>{c.op}</td>
+                        <td>{c.value}</td>
+                        <td>{c.actual.toFixed(2)}</td>
+                        <td>{c.ok ? "✓" : "✗"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {run?.summary != null && (
               <div className="panel">
                 <h2>{t("run.summary")}</h2>

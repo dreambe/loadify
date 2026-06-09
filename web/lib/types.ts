@@ -24,8 +24,32 @@ export interface Run {
   desired_workers: number;
   started_at?: string;
   ended_at?: string;
-  summary?: unknown;
+  summary?: RunSummary;
   created_at: string;
+}
+
+export interface RunSummary {
+  total_requests?: number;
+  summary?: {
+    error_rate?: number;
+    p50_ms?: number;
+    p90_ms?: number;
+    p95_ms?: number;
+    p99_ms?: number;
+  };
+  passed?: boolean;
+  checks?: ThresholdCheck[];
+}
+
+export interface Threshold {
+  metric: string;
+  op: string;
+  value: number;
+}
+
+export interface ThresholdCheck extends Threshold {
+  actual: number;
+  ok: boolean;
 }
 
 export interface WorkerInfo {

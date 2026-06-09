@@ -9,6 +9,8 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/sla"
+	"github.com/dreambe/loadify/internal/store"
 	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
 )
@@ -26,11 +28,12 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 // --- test definitions ---
 
 type createTestReq struct {
-	Name     string          `json:"name"`
-	Protocol string          `json:"protocol"`
-	Plan     json.RawMessage `json:"plan"`
-	Ramp     json.RawMessage `json:"ramp"`
-	Script   string          `json:"script,omitempty"`
+	Name       string          `json:"name"`
+	Protocol   string          `json:"protocol"`
+	Plan       json.RawMessage `json:"plan"`
+	Ramp       json.RawMessage `json:"ramp"`
+	Script     string          `json:"script,omitempty"`
+	Thresholds json.RawMessage `json:"thresholds,omitempty"`
 }
 
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +50,12 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 	id, err := s.pg.CreateTestDefinition(ctx, &postgres.TestDefinition{
-		Name:     req.Name,
-		Protocol: req.Protocol,
-		PlanJSON:  req.Plan,
-		RampJSON:  req.Ramp,
-		ScriptJS:  req.Script,
+		Name:       req.Name,
+		Protocol:   req.Protocol,
+		PlanJSON:   req.Plan,
+		RampJSON:   req.Ramp,
+		ScriptJS:   req.Script,
+		Thresholds: req.Thresholds,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -168,11 +172,53 @@ func (s *Server) watchRun(runID string) {
 	if serr != nil {
 		s.log.Warn("run summary failed", "run", runID, "err", serr)
 	}
+
+	// Evaluate SLA thresholds (if any) and fail the run when breached.
+	if passed, checks, ok := s.evaluateThresholds(sctx, runID, summary, total); ok {
+		payload["passed"] = passed
+		payload["checks"] = checks
+		if !passed {
+			status = "failed"
+		}
+	}
+
 	body, _ := json.Marshal(payload)
 	if err := s.pg.FinishRun(sctx, runID, status, body); err != nil {
 		s.log.Warn("finish run failed", "run", runID, "err", err)
 	}
-	s.log.Info("run finalized", "run", runID, "total", total)
+	s.log.Info("run finalized", "run", runID, "total", total, "status", status)
+}
+
+// evaluateThresholds loads the run's test thresholds and checks them against the
+// summary. ok is false when there are no thresholds (nothing to evaluate).
+func (s *Server) evaluateThresholds(ctx context.Context, runID string, summary store.SeriesPoint, total int64) (bool, []sla.Check, bool) {
+	run, err := s.pg.GetRun(ctx, runID)
+	if err != nil {
+		return false, nil, false
+	}
+	td, err := s.pg.GetTestDefinition(ctx, run.TestDefID)
+	if err != nil || len(td.Thresholds) == 0 {
+		return false, nil, false
+	}
+	var ths []sla.Threshold
+	if err := json.Unmarshal(td.Thresholds, &ths); err != nil || len(ths) == 0 {
+		return false, nil, false
+	}
+	qps := 0.0
+	if run.StartedAt != nil {
+		if elapsed := time.Since(*run.StartedAt).Seconds(); elapsed > 0 {
+			qps = float64(total) / elapsed
+		}
+	}
+	passed, checks := sla.Evaluate(ths, sla.Metrics{
+		P50ms:     summary.P50ms,
+		P90ms:     summary.P90ms,
+		P95ms:     summary.P95ms,
+		P99ms:     summary.P99ms,
+		ErrorRate: summary.ErrorRate * 100, // fraction -> percent
+		QPS:       qps,
+	})
+	return passed, checks, true
 }
 
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {

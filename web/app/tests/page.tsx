@@ -6,11 +6,17 @@ import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import RampBuilder, { type Stage } from "@/components/RampBuilder";
-import type { TestDefinition } from "@/lib/types";
+import HttpRequestBuilder, {
+  emptyHttpRequest,
+  httpRequestToPlan,
+  type HttpRequest,
+} from "@/components/HttpRequestBuilder";
+import ThresholdsEditor from "@/components/ThresholdsEditor";
+import type { TestDefinition, Threshold } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
-  "protocol": "http",
-  "http": { "method": "GET", "url": "http://echo:8088/" }
+  "protocol": "grpc",
+  "grpc": { "target": "echo:8089", "full_method": "/grpc.health.v1.Health/Check", "plaintext": true }
 }`;
 const DEFAULT_STAGES: Stage[] = [
   { target_vus: 20, duration_s: 10 },
@@ -23,11 +29,15 @@ export default function TestsPage() {
   const [tests, setTests] = useState<TestDefinition[]>([]);
   const [name, setName] = useState("");
   const [protocol, setProtocol] = useState("http");
+  const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest, url: "http://echo:8088/" });
   const [plan, setPlan] = useState(SAMPLE_PLAN);
   const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
+  const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
   const [script, setScript] = useState("");
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
+
+  const isHTTP = protocol === "http" || protocol === "https";
 
   function refresh() {
     api.listTests().then(setTests).catch((e) => setErr(e.message));
@@ -41,18 +51,31 @@ export default function TestsPage() {
     setErr("");
     setOk("");
     let planObj: unknown;
-    try {
-      planObj = JSON.parse(plan);
-    } catch {
-      setErr(t("tests.jsonErr"));
-      return;
+    if (protocol === "script") {
+      planObj = { protocol: "script" };
+    } else if (isHTTP) {
+      planObj = httpRequestToPlan(protocol, http);
+    } else {
+      try {
+        planObj = JSON.parse(plan);
+      } catch {
+        setErr(t("tests.jsonErr"));
+        return;
+      }
     }
     const rampObj = stages.map((s) => ({
       duration_ms: s.duration_s * 1000,
       target_vus: s.target_vus,
     }));
     try {
-      await api.createTest({ name, protocol, plan: planObj, ramp: rampObj, script: script || undefined });
+      await api.createTest({
+        name,
+        protocol,
+        plan: planObj,
+        ramp: rampObj,
+        script: script || undefined,
+        thresholds,
+      });
       setOk(t("tests.created"));
       setName("");
       refresh();
@@ -87,17 +110,33 @@ export default function TestsPage() {
                 </select>
               </div>
             </div>
-            <label>{t("tests.plan")}</label>
-            <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
+            {isHTTP && (
+              <>
+                <label>{t("tests.request")}</label>
+                <HttpRequestBuilder value={http} onChange={setHttp} />
+              </>
+            )}
+            {!isHTTP && protocol !== "script" && (
+              <>
+                <label>{t("tests.plan")}</label>
+                <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
+              </>
+            )}
             <label>{t("tests.ramp")}</label>
             <RampBuilder value={stages} onChange={setStages} />
-            <label>{t("tests.script")}</label>
-            <textarea
-              rows={4}
-              value={script}
-              onChange={(e) => setScript(e.target.value)}
-              placeholder={'function iteration() { http.get("http://echo:8088/"); }'}
-            />
+            <label>{t("tests.thresholds")}</label>
+            <ThresholdsEditor value={thresholds} onChange={setThresholds} />
+            {protocol === "script" && (
+              <>
+                <label>{t("tests.script")}</label>
+                <textarea
+                  rows={4}
+                  value={script}
+                  onChange={(e) => setScript(e.target.value)}
+                  placeholder={'function iteration() { http.get("http://echo:8088/"); }'}
+                />
+              </>
+            )}
             {err && <div className="error">{err}</div>}
             {ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
             <div style={{ marginTop: 12 }}>
