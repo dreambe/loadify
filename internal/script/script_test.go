@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -109,6 +111,49 @@ func TestScriptCheckFailsIteration(t *testing.T) {
 	}
 	if res.ErrorKind != "check:bad" {
 		t.Errorf("error kind = %q, want check:bad", res.ErrorKind)
+	}
+}
+
+func TestScriptDataFeeder(t *testing.T) {
+	var got []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = append(got, r.Header.Get("X-User"))
+		mu.Unlock()
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	src := `function iteration(){ var row = nextRow(); http.get(BASE, { headers: { "X-User": row.user } }); }`
+	src = "var BASE = " + jsString(srv.URL) + ";\n" + src
+	bundle := &loadifyv1.ScriptBundle{
+		MainJs:  src,
+		Modules: map[string]string{"__data__": `[{"user":"alice"},{"user":"bob"},{"user":"carol"}]`},
+	}
+	drv, err := script.New(bundle, nil, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := drv.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer drv.Teardown(ctx)
+
+	vu := &protocols.VU{ID: 1}
+	for i := 0; i < 4; i++ {
+		if res := drv.Exec(ctx, vu); !res.OK {
+			t.Fatalf("iter %d not ok: %q", i, res.ErrorKind)
+		}
+		vu.Iteration++
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	// nextRow cycles the dataset per VU: alice, bob, carol, alice.
+	want := []string{"alice", "bob", "carol", "alice"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("rows = %v, want %v", got, want)
 	}
 }
 

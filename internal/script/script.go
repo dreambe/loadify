@@ -11,6 +11,7 @@ package script
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -27,12 +28,17 @@ import (
 // iteration body.
 var entrypoints = []string{"iteration", "default"}
 
+// dataKey is the reserved ScriptBundle module under which a test's data-feeder
+// rows (a JSON array of objects) are carried to the worker.
+const dataKey = "__data__"
+
 // Driver runs a JS scenario under load.
 type Driver struct {
 	prog    *goja.Program
 	group   string
 	client  *http.Client
 	timeout time.Duration
+	dataset []map[string]any
 
 	mu  sync.Mutex
 	vus map[int]*vu
@@ -52,7 +58,13 @@ func New(bundle *loadifyv1.ScriptBundle, p *plan.Plan, _ loadifyv1.Protocol) (pr
 	if p != nil && p.HTTP != nil && p.HTTP.Group != "" {
 		group = p.HTTP.Group
 	}
-	return &Driver{prog: prog, group: group}, nil
+	d := &Driver{prog: prog, group: group}
+	if raw := bundle.Modules[dataKey]; raw != "" {
+		if err := json.Unmarshal([]byte(raw), &d.dataset); err != nil {
+			return nil, fmt.Errorf("script: invalid data feeder JSON: %w", err)
+		}
+	}
+	return d, nil
 }
 
 // Prepare builds the shared HTTP client used by every VU's http binding.
@@ -133,6 +145,7 @@ func (d *Driver) buildVU() (*vu, error) {
 	bindConsole(rt)
 	bindSleep(rt)
 	bindCheck(rt, acc)
+	d.bindData(rt)
 	if err := bindHTTP(rt, d.client, acc); err != nil {
 		return nil, err
 	}
@@ -145,6 +158,22 @@ func (d *Driver) buildVU() (*vu, error) {
 		return nil, err
 	}
 	return &vu{rt: rt, fn: fn, acc: acc}, nil
+}
+
+// bindData exposes the data feeder to a VU runtime: `data` is the full row
+// array and `nextRow()` returns rows sequentially per VU (cycling), so each
+// virtual user walks the dataset independently.
+func (d *Driver) bindData(rt *goja.Runtime) {
+	if len(d.dataset) == 0 {
+		return
+	}
+	_ = rt.Set("data", rt.ToValue(d.dataset))
+	idx := 0
+	_ = rt.Set("nextRow", func(goja.FunctionCall) goja.Value {
+		row := d.dataset[idx%len(d.dataset)]
+		idx++
+		return rt.ToValue(row)
+	})
 }
 
 func resolveEntrypoint(rt *goja.Runtime) (goja.Callable, error) {

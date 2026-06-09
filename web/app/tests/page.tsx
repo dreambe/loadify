@@ -30,6 +30,7 @@ export default function TestsPage() {
   const [ramp, setRamp] = useState<RampSpec>(defaultRamp);
   const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
   const [script, setScript] = useState("");
+  const [dataset, setDataset] = useState("");
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
 
@@ -68,6 +69,15 @@ export default function TestsPage() {
     if (ramp.mode === "rps" && ramp.maxVus > 0 && planObj && typeof planObj === "object") {
       planObj.max_vus = ramp.maxVus;
     }
+    let datasetObj: unknown;
+    if (dataset.trim()) {
+      try {
+        datasetObj = JSON.parse(dataset);
+      } catch {
+        setErr(t("tests.datasetErr"));
+        return;
+      }
+    }
     try {
       await api.createTest({
         name,
@@ -76,6 +86,7 @@ export default function TestsPage() {
         ramp: rampObj,
         script: script || undefined,
         thresholds,
+        dataset: datasetObj,
       });
       setOk(t("tests.created"));
       setName("");
@@ -135,10 +146,18 @@ export default function TestsPage() {
                   value={script}
                   onChange={(e) => setScript(e.target.value)}
                   placeholder={`function iteration() {
-  var r = http.get("http://echo:8088/");
+  var row = nextRow();              // data feeder (optional)
+  var r = http.get("http://echo:8088/", { headers: { "X-User": row ? row.user : "" } });
   check("status 200", r.status === 200);
   // extract & chain: var data = JSON.parse(r.body); http.post(url, JSON.stringify(data));
 }`}
+                />
+                <label>{t("tests.dataset")}</label>
+                <textarea
+                  rows={3}
+                  value={dataset}
+                  onChange={(e) => setDataset(e.target.value)}
+                  placeholder={'[{"user":"alice"},{"user":"bob"}]'}
                 />
               </>
             )}

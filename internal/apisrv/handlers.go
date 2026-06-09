@@ -34,6 +34,7 @@ type createTestReq struct {
 	Ramp       json.RawMessage `json:"ramp"`
 	Script     string          `json:"script,omitempty"`
 	Thresholds json.RawMessage `json:"thresholds,omitempty"`
+	Dataset    json.RawMessage `json:"dataset,omitempty"`
 }
 
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +57,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		RampJSON:   req.Ramp,
 		ScriptJS:   req.Script,
 		Thresholds: req.Thresholds,
+		DataJSON:   req.Dataset,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -127,6 +129,11 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	var script *loadifyv1.ScriptBundle
 	if td.ScriptJS != "" {
 		script = &loadifyv1.ScriptBundle{MainJs: td.ScriptJS}
+		// Carry the data-feeder rows to the worker under the reserved module key
+		// (see internal/script dataKey).
+		if len(td.DataJSON) > 0 {
+			script.Modules = map[string]string{"__data__": string(td.DataJSON)}
+		}
 	}
 	_, err = s.coord.StartRun(ctx, &loadifyv1.StartRunRequest{
 		RunId:          runID,
