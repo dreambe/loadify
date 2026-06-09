@@ -23,6 +23,20 @@ type liveTick struct {
 	P95ms     float64            `json:"p95_ms"`
 	P99ms     float64            `json:"p99_ms"`
 	Groups    map[string]grpTick `json:"groups,omitempty"`
+	Samples   []logSample        `json:"samples,omitempty"`
+}
+
+// logSample is one per-request observation surfaced to the live response log.
+type logSample struct {
+	TS        int64   `json:"ts_unix_ms"`
+	Group     string  `json:"group"`
+	Status    int32   `json:"status"`
+	OK        bool    `json:"ok"`
+	LatencyMs float64 `json:"latency_ms"`
+	TTFBms    float64 `json:"ttfb_ms"`
+	SentBytes int64   `json:"sent_bytes"`
+	RecvBytes int64   `json:"recv_bytes"`
+	ErrorKind string  `json:"error_kind,omitempty"`
 }
 
 type grpTick struct {
@@ -78,6 +92,23 @@ func toLiveTick(t *loadifyv1.LiveTick) liveTick {
 	for name, g := range t.Groups {
 		groups[name] = grpTick{RPS: g.Rps, ErrorRate: g.ErrorRate, P50ms: g.P50Ms, P90ms: g.P90Ms, P95ms: g.P95Ms, P99ms: g.P99Ms}
 	}
+	var samples []logSample
+	if len(t.Samples) > 0 {
+		samples = make([]logSample, 0, len(t.Samples))
+		for _, s := range t.Samples {
+			samples = append(samples, logSample{
+				TS:        s.TsUnixMs,
+				Group:     s.Group,
+				Status:    s.Status,
+				OK:        s.Ok,
+				LatencyMs: float64(s.LatencyUs) / 1000.0,
+				TTFBms:    float64(s.TtfbUs) / 1000.0,
+				SentBytes: s.SentBytes,
+				RecvBytes: s.RecvBytes,
+				ErrorKind: s.ErrorKind,
+			})
+		}
+	}
 	return liveTick{
 		RunID:     t.RunId,
 		TS:        t.TsUnixMs,
@@ -89,5 +120,6 @@ func toLiveTick(t *loadifyv1.LiveTick) liveTick {
 		P95ms:     t.P95Ms,
 		P99ms:     t.P99Ms,
 		Groups:    groups,
+		Samples:   samples,
 	}
 }

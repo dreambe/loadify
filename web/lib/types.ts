@@ -47,6 +47,19 @@ export interface LiveTick {
   p95_ms: number;
   p99_ms: number;
   groups?: Record<string, GroupTick>;
+  samples?: LogSample[];
+}
+
+export interface LogSample {
+  ts_unix_ms: number;
+  group: string;
+  status: number;
+  ok: boolean;
+  latency_ms: number;
+  ttfb_ms: number;
+  sent_bytes: number;
+  recv_bytes: number;
+  error_kind?: string;
 }
 
 export interface GroupTick {

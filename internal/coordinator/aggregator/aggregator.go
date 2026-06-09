@@ -27,11 +27,15 @@ type Aggregator struct {
 
 	mu          sync.Mutex
 	buckets     map[int64]map[metrics.Key]*metrics.Bucket // bucketSec -> key -> agg
+	samples     map[int64][]*loadifyv1.Sample             // bucketSec -> raw samples
 	workerVUs   map[string]int64
 	listeners   []chan *loadifyv1.LiveTick
 	lastEmitted int64
 	totalCount  int64
 }
+
+// liveSampleCap bounds how many raw samples ride along on a single LiveTick.
+const liveSampleCap = 80
 
 // New creates an Aggregator for a run.
 func New(runID string, proto loadifyv1.Protocol, writer store.RollupWriter, log *slog.Logger) *Aggregator {
@@ -44,6 +48,7 @@ func New(runID string, proto loadifyv1.Protocol, writer store.RollupWriter, log 
 		writer:    writer,
 		log:       log,
 		buckets:   make(map[int64]map[metrics.Key]*metrics.Bucket),
+		samples:   make(map[int64][]*loadifyv1.Sample),
 		workerVUs: make(map[string]int64),
 	}
 }
@@ -73,6 +78,16 @@ func (a *Aggregator) Ingest(b *loadifyv1.MetricBatch) {
 			dst.Hist.Merge(h)
 		}
 		a.totalCount += agg.Count
+	}
+	if len(b.Samples) > 0 {
+		if cur := a.samples[sec]; len(cur) < liveSampleCap {
+			room := liveSampleCap - len(cur)
+			add := b.Samples
+			if len(add) > room {
+				add = add[:room]
+			}
+			a.samples[sec] = append(cur, add...)
+		}
 	}
 	a.mu.Unlock()
 }
@@ -121,12 +136,14 @@ func (a *Aggregator) finalize(now time.Time) {
 	for _, sec := range ready {
 		bk := a.buckets[sec]
 		delete(a.buckets, sec)
+		secSamples := a.samples[sec]
+		delete(a.samples, sec)
 		if a.lastEmitted != 0 && sec <= a.lastEmitted {
 			continue
 		}
 		a.lastEmitted = sec
 		ts := time.Unix(sec, 0)
-		rows, ticks = a.collect(sec, ts, bk, activeVUs, rows, ticks)
+		rows, ticks = a.collect(sec, ts, bk, activeVUs, secSamples, rows, ticks)
 	}
 	listeners := append([]chan *loadifyv1.LiveTick(nil), a.listeners...)
 	writer := a.writer
@@ -149,7 +166,7 @@ func (a *Aggregator) finalize(now time.Time) {
 
 // collect turns one second's buckets into a rollup row set plus an aggregate
 // LiveTick across all groups.
-func (a *Aggregator) collect(sec int64, ts time.Time, bk map[metrics.Key]*metrics.Bucket, activeVUs int64, rows []store.Rollup, ticks []*loadifyv1.LiveTick) ([]store.Rollup, []*loadifyv1.LiveTick) {
+func (a *Aggregator) collect(sec int64, ts time.Time, bk map[metrics.Key]*metrics.Bucket, activeVUs int64, samples []*loadifyv1.Sample, rows []store.Rollup, ticks []*loadifyv1.LiveTick) ([]store.Rollup, []*loadifyv1.LiveTick) {
 	total := hdr.New(1, 120_000_000, 3)
 	var count, errors int64
 	groups := make(map[string]*loadifyv1.GroupTick)
@@ -204,6 +221,7 @@ func (a *Aggregator) collect(sec int64, ts time.Time, bk map[metrics.Key]*metric
 		P95Ms:     tp.P95,
 		P99Ms:     tp.P99,
 		Groups:    groups,
+		Samples:   samples,
 	})
 	return rows, ticks
 }

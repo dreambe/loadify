@@ -5,16 +5,17 @@ import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import RampBuilder, { type Stage } from "@/components/RampBuilder";
 import type { TestDefinition } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
   "protocol": "http",
   "http": { "method": "GET", "url": "http://echo:8088/" }
 }`;
-const SAMPLE_RAMP = `[
-  { "duration_ms": 10000, "target_vus": 20 },
-  { "duration_ms": 20000, "target_vus": 50 }
-]`;
+const DEFAULT_STAGES: Stage[] = [
+  { target_vus: 20, duration_s: 10 },
+  { target_vus: 50, duration_s: 20 },
+];
 
 export default function TestsPage() {
   const { t } = useI18n();
@@ -23,7 +24,7 @@ export default function TestsPage() {
   const [name, setName] = useState("");
   const [protocol, setProtocol] = useState("http");
   const [plan, setPlan] = useState(SAMPLE_PLAN);
-  const [ramp, setRamp] = useState(SAMPLE_RAMP);
+  const [stages, setStages] = useState<Stage[]>(DEFAULT_STAGES);
   const [script, setScript] = useState("");
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
@@ -40,14 +41,16 @@ export default function TestsPage() {
     setErr("");
     setOk("");
     let planObj: unknown;
-    let rampObj: unknown;
     try {
       planObj = JSON.parse(plan);
-      rampObj = ramp.trim() ? JSON.parse(ramp) : [];
     } catch {
       setErr(t("tests.jsonErr"));
       return;
     }
+    const rampObj = stages.map((s) => ({
+      duration_ms: s.duration_s * 1000,
+      target_vus: s.target_vus,
+    }));
     try {
       await api.createTest({ name, protocol, plan: planObj, ramp: rampObj, script: script || undefined });
       setOk(t("tests.created"));
@@ -87,7 +90,7 @@ export default function TestsPage() {
             <label>{t("tests.plan")}</label>
             <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
             <label>{t("tests.ramp")}</label>
-            <textarea rows={4} value={ramp} onChange={(e) => setRamp(e.target.value)} />
+            <RampBuilder value={stages} onChange={setStages} />
             <label>{t("tests.script")}</label>
             <textarea
               rows={4}

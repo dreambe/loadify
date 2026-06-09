@@ -3,6 +3,7 @@ syntax = "proto3";
 package loadify.v1;
 
 import "loadify/v1/common.proto";
+import "loadify/v1/metrics.proto";
 
 // CoordinatorService is the internal control API consumed by apisrv.
 service CoordinatorService {
@@ -99,4 +100,7 @@ message LiveTick {
   double p95_ms = 8;
   double p99_ms = 9;
   map<string, GroupTick> groups = 10;
+  // A bounded set of recent per-request samples (errors prioritized) for the
+  // live response-log view.
+  repeated Sample samples = 11;
 }
