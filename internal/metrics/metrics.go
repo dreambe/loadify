@@ -10,12 +10,19 @@ import (
 	hdr "github.com/HdrHistogram/hdrhistogram-go"
 )
 
-// Latency histogram bounds: 1µs .. 120s, 3 significant figures.
+// Latency histogram bounds: 1µs .. 600s, 3 significant figures.
 const (
 	latencyMinUs = 1
-	latencyMaxUs = 120_000_000
+	latencyMaxUs = 600_000_000
 	sigFigures   = 3
 )
+
+// NewHistogram returns a histogram with the canonical latency bounds. The
+// recorder and the coordinator's aggregator must use identical bounds so
+// per-worker histograms merge exactly.
+func NewHistogram() *hdr.Histogram {
+	return hdr.New(latencyMinUs, latencyMaxUs, sigFigures)
+}
 
 // StatusClass buckets a result into a coarse class for rollups.
 func StatusClass(status int32, ok bool, errKind string) string {
@@ -56,7 +63,7 @@ type Bucket struct {
 }
 
 func newBucket() *Bucket {
-	return &Bucket{Hist: hdr.New(latencyMinUs, latencyMaxUs, sigFigures)}
+	return &Bucket{Hist: NewHistogram()}
 }
 
 // Recorder accumulates samples for the current 1-second window.

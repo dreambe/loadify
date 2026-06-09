@@ -137,7 +137,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		DesiredWorkers: int32(req.DesiredWorkers),
 	})
 	if err != nil {
-		_ = s.pg.FinishRun(context.Background(), runID, "failed", json.RawMessage(`{"error":"dispatch failed"}`))
+		_, _ = s.pg.FinishRun(context.Background(), runID, "failed", json.RawMessage(`{"error":"dispatch failed"}`))
 		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
@@ -150,7 +150,8 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // watchRun blocks on the live stream; when it closes the run is finished, so we
-// compute the summary from the metric store and mark the run complete.
+// finalize it. If apisrv restarts and loses this goroutine, the reaper
+// (StartReaper) finalizes the orphaned run instead.
 func (s *Server) watchRun(runID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
@@ -164,16 +165,20 @@ func (s *Server) watchRun(runID string) {
 	}
 	// Allow rollups to flush, then summarize.
 	time.Sleep(2 * time.Second)
+	s.finalizeRun(runID, "completed")
+}
+
+// finalizeRun computes a run's summary, evaluates SLA thresholds and marks the
+// run terminal. It is idempotent (FinishRun is a no-op once terminal), so the
+// watcher and the reaper may both call it safely.
+func (s *Server) finalizeRun(runID, status string) {
 	sctx, scancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer scancel()
 	summary, total, serr := s.ch.Summary(sctx, runID)
-	status := "completed"
 	payload := map[string]any{"total_requests": total, "summary": summary}
 	if serr != nil {
 		s.log.Warn("run summary failed", "run", runID, "err", serr)
 	}
-
-	// Evaluate SLA thresholds (if any) and fail the run when breached.
 	if passed, checks, ok := s.evaluateThresholds(sctx, runID, summary, total); ok {
 		payload["passed"] = passed
 		payload["checks"] = checks
@@ -181,12 +186,59 @@ func (s *Server) watchRun(runID string) {
 			status = "failed"
 		}
 	}
-
 	body, _ := json.Marshal(payload)
-	if err := s.pg.FinishRun(sctx, runID, status, body); err != nil {
+	switched, err := s.pg.FinishRun(sctx, runID, status, body)
+	if err != nil {
 		s.log.Warn("finish run failed", "run", runID, "err", err)
+		return
 	}
-	s.log.Info("run finalized", "run", runID, "total", total, "status", status)
+	if switched {
+		s.log.Info("run finalized", "run", runID, "total", total, "status", status)
+	}
+}
+
+// StartReaper periodically reconciles runs left active by an apisrv restart:
+// a run the coordinator reports COMPLETED, no longer knows about, or that has
+// outlived maxRunAge is finalized so it never stays "running" forever.
+func (s *Server) StartReaper(ctx context.Context, interval, maxRunAge time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.reapOnce(ctx, maxRunAge)
+		}
+	}
+}
+
+func (s *Server) reapOnce(ctx context.Context, maxRunAge time.Duration) {
+	lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	runs, err := s.pg.ListActiveRuns(lctx)
+	if err != nil {
+		s.log.Warn("reaper: list active runs failed", "err", err)
+		return
+	}
+	for _, r := range runs {
+		// Give a freshly-started run time to register before reconciling.
+		if time.Since(r.CreatedAt) < 15*time.Second {
+			continue
+		}
+		st, serr := s.coord.GetRunState(lctx, &loadifyv1.RunStateRequest{RunId: r.ID})
+		switch {
+		case serr != nil:
+			// Coordinator doesn't know it (restarted / cleaned up). Finalize
+			// from whatever metrics exist.
+			s.finalizeRun(r.ID, "completed")
+		case st.Status == loadifyv1.RunStatus_RUN_STATUS_COMPLETED:
+			s.finalizeRun(r.ID, "completed")
+		case time.Since(r.CreatedAt) > maxRunAge:
+			s.log.Warn("reaper: aborting overdue run", "run", r.ID, "age", time.Since(r.CreatedAt))
+			s.finalizeRun(r.ID, "aborted")
+		}
+	}
 }
 
 // evaluateThresholds loads the run's test thresholds and checks them against the

@@ -46,7 +46,7 @@ func (d *Driver) Prepare(_ context.Context) error {
 		MaxIdleConnsPerHost: 1024,
 		IdleConnTimeout:     90 * time.Second,
 		ForceAttemptHTTP2:   true,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // load tester targets arbitrary endpoints
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: d.cfg.InsecureSkipVerify}, //nolint:gosec // opt-in only, defaults to verifying
 	}
 	// No client-level timeout: streams are long-lived; we bound each Exec via ctx.
 	d.client = &http.Client{Transport: tr}

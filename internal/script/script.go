@@ -63,7 +63,8 @@ func (d *Driver) Prepare(_ context.Context) error {
 		MaxIdleConnsPerHost: 1024,
 		IdleConnTimeout:     90 * time.Second,
 		ForceAttemptHTTP2:   true,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // load tester targets arbitrary endpoints
+		// TLS is verified by default; scripts target real endpoints.
+		TLSClientConfig: &tls.Config{},
 	}
 	d.client = &http.Client{Transport: tr, Timeout: d.timeout}
 	d.vus = make(map[int]*vu)

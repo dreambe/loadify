@@ -10,6 +10,7 @@ export interface HttpRequest {
   headers: { key: string; value: string }[];
   body: string;
   expectStatus: number;
+  insecureSkipVerify: boolean;
 }
 
 export const emptyHttpRequest: HttpRequest = {
@@ -18,6 +19,7 @@ export const emptyHttpRequest: HttpRequest = {
   headers: [],
   body: "",
   expectStatus: 0,
+  insecureSkipVerify: false,
 };
 
 // toPlan converts the form into the backend plan object.
@@ -32,6 +34,7 @@ export function httpRequestToPlan(protocol: string, r: HttpRequest): unknown {
       ...(Object.keys(headers).length ? { headers } : {}),
       ...(r.body ? { body: r.body } : {}),
       ...(r.expectStatus ? { expect_status: r.expectStatus } : {}),
+      ...(r.insecureSkipVerify ? { insecure_skip_verify: true } : {}),
     },
   };
 }
@@ -115,6 +118,15 @@ export default function HttpRequestBuilder({
 
       <label>{t("http.body")}</label>
       <textarea rows={4} value={value.body} onChange={(e) => onChange({ ...value, body: e.target.value })} />
+
+      <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
+        <input
+          type="checkbox"
+          checked={value.insecureSkipVerify}
+          onChange={(e) => onChange({ ...value, insecureSkipVerify: e.target.checked })}
+        />
+        {t("http.insecure")}
+      </label>
     </div>
   );
 }

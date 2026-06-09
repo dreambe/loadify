@@ -22,6 +22,12 @@ jobs:
         run: PATH="$(go env GOPATH)/bin:$PATH" buf generate
       - name: Vet
         run: go vet ./...
+      - name: Vulnerability scan (informational)
+        # Surfaces known vulnerabilities in called code; non-blocking for now.
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
       - name: Test (race)
         run: go test -race ./...
       - name: Build

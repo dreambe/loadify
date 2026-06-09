@@ -136,10 +136,38 @@ func (s *Store) SetRunRunning(ctx context.Context, id string) error {
 	return err
 }
 
-// FinishRun marks a run terminal with a summary.
-func (s *Store) FinishRun(ctx context.Context, id, status string, summary json.RawMessage) error {
-	_, err := s.pool.Exec(ctx, `UPDATE runs SET status=$2, ended_at=now(), summary=$3 WHERE id=$1`, id, status, summary)
-	return err
+// FinishRun marks a run terminal with a summary. It is idempotent: a run that
+// is already terminal is left untouched, so the watcher and the reaper can race
+// safely. Returns true when this call performed the transition.
+func (s *Store) FinishRun(ctx context.Context, id, status string, summary json.RawMessage) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE runs SET status=$2, ended_at=now(), summary=$3
+		WHERE id=$1 AND status NOT IN ('completed','failed','aborted')`, id, status, summary)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// ListActiveRuns returns runs that are still pending or running, oldest first,
+// so a reaper can reconcile orphans left by an apisrv restart.
+func (s *Store) ListActiveRuns(ctx context.Context) ([]Run, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, test_def_id, status, desired_workers, started_at, ended_at, coalesce(summary,'{}'), created_at
+		FROM runs WHERE status IN ('pending','running') ORDER BY created_at ASC LIMIT 500`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(&r.ID, &r.TestDefID, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // GetRun fetches a run.

@@ -11,16 +11,14 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/auth"
-	"github.com/dreambe/loadify/internal/store/clickhouse"
-	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 // Server wires the REST/WS API.
 type Server struct {
-	pg          *postgres.Store
-	ch          *clickhouse.Store
+	pg          metaStore
+	ch          metricsStore
 	coord       loadifyv1.CoordinatorServiceClient
 	log         *slog.Logger
 	mux         *chi.Mux
@@ -33,8 +31,8 @@ type Server struct {
 
 // Config configures the Server.
 type Config struct {
-	Postgres    *postgres.Store
-	ClickHouse  *clickhouse.Store
+	Postgres    metaStore
+	ClickHouse  metricsStore
 	Coordinator loadifyv1.CoordinatorServiceClient
 	Logger      *slog.Logger
 	JWTSecret   string

@@ -111,6 +111,9 @@ func main() {
 		}
 	}()
 
+	// Reconcile runs orphaned by a restart, and abort runs that overrun.
+	go srv.StartReaper(ctx, 30*time.Second, 6*time.Hour)
+
 	<-ctx.Done()
 	log.Info("shutting down")
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

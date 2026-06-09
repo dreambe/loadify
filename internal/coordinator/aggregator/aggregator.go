@@ -11,7 +11,6 @@ import (
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/metrics"
 	"github.com/dreambe/loadify/internal/store"
-	hdr "github.com/HdrHistogram/hdrhistogram-go"
 )
 
 // finalizeGrace is how long a 1s bucket waits for late batches before it is
@@ -67,7 +66,7 @@ func (a *Aggregator) Ingest(b *loadifyv1.MetricBatch) {
 		k := metrics.Key{Group: agg.Group, StatusClass: agg.StatusClass}
 		dst := bk[k]
 		if dst == nil {
-			dst = &metrics.Bucket{Hist: hdr.New(1, 120_000_000, 3)}
+			dst = &metrics.Bucket{Hist: metrics.NewHistogram()}
 			bk[k] = dst
 		}
 		dst.Count += agg.Count
@@ -167,7 +166,7 @@ func (a *Aggregator) finalize(now time.Time) {
 // collect turns one second's buckets into a rollup row set plus an aggregate
 // LiveTick across all groups.
 func (a *Aggregator) collect(sec int64, ts time.Time, bk map[metrics.Key]*metrics.Bucket, activeVUs int64, samples []*loadifyv1.Sample, rows []store.Rollup, ticks []*loadifyv1.LiveTick) ([]store.Rollup, []*loadifyv1.LiveTick) {
-	total := hdr.New(1, 120_000_000, 3)
+	total := metrics.NewHistogram()
 	var count, errors int64
 	groups := make(map[string]*loadifyv1.GroupTick)
 	for k, b := range bk {

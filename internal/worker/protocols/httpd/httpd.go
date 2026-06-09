@@ -48,7 +48,7 @@ func (d *Driver) Prepare(_ context.Context) error {
 		IdleConnTimeout:       90 * time.Second,
 		ForceAttemptHTTP2:     true,
 		DisableKeepAlives:     d.cfg.DisableKeepAlive,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // load tester targets arbitrary endpoints
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: d.cfg.InsecureSkipVerify}, //nolint:gosec // opt-in only, defaults to verifying
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	d.client = &http.Client{

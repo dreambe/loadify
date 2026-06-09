@@ -44,39 +44,44 @@ type HTTPConfig struct {
 	TimeoutMs int64             `json:"timeout_ms,omitempty"`
 	// DisableKeepAlive forces a fresh connection per request (cold-connection test).
 	DisableKeepAlive bool `json:"disable_keepalive,omitempty"`
+	// InsecureSkipVerify disables TLS certificate verification (default: verify).
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
 	// ExpectStatus, when set, marks any other status as a failure.
-	ExpectStatus int `json:"expect_status,omitempty"`
+	ExpectStatus int    `json:"expect_status,omitempty"`
 	Group        string `json:"group,omitempty"`
 }
 
 // GRPCConfig describes a gRPC call (dynamic invocation by descriptor).
 type GRPCConfig struct {
-	Target         string            `json:"target"`
-	FullMethod     string            `json:"full_method"` // /pkg.Svc/Method
-	RequestJSON    string            `json:"request_json,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-	DescriptorSet  []byte            `json:"descriptor_set,omitempty"`
-	TimeoutMs      int64             `json:"timeout_ms,omitempty"`
-	PlaintextProbe bool              `json:"plaintext,omitempty"`
-	Group          string            `json:"group,omitempty"`
+	Target             string            `json:"target"`
+	FullMethod         string            `json:"full_method"` // /pkg.Svc/Method
+	RequestJSON        string            `json:"request_json,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+	DescriptorSet      []byte            `json:"descriptor_set,omitempty"`
+	TimeoutMs          int64             `json:"timeout_ms,omitempty"`
+	PlaintextProbe     bool              `json:"plaintext,omitempty"`
+	InsecureSkipVerify bool              `json:"insecure_skip_verify,omitempty"`
+	Group              string            `json:"group,omitempty"`
 }
 
 // WSConfig describes a WebSocket session.
 type WSConfig struct {
-	URL          string            `json:"url"`
-	Headers      map[string]string `json:"headers,omitempty"`
-	SendMessages []string          `json:"send_messages,omitempty"`
-	ExpectEcho   bool              `json:"expect_echo,omitempty"`
-	Group        string            `json:"group,omitempty"`
+	URL                string            `json:"url"`
+	Headers            map[string]string `json:"headers,omitempty"`
+	SendMessages       []string          `json:"send_messages,omitempty"`
+	ExpectEcho         bool              `json:"expect_echo,omitempty"`
+	InsecureSkipVerify bool              `json:"insecure_skip_verify,omitempty"`
+	Group              string            `json:"group,omitempty"`
 }
 
 // SSEConfig describes a Server-Sent-Events stream.
 type SSEConfig struct {
-	URL        string            `json:"url"`
-	Headers    map[string]string `json:"headers,omitempty"`
-	MaxEvents  int               `json:"max_events,omitempty"`
-	TimeoutMs  int64             `json:"timeout_ms,omitempty"`
-	Group      string            `json:"group,omitempty"`
+	URL                string            `json:"url"`
+	Headers            map[string]string `json:"headers,omitempty"`
+	MaxEvents          int               `json:"max_events,omitempty"`
+	TimeoutMs          int64             `json:"timeout_ms,omitempty"`
+	InsecureSkipVerify bool              `json:"insecure_skip_verify,omitempty"`
+	Group              string            `json:"group,omitempty"`
 }
 
 // Parse decodes and validates a plan from JSON.

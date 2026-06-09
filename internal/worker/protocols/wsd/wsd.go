@@ -6,6 +6,8 @@ package wsd
 
 import (
 	"context"
+	"crypto/tls"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -30,9 +32,10 @@ func factory(p *plan.Plan) (protocols.Driver, error) {
 // Driver drives WebSocket load. It is safe for concurrent Exec across VUs; each
 // VU's connection is isolated in the conns map keyed by VU id.
 type Driver struct {
-	cfg     *plan.WSConfig
-	group   string
-	timeout time.Duration
+	cfg        *plan.WSConfig
+	group      string
+	timeout    time.Duration
+	httpClient *http.Client // set only when TLS verification is disabled
 
 	mu    sync.Mutex
 	conns map[int]*websocket.Conn
@@ -46,6 +49,13 @@ func (d *Driver) Prepare(_ context.Context) error {
 		d.group = "default"
 	}
 	d.timeout = 30 * time.Second
+	if d.cfg.InsecureSkipVerify {
+		d.httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // opt-in only
+			},
+		}
+	}
 	return nil
 }
 
@@ -121,6 +131,9 @@ func (d *Driver) connFor(ctx context.Context, vuID int) (conn *websocket.Conn, f
 	}
 
 	opts := &websocket.DialOptions{}
+	if d.httpClient != nil {
+		opts.HTTPClient = d.httpClient
+	}
 	if len(d.cfg.Headers) > 0 {
 		opts.HTTPHeader = make(map[string][]string, len(d.cfg.Headers))
 		for k, v := range d.cfg.Headers {

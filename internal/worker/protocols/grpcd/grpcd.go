@@ -98,7 +98,7 @@ func (d *Driver) Prepare(_ context.Context) error {
 
 	creds := credentials.TransportCredentials(insecure.NewCredentials())
 	if !d.cfg.PlaintextProbe {
-		creds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // load tester targets arbitrary endpoints
+		creds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: d.cfg.InsecureSkipVerify}) //nolint:gosec // opt-in only, defaults to verifying
 	}
 	conn, err := grpc.NewClient(d.cfg.Target,
 		grpc.WithTransportCredentials(creds),
