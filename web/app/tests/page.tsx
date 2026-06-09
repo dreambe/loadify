@@ -134,7 +134,11 @@ export default function TestsPage() {
                   rows={4}
                   value={script}
                   onChange={(e) => setScript(e.target.value)}
-                  placeholder={'function iteration() { http.get("http://echo:8088/"); }'}
+                  placeholder={`function iteration() {
+  var r = http.get("http://echo:8088/");
+  check("status 200", r.status === 200);
+  // extract & chain: var data = JSON.parse(r.body); http.post(url, JSON.stringify(data));
+}`}
                 />
               </>
             )}

@@ -132,6 +132,7 @@ func (d *Driver) buildVU() (*vu, error) {
 
 	bindConsole(rt)
 	bindSleep(rt)
+	bindCheck(rt, acc)
 	if err := bindHTTP(rt, d.client, acc); err != nil {
 		return nil, err
 	}
@@ -158,20 +159,23 @@ func resolveEntrypoint(rt *goja.Runtime) (goja.Callable, error) {
 // accumulator folds the http calls made during one iteration into a single
 // Result. It is owned by one VU runtime (single-threaded), so it needs no lock.
 type accumulator struct {
-	ctx       context.Context
-	latencyUs int64
-	ttfbUs    int64
-	sent      int64
-	recv      int64
-	status    int32
-	calls     int
-	failed    bool
-	errKind   string
+	ctx        context.Context
+	latencyUs  int64
+	ttfbUs     int64
+	sent       int64
+	recv       int64
+	status     int32
+	calls      int
+	checks     int
+	checkFails int
+	failed     bool
+	errKind    string
 }
 
 func (a *accumulator) reset() {
 	a.latencyUs, a.ttfbUs, a.sent, a.recv = 0, 0, 0, 0
-	a.status, a.calls, a.failed, a.errKind = 0, 0, false, ""
+	a.status, a.calls, a.checks, a.checkFails = 0, 0, 0, 0
+	a.failed, a.errKind = false, ""
 }
 
 func (a *accumulator) result(group string) protocols.Result {
@@ -201,6 +205,25 @@ func bindConsole(rt *goja.Runtime) {
 	_ = obj.Set("error", noop)
 	_ = obj.Set("warn", noop)
 	_ = rt.Set("console", obj)
+}
+
+// bindCheck exposes check(name, condition): an assertion. A failed check marks
+// the iteration as failed (counted as an error and surfaced in the live log),
+// mirroring k6's check(). Returns the boolean condition.
+func bindCheck(rt *goja.Runtime, acc *accumulator) {
+	_ = rt.Set("check", func(call goja.FunctionCall) goja.Value {
+		name := call.Argument(0).String()
+		cond := call.Argument(1).ToBoolean()
+		acc.checks++
+		if !cond {
+			acc.checkFails++
+			acc.failed = true
+			if acc.errKind == "" {
+				acc.errKind = "check:" + name
+			}
+		}
+		return rt.ToValue(cond)
+	})
 }
 
 // bindSleep exposes sleep(seconds) backed by a real pause.

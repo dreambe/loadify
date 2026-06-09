@@ -78,6 +78,40 @@ func TestScriptDriverThrowMarksFailure(t *testing.T) {
 	}
 }
 
+func TestScriptCheckFailsIteration(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	run := func(src string) protocols.Result {
+		src = "var BASE = " + jsString(srv.URL) + ";\n" + src
+		drv, err := script.New(&loadifyv1.ScriptBundle{MainJs: src}, nil, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := context.Background()
+		if err := drv.Prepare(ctx); err != nil {
+			t.Fatal(err)
+		}
+		defer drv.Teardown(ctx)
+		return drv.Exec(ctx, &protocols.VU{ID: 1})
+	}
+
+	// A passing check leaves a successful request OK.
+	if res := run(`function iteration(){ var r = http.get(BASE); check("ok", r.status === 200); }`); !res.OK {
+		t.Errorf("passing check should stay OK, kind=%q", res.ErrorKind)
+	}
+	// A failing check fails the iteration even though the request succeeded.
+	res := run(`function iteration(){ http.get(BASE); check("bad", false); }`)
+	if res.OK {
+		t.Error("failing check should fail the iteration")
+	}
+	if res.ErrorKind != "check:bad" {
+		t.Errorf("error kind = %q, want check:bad", res.ErrorKind)
+	}
+}
+
 func TestScriptCompileError(t *testing.T) {
 	_, err := script.New(&loadifyv1.ScriptBundle{MainJs: "function ("}, nil, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
 	if err == nil {
