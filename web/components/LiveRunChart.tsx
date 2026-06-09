@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { liveSocketURL } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import type { LiveTick } from "@/lib/types";
 import LineChart from "./LineChart";
 
@@ -10,6 +11,7 @@ const MAX_POINTS = 120;
 // LiveRunChart opens a WebSocket to the run's live stream and renders rolling
 // RPS / latency / error-rate charts plus the latest headline metrics.
 export default function LiveRunChart({ runId }: { runId: string }) {
+  const { t } = useI18n();
   const [ticks, setTicks] = useState<LiveTick[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -35,39 +37,40 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   return (
     <div>
       <div className="metrics-grid">
-        <Metric label="Status" value={connected ? "● live" : "○ closed"} />
-        <Metric label="QPS" value={fmt(last?.rps)} />
-        <Metric label="Active VUs" value={last ? String(last.active_vus) : "–"} />
-        <Metric label="Error rate" value={last ? (last.error_rate * 100).toFixed(2) + "%" : "–"} />
+        <Metric label={t("live.status")} value={connected ? t("live.live") : t("live.closed")} />
+        <Metric label={t("live.qps")} value={fmt(last?.rps)} />
+        <Metric label={t("live.activeVus")} value={last ? String(last.active_vus) : "–"} />
+        <Metric
+          label={t("live.errorRate")}
+          value={last ? (last.error_rate * 100).toFixed(2) + "%" : "–"}
+        />
         <Metric label="p50" value={fmt(last?.p50_ms) + " ms"} />
         <Metric label="p95" value={fmt(last?.p95_ms) + " ms"} />
         <Metric label="p99" value={fmt(last?.p99_ms) + " ms"} />
       </div>
 
       <div className="panel" style={{ marginTop: 16 }}>
-        <h2>Throughput (QPS)</h2>
-        <LineChart
-          series={[{ label: "qps", color: "#2f81f7", data: ticks.map((t) => t.rps) }]}
-        />
+        <h2>{t("run.throughput")}</h2>
+        <LineChart series={[{ label: "qps", color: "#2f81f7", data: ticks.map((tk) => tk.rps) }]} />
       </div>
 
       <div className="panel">
-        <h2>Latency (ms)</h2>
+        <h2>{t("run.latency")}</h2>
         <LineChart
           unit="ms"
           series={[
-            { label: "p50", color: "#3fb950", data: ticks.map((t) => t.p50_ms) },
-            { label: "p95", color: "#d29922", data: ticks.map((t) => t.p95_ms) },
-            { label: "p99", color: "#f85149", data: ticks.map((t) => t.p99_ms) },
+            { label: "p50", color: "#3fb950", data: ticks.map((tk) => tk.p50_ms) },
+            { label: "p95", color: "#d29922", data: ticks.map((tk) => tk.p95_ms) },
+            { label: "p99", color: "#f85149", data: ticks.map((tk) => tk.p99_ms) },
           ]}
         />
       </div>
 
       <div className="panel">
-        <h2>Error rate (%)</h2>
+        <h2>{t("run.errorRate")}</h2>
         <LineChart
           series={[
-            { label: "errors", color: "#f85149", data: ticks.map((t) => t.error_rate * 100) },
+            { label: "errors", color: "#f85149", data: ticks.map((tk) => tk.error_rate * 100) },
           ]}
         />
       </div>

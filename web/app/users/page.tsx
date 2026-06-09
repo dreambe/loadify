@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import type { User } from "@/lib/types";
 
 export default function UsersPage() {
+  const { t } = useI18n();
   const { user, ready } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [email, setEmail] = useState("");
@@ -42,7 +44,7 @@ export default function UsersPage() {
       <>
         <Nav />
         <div className="container">
-          <p className="error">Admin access required.</p>
+          <p className="error">{t("users.adminRequired")}</p>
         </div>
       </>
     );
@@ -52,20 +54,20 @@ export default function UsersPage() {
     <>
       <Nav />
       <div className="container">
-        <h1>Users</h1>
+        <h1>{t("users.title")}</h1>
         <form className="panel" onSubmit={create}>
-          <h2>New user</h2>
+          <h2>{t("users.new")}</h2>
           <div className="row">
             <div>
-              <label>Email</label>
+              <label>{t("users.email")}</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div>
-              <label>Name</label>
+              <label>{t("users.name")}</label>
               <input value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div>
-              <label>Role</label>
+              <label>{t("users.role")}</label>
               <select value={role} onChange={(e) => setRole(e.target.value)}>
                 {["viewer", "operator", "admin"].map((r) => (
                   <option key={r}>{r}</option>
@@ -73,10 +75,10 @@ export default function UsersPage() {
               </select>
             </div>
             <div>
-              <label>Password</label>
+              <label>{t("users.password")}</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            <button type="submit">Create</button>
+            <button type="submit">{t("users.create")}</button>
           </div>
           {err && <div className="error">{err}</div>}
         </form>
@@ -85,9 +87,9 @@ export default function UsersPage() {
           <table>
             <thead>
               <tr>
-                <th>Email</th>
-                <th>Name</th>
-                <th>Role</th>
+                <th>{t("users.colEmail")}</th>
+                <th>{t("users.colName")}</th>
+                <th>{t("users.colRole")}</th>
               </tr>
             </thead>
             <tbody>

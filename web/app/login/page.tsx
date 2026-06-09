@@ -3,8 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { setSession, setToken } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 
 function LoginInner() {
+  const { t, lang, setLang } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -23,9 +25,9 @@ function LoginInner() {
           setSession(window.localStorage.getItem("loadify_token") || "", u);
           window.location.href = "/runs";
         })
-        .catch(() => setErr("feishu login failed"));
+        .catch(() => setErr(t("login.feishuFailed")));
     }
-  }, []);
+  }, [t]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,7 +38,7 @@ function LoginInner() {
       setSession(res.token, res.user);
       window.location.href = "/runs";
     } catch (e: any) {
-      setErr(e.message || "login failed");
+      setErr(e.message || t("login.failed"));
     } finally {
       setBusy(false);
     }
@@ -44,11 +46,16 @@ function LoginInner() {
 
   return (
     <div className="container" style={{ maxWidth: 380 }}>
-      <h1>Sign in to loadify</h1>
+      <div style={{ textAlign: "right" }}>
+        <button className="secondary" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
+          {lang === "zh" ? "EN" : "中文"}
+        </button>
+      </div>
+      <h1>{t("login.title")}</h1>
       <form className="panel" onSubmit={submit}>
-        <label>Email</label>
+        <label>{t("login.email")}</label>
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
-        <label>Password</label>
+        <label>{t("login.password")}</label>
         <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -58,12 +65,12 @@ function LoginInner() {
         {err && <div className="error">{err}</div>}
         <div style={{ marginTop: 16 }}>
           <button type="submit" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
+            {busy ? t("login.signingin") : t("login.signin")}
           </button>
         </div>
       </form>
       <p className="muted" style={{ textAlign: "center" }}>
-        <a href={api.feishuLoginURL()}>Sign in with Feishu</a>
+        <a href={api.feishuLoginURL()}>{t("login.feishu")}</a>
       </p>
     </div>
   );

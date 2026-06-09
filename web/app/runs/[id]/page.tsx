@@ -6,9 +6,11 @@ import LiveRunChart from "@/components/LiveRunChart";
 import LineChart from "@/components/LineChart";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import type { Run, SeriesPoint } from "@/lib/types";
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
+  const { t } = useI18n();
   const { user, ready } = useAuth();
   const [run, setRun] = useState<Run | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
@@ -38,7 +40,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
       <Nav />
       <div className="container">
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <h1>Run {runId.slice(0, 8)}</h1>
+          <h1>
+            {t("run.title")} {runId.slice(0, 8)}
+          </h1>
           {run && <span className={`badge ${run.status}`}>{run.status}</span>}
         </div>
 
@@ -47,7 +51,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             className="secondary"
             onClick={() => api.stopRun(runId).then(() => api.getRun(runId).then(setRun))}
           >
-            Stop run
+            {t("run.stop")}
           </button>
         )}
 
@@ -56,13 +60,13 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
         {terminal && (
           <div>
             <div className="panel">
-              <h2>Throughput (QPS)</h2>
+              <h2>{t("run.throughput")}</h2>
               <LineChart
                 series={[{ label: "qps", color: "#2f81f7", data: series.map((p) => p.rps) }]}
               />
             </div>
             <div className="panel">
-              <h2>Latency (ms)</h2>
+              <h2>{t("run.latency")}</h2>
               <LineChart
                 unit="ms"
                 series={[
@@ -74,7 +78,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             </div>
             {run?.summary != null && (
               <div className="panel">
-                <h2>Summary</h2>
+                <h2>{t("run.summary")}</h2>
                 <pre style={{ overflow: "auto" }}>{JSON.stringify(run.summary, null, 2)}</pre>
               </div>
             )}

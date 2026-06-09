@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import type { TestDefinition } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
@@ -16,6 +17,7 @@ const SAMPLE_RAMP = `[
 ]`;
 
 export default function TestsPage() {
+  const { t } = useI18n();
   const { user, ready } = useAuth();
   const [tests, setTests] = useState<TestDefinition[]>([]);
   const [name, setName] = useState("");
@@ -43,12 +45,12 @@ export default function TestsPage() {
       planObj = JSON.parse(plan);
       rampObj = ramp.trim() ? JSON.parse(ramp) : [];
     } catch {
-      setErr("plan/ramp must be valid JSON");
+      setErr(t("tests.jsonErr"));
       return;
     }
     try {
       await api.createTest({ name, protocol, plan: planObj, ramp: rampObj, script: script || undefined });
-      setOk("Test created");
+      setOk(t("tests.created"));
       setName("");
       refresh();
     } catch (e: any) {
@@ -63,18 +65,18 @@ export default function TestsPage() {
     <>
       <Nav />
       <div className="container">
-        <h1>Tests</h1>
+        <h1>{t("tests.title")}</h1>
 
         {canCreate && (
           <form className="panel" onSubmit={create}>
-            <h2>New test</h2>
+            <h2>{t("tests.new")}</h2>
             <div className="row">
               <div style={{ flex: 1 }}>
-                <label>Name</label>
+                <label>{t("tests.name")}</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} required style={{ width: "100%" }} />
               </div>
               <div>
-                <label>Protocol</label>
+                <label>{t("tests.protocol")}</label>
                 <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
                   {["http", "https", "grpc", "websocket", "sse", "script"].map((p) => (
                     <option key={p}>{p}</option>
@@ -82,11 +84,11 @@ export default function TestsPage() {
                 </select>
               </div>
             </div>
-            <label>Plan (JSON)</label>
+            <label>{t("tests.plan")}</label>
             <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
-            <label>Ramp (JSON array of stages)</label>
+            <label>{t("tests.ramp")}</label>
             <textarea rows={4} value={ramp} onChange={(e) => setRamp(e.target.value)} />
-            <label>Script (optional, goja JS — define iteration())</label>
+            <label>{t("tests.script")}</label>
             <textarea
               rows={4}
               value={script}
@@ -96,7 +98,7 @@ export default function TestsPage() {
             {err && <div className="error">{err}</div>}
             {ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
             <div style={{ marginTop: 12 }}>
-              <button type="submit">Create test</button>
+              <button type="submit">{t("tests.create")}</button>
             </div>
           </form>
         )}
@@ -105,23 +107,23 @@ export default function TestsPage() {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Protocol</th>
-                <th>Created</th>
+                <th>{t("tests.colName")}</th>
+                <th>{t("tests.colProtocol")}</th>
+                <th>{t("tests.colCreated")}</th>
               </tr>
             </thead>
             <tbody>
-              {tests.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.name}</td>
-                  <td>{t.protocol}</td>
-                  <td className="muted">{new Date(t.created_at).toLocaleString()}</td>
+              {tests.map((td) => (
+                <tr key={td.id}>
+                  <td>{td.name}</td>
+                  <td>{td.protocol}</td>
+                  <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
                 </tr>
               ))}
               {tests.length === 0 && (
                 <tr>
                   <td colSpan={3} className="muted">
-                    No tests defined.
+                    {t("tests.empty")}
                   </td>
                 </tr>
               )}

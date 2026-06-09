@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import type { WorkerInfo } from "@/lib/types";
 
 export default function WorkersPage() {
+  const { t } = useI18n();
   const { ready } = useAuth();
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
 
@@ -24,16 +26,16 @@ export default function WorkersPage() {
     <>
       <Nav />
       <div className="container">
-        <h1>Workers</h1>
+        <h1>{t("workers.title")}</h1>
         <div className="panel">
           <table>
             <thead>
               <tr>
-                <th>Worker</th>
-                <th>Region</th>
-                <th>Status</th>
-                <th>Active VUs</th>
-                <th>Last seen</th>
+                <th>{t("workers.colWorker")}</th>
+                <th>{t("workers.colRegion")}</th>
+                <th>{t("workers.colStatus")}</th>
+                <th>{t("workers.colActive")}</th>
+                <th>{t("workers.colLastSeen")}</th>
               </tr>
             </thead>
             <tbody>
@@ -55,7 +57,7 @@ export default function WorkersPage() {
               {workers.length === 0 && (
                 <tr>
                   <td colSpan={5} className="muted">
-                    No workers connected.
+                    {t("workers.empty")}
                   </td>
                 </tr>
               )}

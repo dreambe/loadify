@@ -5,9 +5,11 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useI18n } from "@/lib/i18n";
 import type { Run, TestDefinition } from "@/lib/types";
 
 export default function RunsPage() {
+  const { t } = useI18n();
   const { user, ready } = useAuth();
   const [runs, setRuns] = useState<Run[]>([]);
   const [tests, setTests] = useState<TestDefinition[]>([]);
@@ -49,25 +51,25 @@ export default function RunsPage() {
     <>
       <Nav />
       <div className="container">
-        <h1>Runs</h1>
+        <h1>{t("runs.title")}</h1>
 
         {canRun && (
           <div className="panel">
-            <h2>Start a run</h2>
+            <h2>{t("runs.start")}</h2>
             <div className="row">
               <div>
-                <label>Test</label>
+                <label>{t("runs.test")}</label>
                 <select value={testId} onChange={(e) => setTestId(e.target.value)}>
-                  <option value="">Select a test…</option>
-                  {tests.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.protocol})
+                  <option value="">{t("runs.selectTest")}</option>
+                  {tests.map((td) => (
+                    <option key={td.id} value={td.id}>
+                      {td.name} ({td.protocol})
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label>Workers</label>
+                <label>{t("runs.workers")}</label>
                 <input
                   type="number"
                   min={1}
@@ -77,7 +79,7 @@ export default function RunsPage() {
                 />
               </div>
               <button onClick={start} disabled={!testId}>
-                Start run
+                {t("runs.startBtn")}
               </button>
             </div>
           </div>
@@ -89,10 +91,10 @@ export default function RunsPage() {
           <table>
             <thead>
               <tr>
-                <th>Run</th>
-                <th>Status</th>
-                <th>Workers</th>
-                <th>Started</th>
+                <th>{t("runs.colRun")}</th>
+                <th>{t("runs.colStatus")}</th>
+                <th>{t("runs.colWorkers")}</th>
+                <th>{t("runs.colStarted")}</th>
               </tr>
             </thead>
             <tbody>
@@ -113,7 +115,7 @@ export default function RunsPage() {
               {runs.length === 0 && (
                 <tr>
                   <td colSpan={4} className="muted">
-                    No runs yet.
+                    {t("runs.empty")}
                   </td>
                 </tr>
               )}
