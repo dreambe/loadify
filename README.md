@@ -32,6 +32,12 @@ OAuth**, and Docker Compose / Kubernetes (Helm) deployment.
   to the browser over WebSocket. Historical series are queried from ClickHouse.
 - **Auth** — local email/password (bcrypt) and Feishu OAuth login, HS256 JWTs,
   and `viewer < operator < admin` role-based access control.
+- **SLA thresholds** — k6-style pass/fail criteria (p50/p90/p95/p99, error rate,
+  QPS) evaluated at run finalize; any breach fails the run.
+- **Frontend (Next.js)** — switchable Chinese/English UI (default Chinese);
+  structured HTTP request + stepped ramp (stages) builders; live charts with
+  hover tooltips; a toggleable response log with an errors-only filter; and
+  side-by-side run comparison with color-coded deltas.
 
 ## Quick start (Docker Compose)
 

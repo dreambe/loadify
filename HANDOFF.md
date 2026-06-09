@@ -54,6 +54,18 @@ git push -u origin main
 - **M7**: Helm chart (apisrv/coordinatord/workerd/web + Secret, optional
   HPA + Ingress); verified with `helm lint`/`template`.
 
+## Beyond the roadmap (added on request)
+
+- Multi-worker distributed e2e test (3 workers, concurrent load, merged metrics).
+- Live response-log streaming (sampled per-request observations, errors first)
+  with a toggleable, errors-filterable UI panel.
+- Chart hover tooltips; structured HTTP-request and stepped-ramp (stages)
+  builders replacing raw JSON.
+- SLA thresholds (internal/sla): k6-style pass/fail evaluated at run finalize;
+  any breach fails the run; results shown per-check in the run page.
+- Side-by-side run comparison page with color-coded deltas.
+- Switchable zh/en UI (default Chinese). Frontend build added to CI.
+
 ## Verified
 
 `go build ./...`, `go vet ./...`, `go test -race ./...` all pass; `next build`
