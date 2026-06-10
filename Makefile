@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 GOPATH_BIN := $(shell go env GOPATH)/bin
-BINS := apisrv coordinatord workerd loadifyctl
+BINS := apisrv coordinatord workerd loadifyctl loadify-mcp
 
 .PHONY: all build proto tidy test vet lint run-echo clean help web-install web-build web-dev helm-lint
 

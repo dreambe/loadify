@@ -71,6 +71,32 @@ go run ./cmd/loadifyctl --api http://localhost:8080 \
   --script scenario.js --vus 25 --duration 20s
 ```
 
+## Use from agents / automation
+
+loadify is built to be driven by autonomous agents as well as people. Three
+equivalent entry points:
+
+- **MCP server** (`loadify-mcp`) — a Model Context Protocol server (stdio) that
+  exposes tools (`loadify_quick_run`, `loadify_run_status`, `loadify_list_workers`)
+  so any MCP client can create and run tests and read results. Register it:
+
+  ```json
+  { "mcpServers": { "loadify": {
+      "command": "loadify-mcp",
+      "env": { "LOADIFY_API": "http://localhost:8080", "LOADIFY_TOKEN": "<jwt>" } } } }
+  ```
+
+  An agent then calls, e.g., `loadify_quick_run({ "url": "https://api/health",
+  "target_rps": 500, "duration_seconds": 60 })` and gets the pass/fail summary.
+
+- **REST API** — described by a machine-readable OpenAPI spec served at
+  `GET /openapi.yaml` (and in `internal/apisrv/openapi.yaml`). Authenticate via
+  `POST /api/v1/auth/login`, then `POST /api/v1/tests` + `POST /api/v1/runs` +
+  `GET /api/v1/runs/{id}`.
+
+- **CLI** (`loadifyctl`) — one command drives create → run → wait → summary,
+  handy in CI.
+
 ## Development
 
 ```bash

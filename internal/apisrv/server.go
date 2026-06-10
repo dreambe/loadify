@@ -5,6 +5,7 @@ package apisrv
 
 import (
 	"context"
+	_ "embed"
 	"log/slog"
 	"net/http"
 	"time"
@@ -14,6 +15,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+// openAPISpec is the machine-readable API contract, served at /openapi.yaml so
+// agents and tooling can discover the REST API.
+//
+//go:embed openapi.yaml
+var openAPISpec []byte
 
 // Server wires the REST/WS API.
 type Server struct {
@@ -73,6 +80,10 @@ func (s *Server) routes() {
 	r.Use(corsMiddleware)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
+	r.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = w.Write(openAPISpec)
+	})
 
 	viewer := s.authmw.Require(auth.RoleViewer)
 	operator := s.authmw.Require(auth.RoleOperator)

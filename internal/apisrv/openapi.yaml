@@ -1,0 +1,172 @@
+openapi: 3.0.3
+info:
+  title: loadify API
+  version: "0.1.0"
+  description: >
+    REST API for the loadify distributed load-testing platform. Designed to be
+    driven by humans (the web UI), the loadifyctl CLI, and autonomous agents
+    (directly or via the loadify MCP server). Authenticate with a Bearer JWT
+    from POST /api/v1/auth/login.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      security: []
+      responses: { "200": { description: ok } }
+  /api/v1/auth/login:
+    post:
+      summary: Exchange email/password for a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: token + user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { description: invalid credentials }
+  /api/v1/auth/me:
+    get:
+      summary: Current user
+      responses: { "200": { description: user } }
+  /api/v1/tests:
+    get:
+      summary: List test definitions (role viewer+)
+      responses: { "200": { description: array of tests } }
+    post:
+      summary: Create a test definition (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTest" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { type: object, properties: { id: { type: string } } }
+        "400": { description: invalid plan }
+  /api/v1/tests/{id}:
+    get:
+      summary: Get a test definition
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: test } }
+  /api/v1/runs:
+    get:
+      summary: List runs (role viewer+)
+      responses: { "200": { description: array of runs } }
+    post:
+      summary: Start a run for a test (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [test_id]
+              properties:
+                test_id: { type: string }
+                desired_workers: { type: integer, description: "0 = all workers" }
+      responses:
+        "202":
+          description: run accepted
+          content:
+            application/json:
+              schema: { type: object, properties: { run_id: { type: string }, status: { type: string } } }
+  /api/v1/runs/{id}:
+    get:
+      summary: Get a run (status + summary, incl. SLA checks)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: run } }
+  /api/v1/runs/{id}/stop:
+    post:
+      summary: Stop a running run (role operator+)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "202": { description: stopping } }
+  /api/v1/runs/{id}/series:
+    get:
+      summary: Historical per-bucket metric series for charts
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: group, in: query, schema: { type: string }, description: "metric group, * = all" }
+        - { name: res, in: query, schema: { type: integer }, description: "bucket seconds" }
+      responses: { "200": { description: array of series points } }
+  /api/v1/runs/{id}/live:
+    get:
+      summary: WebSocket live tick stream (token via ?token=)
+      responses: { "101": { description: switching protocols } }
+  /api/v1/workers:
+    get:
+      summary: List connected load-generation workers
+      responses: { "200": { description: array of workers } }
+  /api/v1/users:
+    get:
+      summary: List users (role admin)
+      responses: { "200": { description: array of users } }
+    post:
+      summary: Create a user (role admin)
+      responses: { "201": { description: created } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [viewer, operator, admin] }
+    CreateTest:
+      type: object
+      required: [name, protocol, plan]
+      properties:
+        name: { type: string }
+        protocol: { type: string, enum: [http, https, grpc, websocket, sse, script] }
+        plan:
+          type: object
+          description: "Protocol plan, e.g. {protocol:'http', http:{method,url,headers,body,insecure_skip_verify}}; max_vus for the open model."
+        ramp:
+          type: array
+          description: "Stages: each {duration_ms, target_vus} (closed model) or {duration_ms, target_rps} (open/arrival-rate model)."
+          items:
+            type: object
+            properties:
+              duration_ms: { type: integer }
+              target_vus: { type: integer }
+              target_rps: { type: integer }
+        script: { type: string, description: "goja JS defining iteration(); use check() and nextRow()" }
+        dataset:
+          type: array
+          description: "Data-feeder rows; the script reads them with nextRow()."
+          items: { type: object }
+        thresholds:
+          type: array
+          description: "SLA pass/fail criteria; any breach fails the run."
+          items:
+            type: object
+            properties:
+              metric: { type: string, enum: [p50_ms, p90_ms, p95_ms, p99_ms, error_rate, qps] }
+              op: { type: string, enum: ["<", "<=", ">", ">="] }
+              value: { type: number }
