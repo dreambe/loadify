@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { Run, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
+import type { Run, Schedule, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
@@ -81,6 +81,15 @@ export const api = {
 
   listWorkers: () => req<WorkerInfo[]>("/api/v1/workers"),
 
+  listSchedules: () => req<Schedule[]>("/api/v1/schedules"),
+  createSchedule: (testId: string, intervalMinutes: number, desiredWorkers: number) =>
+    req<{ id: string }>("/api/v1/schedules", {
+      method: "POST",
+      body: JSON.stringify({ test_id: testId, interval_minutes: intervalMinutes, desired_workers: desiredWorkers }),
+    }),
+  setScheduleEnabled: (id: string, enabled: boolean) =>
+    req<{ enabled: boolean }>(`/api/v1/schedules/${id}/enabled?enabled=${enabled}`, { method: "POST" }),
+
   listUsers: () => req<User[]>("/api/v1/users"),
   createUser: (body: { email: string; name: string; role: string; password: string }) =>
     req<User>("/api/v1/users", { method: "POST", body: JSON.stringify(body) }),
@@ -92,4 +101,11 @@ export function liveSocketURL(runId: string): string {
   const base = API_BASE.replace(/^http/, "ws");
   const token = getToken() || "";
   return `${base}/api/v1/runs/${runId}/live?token=${encodeURIComponent(token)}`;
+}
+
+// exportCSVURL builds the CSV download link for a run (token via query param,
+// since a plain <a download> can't set headers).
+export function exportCSVURL(runId: string): string {
+  const token = getToken() || "";
+  return `${API_BASE}/api/v1/runs/${runId}/export.csv?token=${encodeURIComponent(token)}`;
 }

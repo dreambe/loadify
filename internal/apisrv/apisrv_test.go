@@ -24,10 +24,12 @@ type fakeMeta struct {
 	users      map[string]*postgres.User // by email
 	activeRuns []postgres.Run
 	finished   map[string]string // runID -> status
+	dueOnce     []postgres.Schedule
+	scheduleRun map[string]string // scheduleID -> runID
 }
 
 func newFakeMeta() *fakeMeta {
-	return &fakeMeta{users: map[string]*postgres.User{}, finished: map[string]string{}}
+	return &fakeMeta{users: map[string]*postgres.User{}, finished: map[string]string{}, scheduleRun: map[string]string{}}
 }
 
 func (f *fakeMeta) CreateTestDefinition(_ context.Context, _ *postgres.TestDefinition) (string, error) {
@@ -71,6 +73,23 @@ func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error) 
 func (f *fakeMeta) CreateUser(_ context.Context, email, name, role, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "new", Email: email, Name: name, Role: role}, nil
 }
+func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int) (string, error) {
+	return "sched-1", nil
+}
+func (f *fakeMeta) ListSchedules(_ context.Context, _ int) ([]postgres.Schedule, error) { return nil, nil }
+func (f *fakeMeta) SetScheduleEnabled(_ context.Context, _ string, _ bool) error        { return nil }
+func (f *fakeMeta) ClaimDueSchedule(_ context.Context) (*postgres.Schedule, error) {
+	if len(f.dueOnce) == 0 {
+		return nil, nil
+	}
+	sc := f.dueOnce[0]
+	f.dueOnce = f.dueOnce[1:]
+	return &sc, nil
+}
+func (f *fakeMeta) SetScheduleLastRun(_ context.Context, id, runID string) error {
+	f.scheduleRun[id] = runID
+	return nil
+}
 
 type fakeMetrics struct{}
 
@@ -96,6 +115,9 @@ func (c *fakeCoord) GetRunState(context.Context, *loadifyv1.RunStateRequest, ...
 		return c.getState()
 	}
 	return nil, status.Error(codes.NotFound, "unknown")
+}
+func (c *fakeCoord) StreamLive(context.Context, *loadifyv1.LiveRequest, ...grpc.CallOption) (loadifyv1.CoordinatorService_StreamLiveClient, error) {
+	return nil, status.Error(codes.Unavailable, "no stream in tests")
 }
 
 func newTestServer(meta *fakeMeta, coord loadifyv1.CoordinatorServiceClient) *Server {
@@ -205,6 +227,18 @@ func TestReaperFinalizesOrphans(t *testing.T) {
 	}
 	if _, done := meta.finished["brandnew"]; done {
 		t.Error("fresh run should not be finalized yet")
+	}
+}
+
+func TestSchedulerFiresDueSchedule(t *testing.T) {
+	meta := newFakeMeta()
+	meta.dueOnce = []postgres.Schedule{{ID: "sched-1", TestDefID: "test-1", IntervalMin: 5}}
+	srv := newTestServer(meta, &fakeCoord{})
+
+	srv.fireDueSchedules(context.Background())
+
+	if meta.scheduleRun["sched-1"] != "run-1" {
+		t.Errorf("schedule did not launch a run: %v", meta.scheduleRun)
 	}
 }
 

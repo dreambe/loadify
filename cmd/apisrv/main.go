@@ -113,6 +113,8 @@ func main() {
 
 	// Reconcile runs orphaned by a restart, and abort runs that overrun.
 	go srv.StartReaper(ctx, 30*time.Second, 6*time.Hour)
+	// Fire scheduled runs (claiming is multi-replica safe).
+	go srv.StartScheduler(ctx, 20*time.Second)
 
 	<-ctx.Done()
 	log.Info("shutting down")

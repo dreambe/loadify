@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import LineChart from "@/components/LineChart";
-import { api } from "@/lib/api";
+import { api, exportCSVURL } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import type { Run, SeriesPoint } from "@/lib/types";
@@ -43,7 +43,14 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <h1>
             {t("run.title")} {runId.slice(0, 8)}
           </h1>
-          {run && <span className={`badge ${run.status}`}>{run.status}</span>}
+          <div className="row" style={{ alignItems: "center" }}>
+            {terminal && (
+              <a className="badge" href={exportCSVURL(runId)} download>
+                ⬇ {t("run.exportCsv")}
+              </a>
+            )}
+            {run && <span className={`badge ${run.status}`}>{run.status}</span>}
+          </div>
         </div>
 
         {run?.status === "running" && canStop && (

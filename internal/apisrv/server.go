@@ -102,6 +102,7 @@ func (s *Server) routes() {
 		r.With(viewer).Get("/runs", s.handleListRuns)
 		r.With(viewer).Get("/runs/{id}", s.handleGetRun)
 		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)
+		r.With(viewer).Get("/runs/{id}/export.csv", s.handleRunExport) // token via ?token= works too
 		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
 		r.With(viewer).Get("/workers", s.handleListWorkers)
 
@@ -109,6 +110,11 @@ func (s *Server) routes() {
 		r.With(operator).Post("/tests", s.handleCreateTest)
 		r.With(operator).Post("/runs", s.handleStartRun)
 		r.With(operator).Post("/runs/{id}/stop", s.handleStopRun)
+
+		// Schedules: viewer reads, operator manages.
+		r.With(viewer).Get("/schedules", s.handleListSchedules)
+		r.With(operator).Post("/schedules", s.handleCreateSchedule)
+		r.With(operator).Post("/schedules/{id}/enabled", s.handleSetScheduleEnabled)
 
 		// User management is admin-only.
 		r.With(admin).Get("/users", s.handleListUsers)

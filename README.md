@@ -34,6 +34,10 @@ OAuth**, and Docker Compose / Kubernetes (Helm) deployment.
   and `viewer < operator < admin` role-based access control.
 - **SLA thresholds** — k6-style pass/fail criteria (p50/p90/p95/p99, error rate,
   QPS) evaluated at run finalize; any breach fails the run.
+- **Scheduling** — capacity-aware admission: runs queue when the cluster is at
+  its concurrent-run cap or workers are CPU-saturated, and drain as slots free.
+  Recurring **scheduled runs** (multi-replica-safe claiming) and **CSV export**
+  of per-second series.
 - **Frontend (Next.js)** — switchable Chinese/English UI (default Chinese);
   structured HTTP request + stepped ramp (stages) builders; live charts with
   hover tooltips; a toggleable response log with an errors-only filter; and
@@ -103,6 +107,7 @@ equivalent entry points:
 make build        # build all Go binaries into ./bin
 make test         # go test -race ./...
 make vet          # go vet ./...
+go test -bench . ./internal/metrics   # micro-benchmark the hot metrics path
 make web-install  # install frontend deps
 make web-build    # build the Next.js frontend
 make proto        # regenerate gRPC stubs (needs buf + protoc plugins)

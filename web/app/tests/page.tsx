@@ -12,7 +12,7 @@ import HttpRequestBuilder, {
   type HttpRequest,
 } from "@/components/HttpRequestBuilder";
 import ThresholdsEditor from "@/components/ThresholdsEditor";
-import type { TestDefinition, Threshold } from "@/lib/types";
+import type { Schedule, TestDefinition, Threshold } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
   "protocol": "grpc",
@@ -36,12 +36,33 @@ export default function TestsPage() {
 
   const isHTTP = protocol === "http" || protocol === "https";
 
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [schedTestId, setSchedTestId] = useState("");
+  const [schedInterval, setSchedInterval] = useState(60);
+
   function refresh() {
     api.listTests().then(setTests).catch((e) => setErr(e.message));
+    api.listSchedules().then(setSchedules).catch(() => {});
   }
   useEffect(() => {
     if (ready) refresh();
   }, [ready]);
+
+  async function createSchedule() {
+    if (!schedTestId || schedInterval <= 0) return;
+    try {
+      await api.createSchedule(schedTestId, schedInterval, 0);
+      refresh();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+  async function toggleSchedule(id: string, enabled: boolean) {
+    await api.setScheduleEnabled(id, enabled).catch(() => {});
+    refresh();
+  }
+
+  const testName = (id: string) => tests.find((t) => t.id === id)?.name || id.slice(0, 8);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -167,6 +188,64 @@ export default function TestsPage() {
               <button type="submit">{t("tests.create")}</button>
             </div>
           </form>
+        )}
+
+        {canCreate && (
+          <div className="panel">
+            <h2>{t("sched.title")}</h2>
+            <div className="row">
+              <div>
+                <label>{t("runs.test")}</label>
+                <select value={schedTestId} onChange={(e) => setSchedTestId(e.target.value)}>
+                  <option value="">{t("runs.selectTest")}</option>
+                  {tests.map((td) => (
+                    <option key={td.id} value={td.id}>
+                      {td.name} ({td.protocol})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>{t("sched.every")}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={schedInterval}
+                  onChange={(e) => setSchedInterval(parseInt(e.target.value || "1", 10))}
+                  style={{ width: 100 }}
+                />
+              </div>
+              <button onClick={createSchedule} disabled={!schedTestId}>
+                {t("sched.create")}
+              </button>
+            </div>
+            {schedules.length > 0 && (
+              <table style={{ marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    <th>{t("sched.colTest")}</th>
+                    <th>{t("sched.colInterval")}</th>
+                    <th>{t("sched.colNext")}</th>
+                    <th>{t("sched.colState")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.map((sc) => (
+                    <tr key={sc.id}>
+                      <td>{testName(sc.test_def_id)}</td>
+                      <td>{sc.interval_minutes} min</td>
+                      <td className="muted">{new Date(sc.next_run_at).toLocaleString()}</td>
+                      <td>
+                        <button className="secondary" onClick={() => toggleSchedule(sc.id, !sc.enabled)}>
+                          {sc.enabled ? t("sched.disable") : t("sched.enable")}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         )}
 
         <div className="panel">

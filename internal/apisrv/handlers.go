@@ -2,7 +2,9 @@ package apisrv
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,6 +16,27 @@ import (
 	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
 )
+
+// apiError carries an HTTP status with a message so shared helpers can return
+// errors that handlers map to the right code.
+type apiError struct {
+	code int
+	msg  string
+}
+
+func (e apiError) Error() string { return e.msg }
+
+func errNotFound(m string) error   { return apiError{http.StatusNotFound, m} }
+func errBadRequest(m string) error { return apiError{http.StatusBadRequest, m} }
+func errUnavailable(m string) error { return apiError{http.StatusServiceUnavailable, m} }
+
+func statusCodeFor(err error) int {
+	var a apiError
+	if errors.As(err, &a) {
+		return a.code
+	}
+	return http.StatusInternalServerError
+}
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -104,33 +127,38 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 
-	td, err := s.pg.GetTestDefinition(ctx, req.TestID)
+	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "test not found")
+		writeErr(w, statusCodeFor(err), err.Error())
 		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"run_id": runID, "status": runStatus})
+}
+
+// launchRun starts a run for a test definition and returns its id and status
+// ("running"/"queued"). Shared by the REST handler and the scheduler.
+func (s *Server) launchRun(ctx context.Context, testID string, workers int) (string, string, error) {
+	td, err := s.pg.GetTestDefinition(ctx, testID)
+	if err != nil {
+		return "", "", errNotFound("test not found")
 	}
 	p, err := plan.Parse(td.PlanJSON)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+		return "", "", errBadRequest(err.Error())
 	}
 	ramp, err := parseRamp(td.RampJSON)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+		return "", "", errBadRequest(err.Error())
 	}
 
-	runID, err := s.pg.CreateRun(ctx, td.ID, req.DesiredWorkers)
+	runID, err := s.pg.CreateRun(ctx, td.ID, workers)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
+		return "", "", err
 	}
 
 	var script *loadifyv1.ScriptBundle
 	if td.ScriptJS != "" {
 		script = &loadifyv1.ScriptBundle{MainJs: td.ScriptJS}
-		// Carry the data-feeder rows to the worker under the reserved module key
-		// (see internal/script dataKey).
 		if len(td.DataJSON) > 0 {
 			script.Modules = map[string]string{"__data__": string(td.DataJSON)}
 		}
@@ -141,27 +169,20 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		PlanJson:       td.PlanJSON,
 		Ramp:           ramp,
 		Script:         script,
-		DesiredWorkers: int32(req.DesiredWorkers),
+		DesiredWorkers: int32(workers),
 	})
 	if err != nil {
 		_, _ = s.pg.FinishRun(context.Background(), runID, "failed", json.RawMessage(`{"error":"dispatch failed"}`))
-		writeErr(w, http.StatusServiceUnavailable, err.Error())
-		return
+		return "", "", errUnavailable(err.Error())
 	}
 
-	runStatus := "running"
 	if resp != nil && resp.Status == "queued" {
-		// Cluster at capacity: the run is queued and the reaper will flip it to
-		// running once the coordinator dispatches it.
-		runStatus = "queued"
 		_ = s.pg.SetRunStatus(ctx, runID, "queued")
-	} else {
-		_ = s.pg.SetRunRunning(ctx, runID)
-		// Watch the run to completion and persist a summary (reaper is the backup).
-		go s.watchRun(runID)
+		return runID, "queued", nil
 	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"run_id": runID, "status": runStatus})
+	_ = s.pg.SetRunRunning(ctx, runID)
+	go s.watchRun(runID)
+	return runID, "running", nil
 }
 
 // watchRun blocks on the live stream; when it closes the run is finished, so we
@@ -343,6 +364,52 @@ func (s *Server) handleRunSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, pts)
+}
+
+// handleRunExport streams a run's per-second series as CSV for offline
+// analysis (spreadsheets, notebooks, attaching to reports).
+func (s *Server) handleRunExport(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	group := r.URL.Query().Get("group")
+	res, _ := strconv.Atoi(r.URL.Query().Get("res"))
+	if res <= 0 {
+		res = 1
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+
+	run, err := s.pg.GetRun(ctx, runID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	from := run.CreatedAt.Add(-time.Minute)
+	to := time.Now()
+	if run.EndedAt != nil {
+		to = run.EndedAt.Add(time.Minute)
+	}
+	pts, err := s.ch.QuerySeries(ctx, runID, group, from, to, res)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="run-`+runID+`.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"ts", "qps", "error_rate", "p50_ms", "p90_ms", "p95_ms", "p99_ms"})
+	for _, p := range pts {
+		_ = cw.Write([]string{
+			p.TS.UTC().Format(time.RFC3339),
+			strconv.FormatFloat(p.RPS, 'f', 2, 64),
+			strconv.FormatFloat(p.ErrorRate, 'f', 4, 64),
+			strconv.FormatFloat(p.P50ms, 'f', 2, 64),
+			strconv.FormatFloat(p.P90ms, 'f', 2, 64),
+			strconv.FormatFloat(p.P95ms, 'f', 2, 64),
+			strconv.FormatFloat(p.P99ms, 'f', 2, 64),
+		})
+	}
+	cw.Flush()
 }
 
 func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {

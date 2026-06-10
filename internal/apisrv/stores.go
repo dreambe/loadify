@@ -31,6 +31,12 @@ type metaStore interface {
 	TouchLogin(ctx context.Context, id string) error
 	ListUsers(ctx context.Context, limit int) ([]postgres.User, error)
 	CreateUser(ctx context.Context, email, name, role, passwordHash string) (*postgres.User, error)
+
+	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)
+	ListSchedules(ctx context.Context, limit int) ([]postgres.Schedule, error)
+	SetScheduleEnabled(ctx context.Context, id string, enabled bool) error
+	ClaimDueSchedule(ctx context.Context) (*postgres.Schedule, error)
+	SetScheduleLastRun(ctx context.Context, id, runID string) error
 }
 
 // metricsStore is the metrics-query surface apisrv depends on (*clickhouse.Store).

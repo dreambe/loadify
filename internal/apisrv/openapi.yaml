@@ -113,9 +113,37 @@ paths:
     get:
       summary: WebSocket live tick stream (token via ?token=)
       responses: { "101": { description: switching protocols } }
+  /api/v1/runs/{id}/export.csv:
+    get:
+      summary: Download a run's per-second series as CSV (token via ?token= ok)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: text/csv } }
+  /api/v1/schedules:
+    get:
+      summary: List scheduled (recurring) runs
+      responses: { "200": { description: array of schedules } }
+    post:
+      summary: Create a recurring schedule for a test (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [test_id, interval_minutes]
+              properties:
+                test_id: { type: string }
+                interval_minutes: { type: integer }
+                desired_workers: { type: integer }
+      responses: { "201": { description: created } }
+  /api/v1/schedules/{id}/enabled:
+    post:
+      summary: Enable/disable a schedule (?enabled=true|false)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: updated } }
   /api/v1/workers:
     get:
-      summary: List connected load-generation workers
+      summary: List connected load-generation workers (incl. CPU/mem load)
       responses: { "200": { description: array of workers } }
   /api/v1/users:
     get:

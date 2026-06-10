@@ -52,6 +52,16 @@ export interface ThresholdCheck extends Threshold {
   ok: boolean;
 }
 
+export interface Schedule {
+  id: string;
+  test_def_id: string;
+  interval_minutes: number;
+  desired_workers: number;
+  enabled: boolean;
+  next_run_at: string;
+  last_run_id?: string;
+}
+
 export interface WorkerInfo {
   worker_id: string;
   region: string;
