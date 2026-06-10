@@ -135,9 +135,18 @@ func (s *Store) CreateRun(ctx context.Context, testDefID string, desiredWorkers 
 	return id, err
 }
 
-// SetRunRunning marks a run running with its start time.
+// SetRunRunning marks a run running with its start time (only from a
+// non-terminal, not-already-running state so started_at isn't reset).
 func (s *Store) SetRunRunning(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE runs SET status='running', started_at=now() WHERE id=$1`, id)
+	_, err := s.pool.Exec(ctx, `
+		UPDATE runs SET status='running', started_at=now()
+		WHERE id=$1 AND status IN ('pending','queued')`, id)
+	return err
+}
+
+// SetRunStatus sets a run's status (used for the queued state).
+func (s *Store) SetRunStatus(ctx context.Context, id, status string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE runs SET status=$2 WHERE id=$1`, id, status)
 	return err
 }
 
@@ -159,7 +168,7 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, summary json.R
 func (s *Store) ListActiveRuns(ctx context.Context) ([]Run, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, test_def_id, status, desired_workers, started_at, ended_at, coalesce(summary,'{}'), created_at
-		FROM runs WHERE status IN ('pending','running') ORDER BY created_at ASC LIMIT 500`)
+		FROM runs WHERE status IN ('pending','queued','running') ORDER BY created_at ASC LIMIT 500`)
 	if err != nil {
 		return nil, err
 	}

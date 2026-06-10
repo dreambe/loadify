@@ -19,6 +19,7 @@ type metaStore interface {
 
 	CreateRun(ctx context.Context, testDefID string, desiredWorkers int) (string, error)
 	SetRunRunning(ctx context.Context, id string) error
+	SetRunStatus(ctx context.Context, id, status string) error
 	FinishRun(ctx context.Context, id, status string, summary json.RawMessage) (bool, error)
 	GetRun(ctx context.Context, id string) (*postgres.Run, error)
 	ListRuns(ctx context.Context, limit int) ([]postgres.Run, error)

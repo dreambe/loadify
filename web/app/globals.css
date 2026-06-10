@@ -152,6 +152,11 @@ button:disabled {
   color: var(--red);
   border-color: var(--red);
 }
+.badge.queued,
+.badge.pending {
+  color: var(--yellow);
+  border-color: var(--yellow);
+}
 
 .metrics-grid {
   display: grid;

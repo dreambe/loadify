@@ -41,6 +41,7 @@ func (f *fakeMeta) ListTestDefinitions(_ context.Context, _ int) ([]postgres.Tes
 }
 func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int) (string, error) { return "run-1", nil }
 func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error              { return nil }
+func (f *fakeMeta) SetRunStatus(_ context.Context, _, _ string) error            { return nil }
 func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage) (bool, error) {
 	if _, done := f.finished[id]; done {
 		return false, nil

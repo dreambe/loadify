@@ -31,8 +31,12 @@ type Service struct {
 	writer store.RollupWriter
 	log    *slog.Logger
 
-	mu   sync.Mutex
-	runs map[string]*runState
+	mu      sync.Mutex
+	runs    map[string]*runState
+	queue   []*loadifyv1.StartRunRequest
+	running int
+	maxRuns int
+	cpuMax  float64
 }
 
 // New creates a coordinator Service. writer may be nil (rollups discarded).
@@ -41,11 +45,24 @@ func New(writer store.RollupWriter, log *slog.Logger) *Service {
 		log = slog.Default()
 	}
 	return &Service{
-		reg:    registry.New(6 * time.Second),
-		writer: writer,
-		log:    log,
-		runs:   make(map[string]*runState),
+		reg:     registry.New(6 * time.Second),
+		writer:  writer,
+		log:     log,
+		runs:    make(map[string]*runState),
+		maxRuns: 64, // effectively unlimited until SetLimits tightens it
 	}
+}
+
+// SetLimits configures admission control: at most maxConcurrent runs dispatch
+// at once, and workers at or above cpuMaxPct are not eligible (0 disables the
+// CPU gate). Runs that can't be admitted are queued.
+func (s *Service) SetLimits(maxConcurrent int, cpuMaxPct float64) {
+	s.mu.Lock()
+	if maxConcurrent > 0 {
+		s.maxRuns = maxConcurrent
+	}
+	s.cpuMax = cpuMaxPct
+	s.mu.Unlock()
 }
 
 // --- WorkerService ---
@@ -99,7 +116,7 @@ func (s *Service) Connect(stream loadifyv1.WorkerService_ConnectServer) error {
 				RegisterAck: &loadifyv1.RegisterAck{LeaseId: workerID, HeartbeatIntervalMs: 2000},
 			}}
 		case *loadifyv1.WorkerMessage_Heartbeat:
-			s.reg.Touch(m.Heartbeat.WorkerId, m.Heartbeat.ActiveVus)
+			s.reg.Touch(m.Heartbeat.WorkerId, m.Heartbeat.ActiveVus, m.Heartbeat.CpuPct, m.Heartbeat.MemBytes)
 		case *loadifyv1.WorkerMessage_Metrics:
 			s.ingest(m.Metrics)
 		case *loadifyv1.WorkerMessage_Finished:
@@ -126,13 +143,16 @@ func (s *Service) workerFinished(f *loadifyv1.RunFinished) {
 	}
 	rs.finished[f.WorkerId] = true
 	done := len(rs.finished) >= len(rs.assigned)
+	var cancel context.CancelFunc
 	if done && rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
 		rs.status = loadifyv1.RunStatus_RUN_STATUS_COMPLETED
 		rs.endedAt = time.Now()
+		s.running--
+		cancel = rs.aggCancel
+		s.drainLocked() // a slot freed: admit queued runs
 	}
-	cancel := rs.aggCancel
 	s.mu.Unlock()
-	if done {
+	if done && cancel != nil {
 		s.log.Info("run completed", "run", f.RunId)
 		// Give the aggregator a moment to drain late batches, then stop it.
 		go func() {
@@ -144,14 +164,47 @@ func (s *Service) workerFinished(f *loadifyv1.RunFinished) {
 
 // --- CoordinatorService ---
 
-// StartRun selects workers, slices the ramp and dispatches assignments.
-func (s *Service) StartRun(ctx context.Context, req *loadifyv1.StartRunRequest) (*loadifyv1.StartRunResponse, error) {
+// StartRun admits a run immediately when the cluster has capacity, otherwise
+// queues it (and a freed slot later drains the queue). This keeps overloaded
+// workers from being piled onto.
+func (s *Service) StartRun(_ context.Context, req *loadifyv1.StartRunRequest) (*loadifyv1.StartRunResponse, error) {
 	if req.RunId == "" {
 		return nil, status.Error(codes.InvalidArgument, "run_id required")
 	}
-	candidates := s.reg.Healthy(req.Protocol)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.canDispatchLocked(req.Protocol) {
+		assigned, err := s.dispatchLocked(req)
+		if err != nil {
+			return nil, err
+		}
+		return &loadifyv1.StartRunResponse{RunId: req.RunId, AssignedWorkers: int32(assigned), Status: "running"}, nil
+	}
+	// No capacity (slots full or no eligible worker): queue it.
+	s.queue = append(s.queue, req)
+	s.runs[req.RunId] = &runState{
+		runID:    req.RunId,
+		protocol: req.Protocol,
+		assigned: make(map[string]bool),
+		finished: make(map[string]bool),
+		status:   loadifyv1.RunStatus_RUN_STATUS_QUEUED,
+	}
+	s.log.Info("run queued", "run", req.RunId, "queue_depth", len(s.queue))
+	return &loadifyv1.StartRunResponse{RunId: req.RunId, Status: "queued", QueuePosition: int32(len(s.queue))}, nil
+}
+
+// canDispatchLocked reports whether a run for proto can start right now.
+func (s *Service) canDispatchLocked(proto loadifyv1.Protocol) bool {
+	return s.running < s.maxRuns && len(s.reg.Available(proto, s.cpuMax)) > 0
+}
+
+// dispatchLocked selects workers, slices the ramp and sends assignments. The
+// caller holds s.mu. It returns the number of workers assigned.
+func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
+	candidates := s.reg.Available(req.Protocol, s.cpuMax)
 	if len(candidates) == 0 {
-		return nil, status.Error(codes.FailedPrecondition, "no healthy workers available")
+		return 0, status.Error(codes.FailedPrecondition, "no healthy workers available")
 	}
 	workers := scheduler.PickWorkers(candidates, int(req.DesiredWorkers))
 	slices := scheduler.SliceRamp(req.Ramp, len(workers))
@@ -170,7 +223,6 @@ func (s *Service) StartRun(ctx context.Context, req *loadifyv1.StartRunRequest) 
 		status:    loadifyv1.RunStatus_RUN_STATUS_RUNNING,
 		startedAt: time.Now(),
 	}
-
 	startAt := time.Now().Add(assignGrace).UnixMilli()
 	for i, w := range workers {
 		rs.assigned[w.ID] = true
@@ -193,15 +245,29 @@ func (s *Service) StartRun(ctx context.Context, req *loadifyv1.StartRunRequest) 
 	}
 	if len(rs.assigned) == 0 {
 		aggCancel()
-		return nil, status.Error(codes.Unavailable, "failed to dispatch to any worker")
+		return 0, status.Error(codes.Unavailable, "failed to dispatch to any worker")
 	}
-
-	s.mu.Lock()
 	s.runs[req.RunId] = rs
-	s.mu.Unlock()
-
+	s.running++
 	s.log.Info("run started", "run", req.RunId, "workers", len(rs.assigned))
-	return &loadifyv1.StartRunResponse{RunId: req.RunId, AssignedWorkers: int32(len(rs.assigned))}, nil
+	return len(rs.assigned), nil
+}
+
+// drainLocked admits queued runs while there is capacity and an eligible worker.
+func (s *Service) drainLocked() {
+	for len(s.queue) > 0 && s.running < s.maxRuns {
+		req := s.queue[0]
+		if len(s.reg.Available(req.Protocol, s.cpuMax)) == 0 {
+			return // keep queued until a capable worker is free
+		}
+		s.queue = s.queue[1:]
+		if _, err := s.dispatchLocked(req); err != nil {
+			s.log.Warn("drain dispatch failed", "run", req.RunId, "err", err)
+			if rs := s.runs[req.RunId]; rs != nil {
+				rs.status = loadifyv1.RunStatus_RUN_STATUS_FAILED
+			}
+		}
+	}
 }
 
 // StopRun signals all assigned workers to stop a run.
@@ -252,6 +318,9 @@ func (s *Service) StreamLive(req *loadifyv1.LiveRequest, stream loadifyv1.Coordi
 	s.mu.Unlock()
 	if rs == nil {
 		return status.Error(codes.NotFound, "run not found")
+	}
+	if rs.agg == nil {
+		return status.Error(codes.Unavailable, "run is queued")
 	}
 	ch := rs.agg.Subscribe()
 	for {

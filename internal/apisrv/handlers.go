@@ -135,7 +135,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 			script.Modules = map[string]string{"__data__": string(td.DataJSON)}
 		}
 	}
-	_, err = s.coord.StartRun(ctx, &loadifyv1.StartRunRequest{
+	resp, err := s.coord.StartRun(ctx, &loadifyv1.StartRunRequest{
 		RunId:          runID,
 		Protocol:       protoEnum(p.Protocol),
 		PlanJson:       td.PlanJSON,
@@ -148,12 +148,20 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	_ = s.pg.SetRunRunning(ctx, runID)
 
-	// Watch the run to completion and persist a summary.
-	go s.watchRun(runID)
+	runStatus := "running"
+	if resp != nil && resp.Status == "queued" {
+		// Cluster at capacity: the run is queued and the reaper will flip it to
+		// running once the coordinator dispatches it.
+		runStatus = "queued"
+		_ = s.pg.SetRunStatus(ctx, runID, "queued")
+	} else {
+		_ = s.pg.SetRunRunning(ctx, runID)
+		// Watch the run to completion and persist a summary (reaper is the backup).
+		go s.watchRun(runID)
+	}
 
-	writeJSON(w, http.StatusAccepted, map[string]string{"run_id": runID, "status": "running"})
+	writeJSON(w, http.StatusAccepted, map[string]string{"run_id": runID, "status": runStatus})
 }
 
 // watchRun blocks on the live stream; when it closes the run is finished, so we
@@ -234,6 +242,7 @@ func (s *Server) reapOnce(ctx context.Context, maxRunAge time.Duration) {
 			continue
 		}
 		st, serr := s.coord.GetRunState(lctx, &loadifyv1.RunStateRequest{RunId: r.ID})
+		overdue := time.Since(r.CreatedAt) > maxRunAge
 		switch {
 		case serr != nil:
 			// Coordinator doesn't know it (restarted / cleaned up). Finalize
@@ -241,7 +250,17 @@ func (s *Server) reapOnce(ctx context.Context, maxRunAge time.Duration) {
 			s.finalizeRun(r.ID, "completed")
 		case st.Status == loadifyv1.RunStatus_RUN_STATUS_COMPLETED:
 			s.finalizeRun(r.ID, "completed")
-		case time.Since(r.CreatedAt) > maxRunAge:
+		case st.Status == loadifyv1.RunStatus_RUN_STATUS_RUNNING:
+			// A queued run the coordinator has now dispatched: reflect it.
+			if r.Status != "running" {
+				_ = s.pg.SetRunRunning(lctx, r.ID)
+			}
+		case st.Status == loadifyv1.RunStatus_RUN_STATUS_QUEUED:
+			if overdue {
+				s.log.Warn("reaper: aborting overdue queued run", "run", r.ID)
+				s.finalizeRun(r.ID, "aborted")
+			}
+		case overdue:
 			s.log.Warn("reaper: aborting overdue run", "run", r.ID, "age", time.Since(r.CreatedAt))
 			s.finalizeRun(r.ID, "aborted")
 		}

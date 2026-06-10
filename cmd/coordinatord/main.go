@@ -50,6 +50,8 @@ func main() {
 	log.Info("clickhouse ready")
 
 	svc := coordinator.New(writer, log)
+	svc.SetLimits(cfg.MaxConcurrentRuns, float64(cfg.WorkerCPUMaxPct))
+	log.Info("admission limits", "max_concurrent_runs", cfg.MaxConcurrentRuns, "worker_cpu_max_pct", cfg.WorkerCPUMaxPct)
 	gsrv := grpc.NewServer(grpc.MaxRecvMsgSize(64 << 20))
 	loadifyv1.RegisterWorkerServiceServer(gsrv, svc)
 	loadifyv1.RegisterCoordinatorServiceServer(gsrv, svc)

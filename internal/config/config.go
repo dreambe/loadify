@@ -38,10 +38,12 @@ type APIServer struct {
 
 // Coordinator configures the scheduler plane.
 type Coordinator struct {
-	GRPCAddr   string
-	HTTPAddr   string // healthz/metrics
-	ClickHouse ClickHouse
-	Postgres   Postgres
+	GRPCAddr           string
+	HTTPAddr           string // healthz/metrics
+	MaxConcurrentRuns  int    // admission cap; extra runs queue
+	WorkerCPUMaxPct    int    // workers at/above this CPU% are not eligible (0 = off)
+	ClickHouse         ClickHouse
+	Postgres           Postgres
 }
 
 // Worker configures a load-generation agent.
@@ -73,10 +75,12 @@ func LoadAPIServer() APIServer {
 // LoadCoordinator builds Coordinator config from the environment.
 func LoadCoordinator() Coordinator {
 	return Coordinator{
-		GRPCAddr:   env("LOADIFY_COORDINATOR_GRPC_ADDR", ":7070"),
-		HTTPAddr:   env("LOADIFY_COORDINATOR_HTTP_ADDR", ":7071"),
-		ClickHouse: loadClickHouse(),
-		Postgres:   loadPostgres(),
+		GRPCAddr:          env("LOADIFY_COORDINATOR_GRPC_ADDR", ":7070"),
+		HTTPAddr:          env("LOADIFY_COORDINATOR_HTTP_ADDR", ":7071"),
+		MaxConcurrentRuns: EnvInt("LOADIFY_MAX_CONCURRENT_RUNS", 8),
+		WorkerCPUMaxPct:   EnvInt("LOADIFY_WORKER_CPU_MAX_PCT", 0),
+		ClickHouse:        loadClickHouse(),
+		Postgres:          loadPostgres(),
 	}
 }
 

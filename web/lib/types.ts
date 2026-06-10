@@ -58,6 +58,9 @@ export interface WorkerInfo {
   status: string;
   active_vus: number;
   last_seen_unix_ms: number;
+  cpu_pct?: number;
+  mem_bytes?: number;
+  cpu_cores?: number;
 }
 
 export interface LiveTick {

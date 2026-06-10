@@ -28,6 +28,10 @@ message StartRunRequest {
 message StartRunResponse {
   string run_id = 1;
   int32 assigned_workers = 2;
+  // "running" when dispatched immediately, or "queued" when the cluster was at
+  // capacity and the run is waiting for a slot.
+  string status = 3;
+  int32 queue_position = 4;
 }
 
 message StopRunRequest {
@@ -50,6 +54,7 @@ enum RunStatus {
   RUN_STATUS_COMPLETED = 3;
   RUN_STATUS_FAILED = 4;
   RUN_STATUS_ABORTED = 5;
+  RUN_STATUS_QUEUED = 6;
 }
 
 message RunState {
@@ -70,6 +75,9 @@ message WorkerInfo {
   string status = 4; // healthy / unhealthy / draining
   int64 active_vus = 5;
   int64 last_seen_unix_ms = 6;
+  double cpu_pct = 7;   // worker process CPU usage (0-100 per core-equivalent)
+  int64 mem_bytes = 8;  // worker process memory
+  int32 cpu_cores = 9;
 }
 
 message ListWorkersResponse {

@@ -12,6 +12,7 @@ import (
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/script"
+	"github.com/dreambe/loadify/internal/sysstat"
 	"github.com/dreambe/loadify/internal/worker/executor"
 	"github.com/dreambe/loadify/internal/worker/protocols"
 	_ "github.com/dreambe/loadify/internal/worker/protocols/grpcd" // register gRPC driver
@@ -132,6 +133,7 @@ func (a *Agent) session(ctx context.Context, client loadifyv1.WorkerServiceClien
 func (a *Agent) heartbeatLoop(ctx context.Context) {
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
+	cpu := sysstat.NewCPUSampler()
 	for {
 		select {
 		case <-ctx.Done():
@@ -140,6 +142,8 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 			a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Heartbeat{Heartbeat: &loadifyv1.HeartbeatRequest{
 				WorkerId:  a.workerID,
 				ActiveVus: a.activeVUs(),
+				CpuPct:    cpu.Sample(),
+				MemBytes:  sysstat.MemBytes(),
 			}}})
 		}
 	}

@@ -16,6 +16,8 @@ type Worker struct {
 	Supported  []loadifyv1.Protocol
 	Send       chan *loadifyv1.CoordinatorMessage
 	ActiveVUs  int64
+	CPUPct     float64
+	MemBytes   int64
 	LastSeen   time.Time
 	Connected  time.Time
 	healthyTTL time.Duration
@@ -67,12 +69,14 @@ func (r *Registry) Remove(id string) {
 	r.mu.Unlock()
 }
 
-// Touch updates liveness/activeVUs from a heartbeat.
-func (r *Registry) Touch(id string, activeVUs int64) {
+// Touch updates liveness and load from a heartbeat.
+func (r *Registry) Touch(id string, activeVUs int64, cpuPct float64, memBytes int64) {
 	r.mu.Lock()
 	if w := r.workers[id]; w != nil {
 		w.LastSeen = time.Now()
 		w.ActiveVUs = activeVUs
+		w.CPUPct = cpuPct
+		w.MemBytes = memBytes
 	}
 	r.mu.Unlock()
 }
@@ -103,6 +107,28 @@ func (r *Registry) Healthy(proto loadifyv1.Protocol) []*Worker {
 	return out
 }
 
+// Available returns healthy workers supporting proto whose CPU is below
+// cpuMaxPct. A cpuMaxPct of 0 disables the CPU gate.
+func (r *Registry) Available(proto loadifyv1.Protocol, cpuMaxPct float64) []*Worker {
+	now := time.Now()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*Worker, 0, len(r.workers))
+	for _, w := range r.workers {
+		if !w.Healthy(now) {
+			continue
+		}
+		if proto != loadifyv1.Protocol_PROTOCOL_UNSPECIFIED && !supports(w, proto) {
+			continue
+		}
+		if cpuMaxPct > 0 && w.CPUPct >= cpuMaxPct {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
 // List returns all workers as protobuf WorkerInfo.
 func (r *Registry) List() []*loadifyv1.WorkerInfo {
 	now := time.Now()
@@ -120,6 +146,9 @@ func (r *Registry) List() []*loadifyv1.WorkerInfo {
 			Status:         status,
 			ActiveVus:      w.ActiveVUs,
 			LastSeenUnixMs: w.LastSeen.UnixMilli(),
+			CpuPct:         w.CPUPct,
+			MemBytes:       w.MemBytes,
+			CpuCores:       w.CPUCores,
 		})
 	}
 	return out
