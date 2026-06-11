@@ -12,6 +12,7 @@ import HttpRequestBuilder, {
   type HttpRequest,
 } from "@/components/HttpRequestBuilder";
 import ThresholdsEditor from "@/components/ThresholdsEditor";
+import SSEBuilder, { emptySSE, sseToPlan, type SSEConfig } from "@/components/SSEBuilder";
 import type { Schedule, TestDefinition, Threshold } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
@@ -26,6 +27,7 @@ export default function TestsPage() {
   const [name, setName] = useState("");
   const [protocol, setProtocol] = useState("http");
   const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest, url: "http://echo:8088/" });
+  const [sse, setSse] = useState<SSEConfig>(emptySSE);
   const [plan, setPlan] = useState(SAMPLE_PLAN);
   const [ramp, setRamp] = useState<RampSpec>(defaultRamp);
   const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
@@ -73,6 +75,8 @@ export default function TestsPage() {
       planObj = { protocol: "script" };
     } else if (isHTTP) {
       planObj = httpRequestToPlan(protocol, http);
+    } else if (protocol === "sse") {
+      planObj = sseToPlan(sse);
     } else {
       try {
         planObj = JSON.parse(plan);
@@ -149,7 +153,13 @@ export default function TestsPage() {
                 <HttpRequestBuilder value={http} onChange={setHttp} />
               </>
             )}
-            {!isHTTP && protocol !== "script" && (
+            {protocol === "sse" && (
+              <>
+                <label>{t("tests.sse")}</label>
+                <SSEBuilder value={sse} onChange={setSse} />
+              </>
+            )}
+            {!isHTTP && protocol !== "script" && protocol !== "sse" && (
               <>
                 <label>{t("tests.plan")}</label>
                 <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />

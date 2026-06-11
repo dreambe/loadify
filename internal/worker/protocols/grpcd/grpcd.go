@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -111,8 +112,15 @@ func (d *Driver) Prepare(_ context.Context) error {
 	return nil
 }
 
-// Exec performs one unary call and records latency and status.
-func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
+// Exec performs one call (unary or server-streaming) and records timings.
+func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
+	if d.method.IsStreamingServer() {
+		return d.execStream(ctx)
+	}
+	return d.execUnary(ctx)
+}
+
+func (d *Driver) execUnary(ctx context.Context) protocols.Result {
 	res := protocols.Result{Group: d.group}
 
 	in := dynamicpb.NewMessage(d.method.Input())
@@ -141,6 +149,70 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 	res.TTFBUs = res.LatencyUs
 	res.RecvBytes = int64(proto.Size(out))
 	res.OK = true
+	return res
+}
+
+// execStream opens a server-streaming call, sends the single request and reads
+// responses until max_messages, the server closes the stream, or the timeout
+// fires — measuring time-to-first-message and total stream duration.
+func (d *Driver) execStream(ctx context.Context) protocols.Result {
+	res := protocols.Result{Group: d.group}
+
+	in := dynamicpb.NewMessage(d.method.Input())
+	if err := proto.Unmarshal(d.reqBytes, in); err != nil {
+		res.ErrorKind = "build_request"
+		return res
+	}
+	res.SentBytes = int64(len(d.reqBytes))
+
+	opCtx, cancel := context.WithTimeout(ctx, d.timeout)
+	defer cancel()
+	if d.md != nil {
+		opCtx = metadata.NewOutgoingContext(opCtx, d.md)
+	}
+
+	start := time.Now()
+	cs, err := d.conn.NewStream(opCtx, &grpc.StreamDesc{ServerStreams: true}, d.grpcMethod)
+	if err != nil {
+		res.LatencyUs = time.Since(start).Microseconds()
+		res.ErrorKind = "grpc_" + status.Code(err).String()
+		return res
+	}
+	if err := cs.SendMsg(in); err != nil {
+		res.LatencyUs = time.Since(start).Microseconds()
+		res.ErrorKind = "grpc_send"
+		return res
+	}
+	_ = cs.CloseSend()
+
+	maxMsgs := d.cfg.MaxMessages
+	var got int64
+	for maxMsgs <= 0 || got < int64(maxMsgs) {
+		out := dynamicpb.NewMessage(d.method.Output())
+		rerr := cs.RecvMsg(out)
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			res.LatencyUs = time.Since(start).Microseconds()
+			res.ErrorKind = "grpc_" + status.Code(rerr).String()
+			if got == 0 {
+				return res
+			}
+			break // partial stream: count what we got, mark below
+		}
+		if got == 0 {
+			res.TTFBUs = time.Since(start).Microseconds()
+		}
+		got++
+		res.RecvBytes += int64(proto.Size(out))
+	}
+	res.LatencyUs = time.Since(start).Microseconds()
+	if got == 0 && res.ErrorKind == "" {
+		res.ErrorKind = "no_messages"
+		return res
+	}
+	res.OK = res.ErrorKind == ""
 	return res
 }
 
@@ -196,8 +268,8 @@ func resolveMethod(files interface {
 	if method == nil {
 		return nil, "", fmt.Errorf("grpcd: method %q not found on %q", methodName, svcName)
 	}
-	if method.IsStreamingClient() || method.IsStreamingServer() {
-		return nil, "", fmt.Errorf("grpcd: %s is streaming; only unary methods are supported", fullMethod)
+	if method.IsStreamingClient() {
+		return nil, "", fmt.Errorf("grpcd: %s uses client/bidi streaming; only unary and server-streaming are supported", fullMethod)
 	}
 	return method, "/" + string(svcName) + "/" + string(methodName), nil
 }

@@ -64,7 +64,10 @@ type GRPCConfig struct {
 	TimeoutMs          int64             `json:"timeout_ms,omitempty"`
 	PlaintextProbe     bool              `json:"plaintext,omitempty"`
 	InsecureSkipVerify bool              `json:"insecure_skip_verify,omitempty"`
-	Group              string            `json:"group,omitempty"`
+	// MaxMessages bounds how many responses a server-streaming call reads per
+	// iteration (0 = until the server closes the stream or the timeout fires).
+	MaxMessages int    `json:"max_messages,omitempty"`
+	Group       string `json:"group,omitempty"`
 }
 
 // WSConfig describes a WebSocket session.

@@ -66,6 +66,41 @@ func TestGRPCDriverHealthCheck(t *testing.T) {
 	}
 }
 
+func TestGRPCDriverServerStreaming(t *testing.T) {
+	addr, stop := startHealthServer(t)
+	defer stop()
+
+	// Health/Watch is server-streaming: it emits the current status immediately.
+	p, err := plan.Parse([]byte(`{"protocol":"grpc","grpc":{` +
+		`"target":"` + addr + `",` +
+		`"full_method":"/grpc.health.v1.Health/Watch",` +
+		`"request_json":"{}","plaintext":true,"max_messages":1}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drv, err := protocols.New(loadifyv1.Protocol_PROTOCOL_GRPC, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := drv.Prepare(ctx); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	defer drv.Teardown(context.Background())
+
+	res := drv.Exec(ctx, &protocols.VU{ID: 1})
+	if !res.OK {
+		t.Fatalf("stream not ok: kind=%q", res.ErrorKind)
+	}
+	if res.TTFBUs <= 0 {
+		t.Error("expected time-to-first-message")
+	}
+	if res.RecvBytes == 0 {
+		t.Error("expected received bytes from the stream")
+	}
+}
+
 func TestGRPCDriverUnknownMethod(t *testing.T) {
 	p, err := plan.Parse([]byte(`{"protocol":"grpc","grpc":{` +
 		`"target":"127.0.0.1:1","full_method":"/no.Such/Method","plaintext":true}}`))
