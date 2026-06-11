@@ -21,6 +21,13 @@ message RampStage {
   int64 target_rps = 3;
 }
 
+// ActiveRun is a run a worker is currently executing, reported on (re)register
+// so a restarted coordinator can rebuild its in-memory run state.
+message ActiveRun {
+  string run_id = 1;
+  Protocol protocol = 2;
+}
+
 // ScriptBundle carries the user's goja JavaScript for a run.
 message ScriptBundle {
   string main_js = 1;

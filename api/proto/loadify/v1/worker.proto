@@ -37,6 +37,9 @@ message RegisterRequest {
   int32 cpu_cores = 3;
   int64 mem_bytes = 4;
   repeated Protocol supported = 5;
+  // Runs this worker is already executing (set on reconnect so a restarted
+  // coordinator can rehydrate its run state).
+  repeated ActiveRun active_runs = 6;
 }
 
 message RegisterAck {

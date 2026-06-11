@@ -31,9 +31,10 @@ type Agent struct {
 
 	sendCh chan *loadifyv1.WorkerMessage
 
-	mu     sync.Mutex
-	runs   map[string]context.CancelFunc
-	active int64
+	mu        sync.Mutex
+	runs      map[string]context.CancelFunc
+	runProtos map[string]loadifyv1.Protocol
+	active    int64
 }
 
 // NewAgent creates an Agent.
@@ -45,8 +46,9 @@ func NewAgent(workerID, region string, log *slog.Logger) *Agent {
 		workerID: workerID,
 		region:   region,
 		log:      log,
-		sendCh:   make(chan *loadifyv1.WorkerMessage, 256),
-		runs:     make(map[string]context.CancelFunc),
+		sendCh:    make(chan *loadifyv1.WorkerMessage, 256),
+		runs:      make(map[string]context.CancelFunc),
+		runProtos: make(map[string]loadifyv1.Protocol),
 	}
 }
 
@@ -114,6 +116,7 @@ func (a *Agent) session(ctx context.Context, client loadifyv1.WorkerServiceClien
 			loadifyv1.Protocol_PROTOCOL_WEBSOCKET,
 			loadifyv1.Protocol_PROTOCOL_SSE,
 		},
+		ActiveRuns: a.activeRuns(),
 	}}})
 
 	// Heartbeats.
@@ -205,6 +208,7 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 	runCtx, cancel := context.WithCancel(parent)
 	a.mu.Lock()
 	a.runs[asg.RunId] = cancel
+	a.runProtos[asg.RunId] = asg.Protocol
 	a.mu.Unlock()
 
 	// Honor a synchronized start time across workers.
@@ -266,9 +270,22 @@ func (a *Agent) stopRun(runID string) {
 	}
 }
 
+// activeRuns snapshots the runs this worker is currently executing, for
+// reporting on (re)register so a restarted coordinator can rehydrate.
+func (a *Agent) activeRuns() []*loadifyv1.ActiveRun {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]*loadifyv1.ActiveRun, 0, len(a.runProtos))
+	for id, proto := range a.runProtos {
+		out = append(out, &loadifyv1.ActiveRun{RunId: id, Protocol: proto})
+	}
+	return out
+}
+
 func (a *Agent) finishRun(runID string) {
 	a.mu.Lock()
 	delete(a.runs, runID)
+	delete(a.runProtos, runID)
 	a.mu.Unlock()
 }
 

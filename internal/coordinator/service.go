@@ -112,6 +112,9 @@ func (s *Service) Connect(stream loadifyv1.WorkerService_ConnectServer) error {
 			workerID = m.Register.WorkerId
 			s.reg.Add(m.Register, send)
 			s.log.Info("worker registered", "worker", workerID, "region", m.Register.Region)
+			// Rebuild state for any runs this worker is already executing (e.g.
+			// after a coordinator restart), so their metrics aren't dropped.
+			s.rehydrate(workerID, m.Register.ActiveRuns)
 			send <- &loadifyv1.CoordinatorMessage{Msg: &loadifyv1.CoordinatorMessage_RegisterAck{
 				RegisterAck: &loadifyv1.RegisterAck{LeaseId: workerID, HeartbeatIntervalMs: 2000},
 			}}
@@ -131,6 +134,38 @@ func (s *Service) ingest(b *loadifyv1.MetricBatch) {
 	s.mu.Unlock()
 	if rs != nil {
 		rs.agg.Ingest(b)
+	}
+}
+
+// rehydrate rebuilds run state for runs a (re)connecting worker reports as
+// active but the coordinator no longer knows about — the recovery path after a
+// coordinator restart. Metrics for these runs then aggregate and persist again.
+func (s *Service) rehydrate(workerID string, active []*loadifyv1.ActiveRun) {
+	if len(active) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ar := range active {
+		if rs := s.runs[ar.RunId]; rs != nil && rs.agg != nil {
+			rs.assigned[workerID] = true
+			continue
+		}
+		aggCtx, aggCancel := context.WithCancel(context.Background())
+		agg := aggregator.New(ar.RunId, ar.Protocol, s.writer, s.log)
+		go agg.Run(aggCtx)
+		s.runs[ar.RunId] = &runState{
+			runID:     ar.RunId,
+			protocol:  ar.Protocol,
+			agg:       agg,
+			aggCancel: aggCancel,
+			assigned:  map[string]bool{workerID: true},
+			finished:  make(map[string]bool),
+			status:    loadifyv1.RunStatus_RUN_STATUS_RUNNING,
+			startedAt: time.Now(),
+		}
+		s.running++
+		s.log.Info("rehydrated run from worker", "run", ar.RunId, "worker", workerID)
 	}
 }
 
