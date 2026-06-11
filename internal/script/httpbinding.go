@@ -59,6 +59,7 @@ func doRequest(rt *goja.Runtime, client *http.Client, acc *accumulator, method, 
 	if err != nil {
 		acc.failed = true
 		acc.errKind = "build_request"
+		acc.noteCall(method, url, "", true)
 		return httpResult{Error: err.Error()}
 	}
 	for k, v := range headers {
@@ -71,6 +72,7 @@ func doRequest(rt *goja.Runtime, client *http.Client, acc *accumulator, method, 
 		acc.failed = true
 		acc.errKind = classifyErr(err)
 		acc.latencyUs += time.Since(start).Microseconds()
+		acc.noteCall(method, url, "", true)
 		return httpResult{Error: err.Error()}
 	}
 	defer resp.Body.Close()
@@ -89,6 +91,7 @@ func doRequest(rt *goja.Runtime, client *http.Client, acc *accumulator, method, 
 			acc.errKind = "http_status"
 		}
 	}
+	acc.noteCall(method, url, string(data), resp.StatusCode >= 400)
 
 	return httpResult{
 		Status:     resp.StatusCode,

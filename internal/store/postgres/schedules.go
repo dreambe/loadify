@@ -43,7 +43,7 @@ func (s *Store) ListSchedules(ctx context.Context, limit int) ([]Schedule, error
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Schedule
+	out := []Schedule{}
 	for rows.Next() {
 		var sc Schedule
 		if err := rows.Scan(&sc.ID, &sc.TestDefID, &sc.IntervalMin, &sc.DesiredWorkers, &sc.Enabled, &sc.NextRunAt, &sc.LastRunID, &sc.CreatedAt); err != nil {

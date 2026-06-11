@@ -3,8 +3,10 @@
 import { useState } from "react";
 
 // LineChart is a dependency-free SVG line chart for one or more series sharing
-// the same x-axis (point index). Hovering shows a crosshair and the value of
-// every series at the nearest point.
+// the same x-axis. `xLabels` gives each point an x-axis label (e.g. elapsed
+// test time); a few are drawn as axis ticks. Hovering shows a crosshair and the
+// value of every series at the nearest point. Pass `hoverIndex`/`onHover` to
+// synchronize the crosshair across multiple charts (same moment everywhere).
 export interface Series {
   label: string;
   color: string;
@@ -15,17 +17,29 @@ export default function LineChart({
   series,
   height = 220,
   unit = "",
+  xLabels,
+  hoverIndex,
+  onHover,
 }: {
   series: Series[];
   height?: number;
   unit?: string;
+  xLabels?: string[];
+  hoverIndex?: number | null;
+  onHover?: (i: number | null) => void;
 }) {
   const width = 760;
-  const pad = { top: 10, right: 12, bottom: 20, left: 48 };
+  const pad = { top: 10, right: 12, bottom: 22, left: 48 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
-  const [hover, setHover] = useState<number | null>(null);
+  // Uncontrolled fallback; when onHover is provided the parent owns the state.
+  const [localHover, setLocalHover] = useState<number | null>(null);
+  const hover = hoverIndex !== undefined ? hoverIndex : localHover;
+  const setHover = (i: number | null) => {
+    if (onHover) onHover(i);
+    else setLocalHover(i);
+  };
 
   const maxLen = Math.max(1, ...series.map((s) => s.data.length));
   const maxVal = Math.max(1, ...series.flatMap((s) => s.data));
@@ -38,6 +52,15 @@ export default function LineChart({
 
   const ticks = 4;
   const gridVals = Array.from({ length: ticks + 1 }, (_, i) => (maxVal / ticks) * i);
+
+  // Pick a handful of evenly spaced x-axis tick indices.
+  const xTickCount = Math.min(6, maxLen);
+  const xTickIdx =
+    maxLen <= 1
+      ? [0]
+      : Array.from({ length: xTickCount }, (_, i) =>
+          Math.round((i / (xTickCount - 1)) * (maxLen - 1))
+        );
 
   // Map a mouse position to the nearest data index.
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -52,8 +75,11 @@ export default function LineChart({
     setHover(Math.max(0, Math.min(maxLen - 1, idx)));
   }
 
-  const hoverX = hover !== null ? x(hover) : 0;
+  const validHover = hover !== null && hover >= 0 && hover < maxLen ? hover : null;
+  const hoverX = validHover !== null ? x(validHover) : 0;
   const tooltipRight = hoverX > pad.left + innerW * 0.6;
+  const hoverLabel =
+    validHover !== null ? xLabels?.[validHover] ?? `#${validHover + 1}` : "";
 
   return (
     <div style={{ position: "relative" }}>
@@ -82,11 +108,25 @@ export default function LineChart({
             </text>
           </g>
         ))}
+        {xLabels &&
+          xLabels.length > 0 &&
+          xTickIdx.map((i) => (
+            <text
+              key={i}
+              x={x(i)}
+              y={height - 6}
+              fill="#8b949e"
+              fontSize={10}
+              textAnchor="middle"
+            >
+              {xLabels[i] ?? ""}
+            </text>
+          ))}
         {series.map((s) => (
           <path key={s.label} d={path(s.data)} fill="none" stroke={s.color} strokeWidth={2} />
         ))}
 
-        {hover !== null && (
+        {validHover !== null && (
           <g>
             <line
               x1={hoverX}
@@ -98,15 +138,15 @@ export default function LineChart({
               strokeDasharray="3 3"
             />
             {series.map((s) =>
-              s.data[hover] !== undefined ? (
-                <circle key={s.label} cx={hoverX} cy={y(s.data[hover])} r={3} fill={s.color} />
+              s.data[validHover] !== undefined ? (
+                <circle key={s.label} cx={hoverX} cy={y(s.data[validHover])} r={3} fill={s.color} />
               ) : null
             )}
           </g>
         )}
       </svg>
 
-      {hover !== null && series.some((s) => s.data[hover] !== undefined) && (
+      {validHover !== null && series.some((s) => s.data[validHover] !== undefined) && (
         <div
           style={{
             position: "absolute",
@@ -120,11 +160,11 @@ export default function LineChart({
             pointerEvents: "none",
           }}
         >
-          <div style={{ color: "var(--muted)", marginBottom: 2 }}>#{hover + 1}</div>
+          <div style={{ color: "var(--muted)", marginBottom: 2 }}>{hoverLabel}</div>
           {series.map((s) =>
-            s.data[hover] !== undefined ? (
+            s.data[validHover] !== undefined ? (
               <div key={s.label} style={{ color: s.color }}>
-                {s.label}: <b>{formatVal(s.data[hover])}</b>
+                {s.label}: <b>{formatVal(s.data[validHover])}</b>
                 {unit}
               </div>
             ) : null
@@ -141,6 +181,16 @@ export default function LineChart({
       </div>
     </div>
   );
+}
+
+// formatElapsed renders seconds since test start as "5s" / "1m05s" / "1h02m".
+export function formatElapsed(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${String(s % 60).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h${String(m % 60).padStart(2, "0")}m`;
 }
 
 function formatTick(v: number): string {

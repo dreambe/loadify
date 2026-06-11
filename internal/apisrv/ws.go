@@ -30,6 +30,8 @@ type liveTick struct {
 type logSample struct {
 	TS        int64   `json:"ts_unix_ms"`
 	Group     string  `json:"group"`
+	Method    string  `json:"method,omitempty"`
+	URL       string  `json:"url,omitempty"`
 	Status    int32   `json:"status"`
 	OK        bool    `json:"ok"`
 	LatencyMs float64 `json:"latency_ms"`
@@ -37,6 +39,7 @@ type logSample struct {
 	SentBytes int64   `json:"sent_bytes"`
 	RecvBytes int64   `json:"recv_bytes"`
 	ErrorKind string  `json:"error_kind,omitempty"`
+	RespBody  string  `json:"resp_body,omitempty"`
 }
 
 type grpTick struct {
@@ -99,6 +102,8 @@ func toLiveTick(t *loadifyv1.LiveTick) liveTick {
 			samples = append(samples, logSample{
 				TS:        s.TsUnixMs,
 				Group:     s.Group,
+				Method:    s.Method,
+				URL:       s.Url,
 				Status:    s.Status,
 				OK:        s.Ok,
 				LatencyMs: float64(s.LatencyUs) / 1000.0,
@@ -106,6 +111,7 @@ func toLiveTick(t *loadifyv1.LiveTick) liveTick {
 				SentBytes: s.SentBytes,
 				RecvBytes: s.RecvBytes,
 				ErrorKind: s.ErrorKind,
+				RespBody:  s.RespBody,
 			})
 		}
 	}

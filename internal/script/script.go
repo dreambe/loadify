@@ -199,23 +199,43 @@ type accumulator struct {
 	checkFails int
 	failed     bool
 	errKind    string
+	method     string
+	url        string
+	respBody   string
+	errInfo    bool // method/url/respBody describe a failed call
 }
 
 func (a *accumulator) reset() {
 	a.latencyUs, a.ttfbUs, a.sent, a.recv = 0, 0, 0, 0
 	a.status, a.calls, a.checks, a.checkFails = 0, 0, 0, 0
 	a.failed, a.errKind = false, ""
+	a.method, a.url, a.respBody, a.errInfo = "", "", "", false
+}
+
+// noteCall records one http call's request/response snippet for the live log:
+// the first call wins, unless a later call fails (errors are more interesting).
+func (a *accumulator) noteCall(method, url, body string, failed bool) {
+	if a.url != "" && (a.errInfo || !failed) {
+		return
+	}
+	if len(body) > protocols.RespBodyCap {
+		body = body[:protocols.RespBodyCap]
+	}
+	a.method, a.url, a.respBody, a.errInfo = method, url, body, failed
 }
 
 func (a *accumulator) result(group string) protocols.Result {
 	r := protocols.Result{
 		Group:     group,
+		Method:    a.method,
+		URL:       a.url,
 		Status:    a.status,
 		LatencyUs: a.latencyUs,
 		TTFBUs:    a.ttfbUs,
 		SentBytes: a.sent,
 		RecvBytes: a.recv,
 		ErrorKind: a.errKind,
+		RespBody:  a.respBody,
 	}
 	// OK when at least one call was made and none failed.
 	r.OK = a.calls > 0 && !a.failed

@@ -67,7 +67,7 @@ func (d *Driver) Prepare(_ context.Context) error {
 
 // Exec performs one HTTP request and captures phase timings via httptrace.
 func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
-	res := protocols.Result{Group: d.group}
+	res := protocols.Result{Group: d.group, Method: d.cfg.Method, URL: d.cfg.URL}
 
 	var body io.Reader
 	if d.cfg.Body != "" {
@@ -107,7 +107,12 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 		return res
 	}
 	defer resp.Body.Close()
-	n, _ := io.Copy(io.Discard, resp.Body)
+	// Keep a small head of the body for the live response log, drain the rest.
+	head := make([]byte, protocols.RespBodyCap)
+	hn, _ := io.ReadFull(resp.Body, head)
+	rest, _ := io.Copy(io.Discard, resp.Body)
+	n := int64(hn) + rest
+	res.RespBody = string(head[:hn])
 	res.LatencyUs = sinceUs(start)
 	dnsUs, connectUs, tlsUs, firstByte := ph.snapshot()
 	res.DNSUs, res.ConnectUs, res.TLSUs = dnsUs, connectUs, tlsUs

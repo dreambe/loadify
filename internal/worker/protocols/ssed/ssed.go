@@ -59,7 +59,7 @@ func (d *Driver) Prepare(_ context.Context) error {
 
 // Exec opens one SSE stream and reads events.
 func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
-	res := protocols.Result{Group: d.group}
+	res := protocols.Result{Group: d.group, Method: http.MethodGet, URL: d.cfg.URL}
 
 	opCtx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
@@ -111,6 +111,11 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 			if firstEventAt.IsZero() {
 				firstEventAt = time.Now()
 				res.TTFBUs = firstEventAt.Sub(start).Microseconds()
+				body := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				if len(body) > protocols.RespBodyCap {
+					body = body[:protocols.RespBodyCap]
+				}
+				res.RespBody = body
 			}
 			events++
 			if int(events) >= maxEvents {

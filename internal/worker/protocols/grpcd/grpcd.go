@@ -121,7 +121,7 @@ func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
 }
 
 func (d *Driver) execUnary(ctx context.Context) protocols.Result {
-	res := protocols.Result{Group: d.group}
+	res := protocols.Result{Group: d.group, Method: d.grpcMethod, URL: d.cfg.Target}
 
 	in := dynamicpb.NewMessage(d.method.Input())
 	if err := proto.Unmarshal(d.reqBytes, in); err != nil {
@@ -148,6 +148,16 @@ func (d *Driver) execUnary(ctx context.Context) protocols.Result {
 	}
 	res.TTFBUs = res.LatencyUs
 	res.RecvBytes = int64(proto.Size(out))
+	// Small responses get a JSON snippet in the live log; large ones are skipped
+	// so the hot path never serializes big payloads.
+	if res.RecvBytes <= protocols.RespBodyCap {
+		if b, jerr := protojson.Marshal(out); jerr == nil {
+			if len(b) > protocols.RespBodyCap {
+				b = b[:protocols.RespBodyCap]
+			}
+			res.RespBody = string(b)
+		}
+	}
 	res.OK = true
 	return res
 }
@@ -156,7 +166,7 @@ func (d *Driver) execUnary(ctx context.Context) protocols.Result {
 // responses until max_messages, the server closes the stream, or the timeout
 // fires — measuring time-to-first-message and total stream duration.
 func (d *Driver) execStream(ctx context.Context) protocols.Result {
-	res := protocols.Result{Group: d.group}
+	res := protocols.Result{Group: d.group, Method: d.grpcMethod, URL: d.cfg.Target}
 
 	in := dynamicpb.NewMessage(d.method.Input())
 	if err := proto.Unmarshal(d.reqBytes, in); err != nil {

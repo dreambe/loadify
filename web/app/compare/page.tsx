@@ -77,7 +77,7 @@ function CompareInner() {
           <option value="">{t("compare.select")}</option>
           {runs.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.id.slice(0, 8)} · {r.status} · {new Date(r.created_at).toLocaleString()}
+              {r.name || r.id.slice(0, 8)} · {r.status} · {new Date(r.created_at).toLocaleString()}
             </option>
           ))}
         </select>

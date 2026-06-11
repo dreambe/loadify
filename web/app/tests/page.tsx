@@ -264,6 +264,7 @@ export default function TestsPage() {
               <tr>
                 <th>{t("tests.colName")}</th>
                 <th>{t("tests.colProtocol")}</th>
+                <th>{t("tests.colCreator")}</th>
                 <th>{t("tests.colCreated")}</th>
               </tr>
             </thead>
@@ -272,12 +273,13 @@ export default function TestsPage() {
                 <tr key={td.id}>
                   <td>{td.name}</td>
                   <td>{td.protocol}</td>
+                  <td className="muted">{td.creator_name || "–"}</td>
                   <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
                 </tr>
               ))}
               {tests.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="muted">
+                  <td colSpan={4} className="muted">
                     {t("tests.empty")}
                   </td>
                 </tr>

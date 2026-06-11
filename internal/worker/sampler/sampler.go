@@ -75,6 +75,9 @@ func (s *Sampler) maybeSampleLocked(r protocols.Result) {
 		SentBytes: r.SentBytes,
 		RecvBytes: r.RecvBytes,
 		ErrorKind: r.ErrorKind,
+		Method:    r.Method,
+		Url:       r.URL,
+		RespBody:  r.RespBody,
 	})
 }
 

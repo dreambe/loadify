@@ -17,7 +17,7 @@ type metaStore interface {
 	GetTestDefinition(ctx context.Context, id string) (*postgres.TestDefinition, error)
 	ListTestDefinitions(ctx context.Context, limit int) ([]postgres.TestDefinition, error)
 
-	CreateRun(ctx context.Context, testDefID string, desiredWorkers int) (string, error)
+	CreateRun(ctx context.Context, testDefID string, desiredWorkers int, name string, createdBy *string) (string, error)
 	SetRunRunning(ctx context.Context, id string) error
 	SetRunStatus(ctx context.Context, id, status string) error
 	FinishRun(ctx context.Context, id, status string, summary json.RawMessage) (bool, error)

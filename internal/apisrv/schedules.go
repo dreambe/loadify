@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -46,6 +47,9 @@ func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if scs == nil {
+		scs = []postgres.Schedule{}
 	}
 	writeJSON(w, http.StatusOK, scs)
 }
@@ -90,7 +94,7 @@ func (s *Server) fireDueSchedules(ctx context.Context) {
 			cancel()
 			return // nothing due
 		}
-		runID, st, err := s.launchRun(cctx, sc.TestDefID, sc.DesiredWorkers)
+		runID, st, err := s.launchRun(cctx, sc.TestDefID, sc.DesiredWorkers, "", nil)
 		if err != nil {
 			s.log.Warn("scheduler: launch failed", "schedule", sc.ID, "err", err)
 		} else {

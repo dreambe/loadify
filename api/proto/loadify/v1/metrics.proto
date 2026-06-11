@@ -20,6 +20,9 @@ message Sample {
   int64 sent_bytes = 12;
   int64 recv_bytes = 13;
   string error_kind = 14;
+  string method = 15;    // request verb/operation (e.g. GET, grpc method)
+  string url = 16;       // request target
+  string resp_body = 17; // truncated response body snippet for the live log
 }
 
 // AggSlice is a mergeable per-second rollup for one (group, status_class) key.

@@ -14,17 +14,22 @@ export interface TestDefinition {
   plan: unknown;
   ramp: unknown;
   script?: string;
+  created_by?: string;
+  creator_name?: string;
   created_at: string;
 }
 
 export interface Run {
   id: string;
   test_def_id: string;
+  name: string;
   status: string;
   desired_workers: number;
   started_at?: string;
   ended_at?: string;
   summary?: RunSummary;
+  created_by?: string;
+  creator_name?: string;
   created_at: string;
 }
 
@@ -90,6 +95,8 @@ export interface LiveTick {
 export interface LogSample {
   ts_unix_ms: number;
   group: string;
+  method?: string;
+  url?: string;
   status: number;
   ok: boolean;
   latency_ms: number;
@@ -97,6 +104,7 @@ export interface LogSample {
   sent_bytes: number;
   recv_bytes: number;
   error_kind?: string;
+  resp_body?: string;
 }
 
 export interface GroupTick {

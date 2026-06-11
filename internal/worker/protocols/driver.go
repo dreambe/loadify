@@ -13,6 +13,8 @@ import (
 // Result is a single iteration's observation, fed into the metrics recorder.
 type Result struct {
 	Group     string
+	Method    string // request verb/operation (GET, gRPC method, ...)
+	URL       string // request target
 	Status    int32
 	OK        bool
 	ErrorKind string
@@ -23,7 +25,12 @@ type Result struct {
 	TTFBUs    int64
 	SentBytes int64
 	RecvBytes int64
+	RespBody  string // truncated response body snippet for the live log
 }
+
+// RespBodyCap bounds the response body snippet captured per iteration so the
+// live log stays cheap regardless of payload size.
+const RespBodyCap = 1024
 
 // VU carries per-virtual-user state passed to Exec on every iteration.
 type VU struct {

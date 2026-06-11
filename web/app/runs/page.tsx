@@ -14,6 +14,7 @@ export default function RunsPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [tests, setTests] = useState<TestDefinition[]>([]);
   const [testId, setTestId] = useState("");
+  const [runName, setRunName] = useState("");
   const [workers, setWorkers] = useState(1);
   const [err, setErr] = useState("");
 
@@ -37,7 +38,7 @@ export default function RunsPage() {
     if (!testId) return;
     setErr("");
     try {
-      const res = await api.startRun(testId, workers);
+      const res = await api.startRun(testId, workers, runName);
       window.location.href = `/runs/${res.run_id}`;
     } catch (e: any) {
       setErr(e.message);
@@ -68,6 +69,15 @@ export default function RunsPage() {
                   ))}
                 </select>
               </div>
+              <div style={{ flex: 1 }}>
+                <label>{t("runs.name")}</label>
+                <input
+                  value={runName}
+                  onChange={(e) => setRunName(e.target.value)}
+                  placeholder={t("runs.namePh")}
+                  style={{ width: "100%" }}
+                />
+              </div>
               <div>
                 <label>{t("runs.workers")}</label>
                 <input
@@ -91,8 +101,9 @@ export default function RunsPage() {
           <table>
             <thead>
               <tr>
-                <th>{t("runs.colRun")}</th>
+                <th>{t("runs.colName")}</th>
                 <th>{t("runs.colStatus")}</th>
+                <th>{t("runs.colCreator")}</th>
                 <th>{t("runs.colWorkers")}</th>
                 <th>{t("runs.colStarted")}</th>
               </tr>
@@ -101,11 +112,12 @@ export default function RunsPage() {
               {runs.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <Link href={`/runs/${r.id}`}>{r.id.slice(0, 8)}</Link>
+                    <Link href={`/runs/${r.id}`}>{r.name || r.id.slice(0, 8)}</Link>
                   </td>
                   <td>
                     <span className={`badge ${r.status}`}>{r.status}</span>
                   </td>
+                  <td className="muted">{r.creator_name || t("run.creatorSystem")}</td>
                   <td>{r.desired_workers}</td>
                   <td className="muted">
                     {r.started_at ? new Date(r.started_at).toLocaleString() : "–"}
@@ -114,7 +126,7 @@ export default function RunsPage() {
               ))}
               {runs.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={5} className="muted">
                     {t("runs.empty")}
                   </td>
                 </tr>

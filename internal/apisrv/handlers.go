@@ -7,9 +7,11 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/auth"
 	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/sla"
 	"github.com/dreambe/loadify/internal/store"
@@ -81,6 +83,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		ScriptJS:   req.Script,
 		Thresholds: req.Thresholds,
 		DataJSON:   req.Dataset,
+		CreatedBy:  callerID(r),
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -96,6 +99,9 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if tds == nil {
+		tds = []postgres.TestDefinition{}
 	}
 	writeJSON(w, http.StatusOK, tds)
 }
@@ -113,8 +119,18 @@ func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 
 // --- runs ---
 
+// callerID returns the authenticated user's id, or nil for system contexts.
+func callerID(r *http.Request) *string {
+	if c, ok := auth.FromContext(r.Context()); ok && c.Subject != "" {
+		id := c.Subject
+		return &id
+	}
+	return nil
+}
+
 type startRunReq struct {
 	TestID         string `json:"test_id"`
+	Name           string `json:"name"`
 	DesiredWorkers int    `json:"desired_workers"`
 }
 
@@ -127,7 +143,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 
-	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers)
+	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers, req.Name, callerID(r))
 	if err != nil {
 		writeErr(w, statusCodeFor(err), err.Error())
 		return
@@ -136,8 +152,9 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // launchRun starts a run for a test definition and returns its id and status
-// ("running"/"queued"). Shared by the REST handler and the scheduler.
-func (s *Server) launchRun(ctx context.Context, testID string, workers int) (string, string, error) {
+// ("running"/"queued"). Shared by the REST handler and the scheduler. An empty
+// name falls back to "<test name> @ <time>"; createdBy is nil for the scheduler.
+func (s *Server) launchRun(ctx context.Context, testID string, workers int, name string, createdBy *string) (string, string, error) {
 	td, err := s.pg.GetTestDefinition(ctx, testID)
 	if err != nil {
 		return "", "", errNotFound("test not found")
@@ -151,7 +168,11 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int) (str
 		return "", "", errBadRequest(err.Error())
 	}
 
-	runID, err := s.pg.CreateRun(ctx, td.ID, workers)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = td.Name + " @ " + time.Now().Format("01-02 15:04")
+	}
+	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy)
 	if err != nil {
 		return "", "", err
 	}
@@ -329,6 +350,9 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if runs == nil {
+		runs = []postgres.Run{}
+	}
 	writeJSON(w, http.StatusOK, runs)
 }
 
@@ -363,6 +387,9 @@ func (s *Server) handleRunSeries(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if pts == nil {
+		pts = []store.SeriesPoint{}
 	}
 	writeJSON(w, http.StatusOK, pts)
 }
@@ -421,7 +448,12 @@ func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, resp.Workers)
+	workers := resp.Workers
+	if workers == nil {
+		// Never serialize a nil slice as JSON null: clients expect an array.
+		workers = []*loadifyv1.WorkerInfo{}
+	}
+	writeJSON(w, http.StatusOK, workers)
 }
 
 // --- helpers ---

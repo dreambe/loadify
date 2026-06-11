@@ -1,24 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { liveSocketURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { LiveTick, LogSample } from "@/lib/types";
-import LineChart from "./LineChart";
+import LineChart, { formatElapsed } from "./LineChart";
 
 const MAX_POINTS = 120;
 const MAX_LOG = 500;
 
 // LiveRunChart opens a WebSocket to the run's live stream and renders rolling
 // QPS / latency / error-rate charts, headline metrics, and a live response log.
+// All charts share one hover crosshair so a moment can be read across metrics.
+type KeyedSample = LogSample & { _id: number };
+
 export default function LiveRunChart({ runId }: { runId: string }) {
   const { t } = useI18n();
   const [ticks, setTicks] = useState<LiveTick[]>([]);
-  const [samples, setSamples] = useState<LogSample[]>([]);
+  const [samples, setSamples] = useState<KeyedSample[]>([]);
   const [connected, setConnected] = useState(false);
   const [showLog, setShowLog] = useState(true);
   const [errorsOnly, setErrorsOnly] = useState(false);
+  const [hover, setHover] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const startRef = useRef<number | null>(null);
+  const seqRef = useRef(0);
 
   useEffect(() => {
     const ws = new WebSocket(liveSocketURL(runId));
@@ -28,9 +35,13 @@ export default function LiveRunChart({ runId }: { runId: string }) {
     ws.onmessage = (ev) => {
       try {
         const tick = JSON.parse(ev.data) as LiveTick;
+        if (startRef.current === null) startRef.current = tick.ts_unix_ms;
         setTicks((prev) => [...prev.slice(-(MAX_POINTS - 1)), tick]);
         if (tick.samples && tick.samples.length > 0) {
-          setSamples((prev) => [...tick.samples!, ...prev].slice(0, MAX_LOG));
+          // Stable per-sample ids keep row expansion anchored as new samples
+          // are prepended.
+          const keyed = tick.samples.map((s) => ({ ...s, _id: seqRef.current++ }));
+          setSamples((prev) => [...keyed, ...prev].slice(0, MAX_LOG));
         }
       } catch {
         /* ignore malformed frame */
@@ -41,6 +52,11 @@ export default function LiveRunChart({ runId }: { runId: string }) {
 
   const last = ticks[ticks.length - 1];
   const shownSamples = errorsOnly ? samples.filter((s) => !s.ok) : samples;
+
+  // X-axis: elapsed run time of each retained tick (the window scrolls, so the
+  // first visible point is not necessarily t=0).
+  const base = startRef.current ?? ticks[0]?.ts_unix_ms ?? 0;
+  const xLabels = ticks.map((tk) => formatElapsed((tk.ts_unix_ms - base) / 1000));
 
   return (
     <div>
@@ -59,7 +75,12 @@ export default function LiveRunChart({ runId }: { runId: string }) {
 
       <div className="panel" style={{ marginTop: 16 }}>
         <h2>{t("run.throughput")}</h2>
-        <LineChart series={[{ label: "qps", color: "#2f81f7", data: ticks.map((tk) => tk.rps) }]} />
+        <LineChart
+          series={[{ label: "qps", color: "#2f81f7", data: ticks.map((tk) => tk.rps) }]}
+          xLabels={xLabels}
+          hoverIndex={hover}
+          onHover={setHover}
+        />
       </div>
 
       <div className="panel">
@@ -71,6 +92,9 @@ export default function LiveRunChart({ runId }: { runId: string }) {
             { label: "p95", color: "#d29922", data: ticks.map((tk) => tk.p95_ms) },
             { label: "p99", color: "#f85149", data: ticks.map((tk) => tk.p99_ms) },
           ]}
+          xLabels={xLabels}
+          hoverIndex={hover}
+          onHover={setHover}
         />
       </div>
 
@@ -80,6 +104,9 @@ export default function LiveRunChart({ runId }: { runId: string }) {
           series={[
             { label: "errors", color: "#f85149", data: ticks.map((tk) => tk.error_rate * 100) },
           ]}
+          xLabels={xLabels}
+          hoverIndex={hover}
+          onHover={setHover}
         />
       </div>
 
@@ -102,26 +129,68 @@ export default function LiveRunChart({ runId }: { runId: string }) {
         </div>
 
         {showLog && (
-          <div style={{ maxHeight: 320, overflow: "auto", marginTop: 12 }}>
+          <div style={{ maxHeight: 400, overflow: "auto", marginTop: 12 }}>
             <table>
               <thead>
                 <tr>
                   <th>{t("log.colTime")}</th>
-                  <th>{t("log.colGroup")}</th>
+                  <th>{t("log.colRequest")}</th>
                   <th>{t("log.colStatus")}</th>
                   <th>{t("log.colLatency")}</th>
                   <th>{t("log.colError")}</th>
                 </tr>
               </thead>
               <tbody>
-                {shownSamples.map((s, i) => (
-                  <tr key={i} style={{ color: s.ok ? undefined : "var(--red)" }}>
-                    <td className="muted">{new Date(s.ts_unix_ms).toLocaleTimeString()}</td>
-                    <td>{s.group}</td>
-                    <td>{s.status || (s.ok ? "—" : "✗")}</td>
-                    <td>{s.latency_ms.toFixed(1)} ms</td>
-                    <td>{s.error_kind || ""}</td>
-                  </tr>
+                {shownSamples.map((s) => (
+                  <Fragment key={s._id}>
+                    <tr
+                      style={{ color: s.ok ? undefined : "var(--red)", cursor: "pointer" }}
+                      onClick={() => setExpanded(expanded === s._id ? null : s._id)}
+                      title={t("log.expandHint")}
+                    >
+                      <td className="muted">{new Date(s.ts_unix_ms).toLocaleTimeString()}</td>
+                      <td
+                        style={{
+                          maxWidth: 320,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {s.method || s.url ? (
+                          <>
+                            <b>{s.method}</b> {s.url}
+                          </>
+                        ) : (
+                          s.group
+                        )}
+                      </td>
+                      <td>{s.status || (s.ok ? "—" : "✗")}</td>
+                      <td>{s.latency_ms.toFixed(1)} ms</td>
+                      <td>{s.error_kind || ""}</td>
+                    </tr>
+                    {expanded === s._id && (
+                      <tr>
+                        <td colSpan={5}>
+                          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+                            {t("log.colBody")}
+                          </div>
+                          <pre
+                            style={{
+                              margin: 0,
+                              maxHeight: 160,
+                              overflow: "auto",
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-all",
+                              fontSize: 12,
+                            }}
+                          >
+                            {s.resp_body || t("log.bodyEmpty")}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
                 {shownSamples.length === 0 && (
                   <tr>

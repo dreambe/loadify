@@ -40,3 +40,24 @@ func TestFlushCapsAndResetsSamples(t *testing.T) {
 		t.Errorf("post-reset samples = %d, want 1", len(batch2.Samples))
 	}
 }
+
+// TestSampleCarriesRequestAndBody ensures the live-log fields (method, URL,
+// response body snippet) survive the Result -> Sample conversion.
+func TestSampleCarriesRequestAndBody(t *testing.T) {
+	s := New("run", "worker", loadifyv1.Protocol_PROTOCOL_HTTP)
+	s.Record(protocols.Result{
+		Group:    "g",
+		Method:   "POST",
+		URL:      "http://api/login",
+		Status:   401,
+		RespBody: `{"error":"bad credentials"}`,
+	})
+	batch := s.Flush(time.Now())
+	if len(batch.Samples) != 1 {
+		t.Fatalf("samples = %d, want 1", len(batch.Samples))
+	}
+	sm := batch.Samples[0]
+	if sm.Method != "POST" || sm.Url != "http://api/login" || sm.RespBody != `{"error":"bad credentials"}` {
+		t.Errorf("sample = method %q url %q body %q", sm.Method, sm.Url, sm.RespBody)
+	}
+}

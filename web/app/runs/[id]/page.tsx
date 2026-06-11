@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
-import LineChart from "@/components/LineChart";
+import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api, exportCSVURL } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
@@ -14,6 +14,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   const { user, ready } = useAuth();
   const [run, setRun] = useState<Run | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
+  const [hover, setHover] = useState<number | null>(null);
   const runId = params.id;
 
   useEffect(() => {
@@ -35,14 +36,18 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   if (!ready) return null;
   const canStop = roleAtLeast(user?.role, "operator");
 
+  // X-axis: elapsed test time from the first series point.
+  const seriesBase = series.length > 0 ? new Date(series[0].ts).getTime() : 0;
+  const xLabels = series.map((p) =>
+    formatElapsed((new Date(p.ts).getTime() - seriesBase) / 1000)
+  );
+
   return (
     <>
       <Nav />
       <div className="container">
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <h1>
-            {t("run.title")} {runId.slice(0, 8)}
-          </h1>
+          <h1>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
           <div className="row" style={{ alignItems: "center" }}>
             {terminal && (
               <a className="badge" href={exportCSVURL(runId)} download>
@@ -52,6 +57,14 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             {run && <span className={`badge ${run.status}`}>{run.status}</span>}
           </div>
         </div>
+        {run && (
+          <div className="muted" style={{ marginBottom: 12 }}>
+            {t("run.creator")}: {run.creator_name || t("run.creatorSystem")}
+            {" · "}
+            {t("runs.colStarted")}:{" "}
+            {run.started_at ? new Date(run.started_at).toLocaleString() : "–"}
+          </div>
+        )}
 
         {run?.status === "running" && canStop && (
           <button
@@ -70,6 +83,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <h2>{t("run.throughput")}</h2>
               <LineChart
                 series={[{ label: "qps", color: "#2f81f7", data: series.map((p) => p.rps) }]}
+                xLabels={xLabels}
+                hoverIndex={hover}
+                onHover={setHover}
               />
             </div>
             <div className="panel">
@@ -81,6 +97,24 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                   { label: "p95", color: "#d29922", data: series.map((p) => p.p95_ms) },
                   { label: "p99", color: "#f85149", data: series.map((p) => p.p99_ms) },
                 ]}
+                xLabels={xLabels}
+                hoverIndex={hover}
+                onHover={setHover}
+              />
+            </div>
+            <div className="panel">
+              <h2>{t("run.errorRate")}</h2>
+              <LineChart
+                series={[
+                  {
+                    label: "errors",
+                    color: "#f85149",
+                    data: series.map((p) => p.error_rate * 100),
+                  },
+                ]}
+                xLabels={xLabels}
+                hoverIndex={hover}
+                onHover={setHover}
               />
             </div>
             {run?.summary?.checks && run.summary.checks.length > 0 && (

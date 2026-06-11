@@ -10,6 +10,7 @@ import (
 
 	"github.com/dreambe/loadify/internal/config"
 	"github.com/dreambe/loadify/migrations"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,15 +50,17 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 // TestDefinition is a stored declarative test.
 type TestDefinition struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	Protocol   string          `json:"protocol"`
-	PlanJSON   json.RawMessage `json:"plan"`
-	RampJSON   json.RawMessage `json:"ramp"`
-	ScriptJS   string          `json:"script,omitempty"`
-	Thresholds json.RawMessage `json:"thresholds,omitempty"`
-	DataJSON   json.RawMessage `json:"dataset,omitempty"`
-	CreatedAt  time.Time       `json:"created_at"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Protocol    string          `json:"protocol"`
+	PlanJSON    json.RawMessage `json:"plan"`
+	RampJSON    json.RawMessage `json:"ramp"`
+	ScriptJS    string          `json:"script,omitempty"`
+	Thresholds  json.RawMessage `json:"thresholds,omitempty"`
+	DataJSON    json.RawMessage `json:"dataset,omitempty"`
+	CreatedBy   *string         `json:"created_by,omitempty"`
+	CreatorName string          `json:"creator_name,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 // CreateTestDefinition inserts a test definition and returns its id.
@@ -72,9 +75,9 @@ func (s *Store) CreateTestDefinition(ctx context.Context, td *TestDefinition) (s
 		dataset = td.DataJSON
 	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO test_definitions (name, protocol, plan_json, ramp_json, script_js, thresholds_json, data_json)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-		td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset).Scan(&id)
+		INSERT INTO test_definitions (name, protocol, plan_json, ramp_json, script_js, thresholds_json, data_json, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+		td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset, td.CreatedBy).Scan(&id)
 	return id, err
 }
 
@@ -82,9 +85,10 @@ func (s *Store) CreateTestDefinition(ctx context.Context, td *TestDefinition) (s
 func (s *Store) GetTestDefinition(ctx context.Context, id string) (*TestDefinition, error) {
 	td := &TestDefinition{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, protocol, plan_json, ramp_json, coalesce(script_js,''), coalesce(thresholds_json,'[]'), coalesce(data_json,'null'), created_at
-		FROM test_definitions WHERE id = $1`, id).
-		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedAt)
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.created_at
+		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
+		WHERE t.id = $1`, id).
+		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -97,16 +101,17 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, protocol, plan_json, ramp_json, coalesce(script_js,''), coalesce(thresholds_json,'[]'), coalesce(data_json,'null'), created_at
-		FROM test_definitions ORDER BY created_at DESC LIMIT $1`, limit)
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.created_at
+		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
+		ORDER BY t.created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []TestDefinition
+	out := []TestDefinition{}
 	for rows.Next() {
 		var td TestDefinition
-		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, td)
@@ -118,20 +123,24 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 type Run struct {
 	ID             string          `json:"id"`
 	TestDefID      string          `json:"test_def_id"`
+	Name           string          `json:"name"`
 	Status         string          `json:"status"`
 	DesiredWorkers int             `json:"desired_workers"`
 	StartedAt      *time.Time      `json:"started_at,omitempty"`
 	EndedAt        *time.Time      `json:"ended_at,omitempty"`
 	Summary        json.RawMessage `json:"summary,omitempty"`
+	CreatedBy      *string         `json:"created_by,omitempty"`
+	CreatorName    string          `json:"creator_name,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
-// CreateRun inserts a pending run.
-func (s *Store) CreateRun(ctx context.Context, testDefID string, desiredWorkers int) (string, error) {
+// CreateRun inserts a pending run. createdBy may be nil for system-launched
+// runs (e.g. the scheduler).
+func (s *Store) CreateRun(ctx context.Context, testDefID string, desiredWorkers int, name string, createdBy *string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO runs (test_def_id, status, desired_workers)
-		VALUES ($1, 'pending', $2) RETURNING id`, testDefID, desiredWorkers).Scan(&id)
+		INSERT INTO runs (test_def_id, status, desired_workers, name, created_by)
+		VALUES ($1, 'pending', $2, $3, $4) RETURNING id`, testDefID, desiredWorkers, name, createdBy).Scan(&id)
 	return id, err
 }
 
@@ -167,30 +176,24 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, summary json.R
 // so a reaper can reconcile orphans left by an apisrv restart.
 func (s *Store) ListActiveRuns(ctx context.Context) ([]Run, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, test_def_id, status, desired_workers, started_at, ended_at, coalesce(summary,'{}'), created_at
-		FROM runs WHERE status IN ('pending','queued','running') ORDER BY created_at ASC LIMIT 500`)
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), r.created_at
+		FROM runs r LEFT JOIN users u ON u.id = r.created_by
+		WHERE r.status IN ('pending','queued','running') ORDER BY r.created_at ASC LIMIT 500`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Run
-	for rows.Next() {
-		var r Run
-		if err := rows.Scan(&r.ID, &r.TestDefID, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return scanRuns(rows)
 }
 
 // GetRun fetches a run.
 func (s *Store) GetRun(ctx context.Context, id string) (*Run, error) {
 	r := &Run{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, test_def_id, status, desired_workers, started_at, ended_at, coalesce(summary,'{}'), created_at
-		FROM runs WHERE id=$1`, id).
-		Scan(&r.ID, &r.TestDefID, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedAt)
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), r.created_at
+		FROM runs r LEFT JOIN users u ON u.id = r.created_by
+		WHERE r.id=$1`, id).
+		Scan(&r.ID, &r.TestDefID, &r.Name, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedBy, &r.CreatorName, &r.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -203,16 +206,21 @@ func (s *Store) ListRuns(ctx context.Context, limit int) ([]Run, error) {
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, test_def_id, status, desired_workers, started_at, ended_at, coalesce(summary,'{}'), created_at
-		FROM runs ORDER BY created_at DESC LIMIT $1`, limit)
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), r.created_at
+		FROM runs r LEFT JOIN users u ON u.id = r.created_by
+		ORDER BY r.created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Run
+	return scanRuns(rows)
+}
+
+func scanRuns(rows pgx.Rows) ([]Run, error) {
+	out := []Run{}
 	for rows.Next() {
 		var r Run
-		if err := rows.Scan(&r.ID, &r.TestDefID, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.TestDefID, &r.Name, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedBy, &r.CreatorName, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

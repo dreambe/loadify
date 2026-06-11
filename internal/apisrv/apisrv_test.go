@@ -41,7 +41,9 @@ func (f *fakeMeta) GetTestDefinition(_ context.Context, id string) (*postgres.Te
 func (f *fakeMeta) ListTestDefinitions(_ context.Context, _ int) ([]postgres.TestDefinition, error) {
 	return nil, nil
 }
-func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int) (string, error) { return "run-1", nil }
+func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, _ *string) (string, error) {
+	return "run-1", nil
+}
 func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error              { return nil }
 func (f *fakeMeta) SetRunStatus(_ context.Context, _, _ string) error            { return nil }
 func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage) (bool, error) {
@@ -252,5 +254,32 @@ func TestReaperLeavesRunningRun(t *testing.T) {
 	srv.reapOnce(context.Background(), 6*time.Hour)
 	if _, done := meta.finished["live"]; done {
 		t.Error("a still-running run should not be finalized")
+	}
+}
+
+// TestListEndpointsReturnArrays guards against nil slices marshaling as JSON
+// null, which crashes frontend code that calls .length/.map on the response.
+func TestListEndpointsReturnArrays(t *testing.T) {
+	srv := newTestServer(newFakeMeta(), &fakeCoord{})
+	h := srv.Handler()
+	tok := token(t, auth.RoleAdmin)
+
+	for _, path := range []string{"/api/v1/tests", "/api/v1/runs", "/api/v1/schedules", "/api/v1/users"} {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Errorf("%s: got %d want 200", path, rr.Code)
+			continue
+		}
+		var v any
+		if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+			t.Errorf("%s: invalid json: %v", path, err)
+			continue
+		}
+		if _, ok := v.([]any); !ok {
+			t.Errorf("%s: body = %s, want a JSON array", path, rr.Body.String())
+		}
 	}
 }

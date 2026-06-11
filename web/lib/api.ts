@@ -41,6 +41,12 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+// reqList guards against Go marshaling empty (nil) slices as JSON null: list
+// endpoints always resolve to an array so callers can map/length safely.
+async function reqList<T>(path: string, init: RequestInit = {}): Promise<T[]> {
+  return (await req<T[] | null>(path, init)) ?? [];
+}
+
 export interface LoginResponse {
   token: string;
   user: User;
@@ -55,7 +61,7 @@ export const api = {
   me: () => req<User>("/api/v1/auth/me"),
   feishuLoginURL: () => `${API_BASE}/api/v1/auth/feishu/login`,
 
-  listTests: () => req<TestDefinition[]>("/api/v1/tests"),
+  listTests: () => reqList<TestDefinition>("/api/v1/tests"),
   getTest: (id: string) => req<TestDefinition>(`/api/v1/tests/${id}`),
   createTest: (body: {
     name: string;
@@ -67,21 +73,21 @@ export const api = {
     dataset?: unknown;
   }) => req<{ id: string }>("/api/v1/tests", { method: "POST", body: JSON.stringify(body) }),
 
-  listRuns: () => req<Run[]>("/api/v1/runs"),
+  listRuns: () => reqList<Run>("/api/v1/runs"),
   getRun: (id: string) => req<Run>(`/api/v1/runs/${id}`),
-  startRun: (testId: string, desiredWorkers: number) =>
+  startRun: (testId: string, desiredWorkers: number, name = "") =>
     req<{ run_id: string; status: string }>("/api/v1/runs", {
       method: "POST",
-      body: JSON.stringify({ test_id: testId, desired_workers: desiredWorkers }),
+      body: JSON.stringify({ test_id: testId, desired_workers: desiredWorkers, name }),
     }),
   stopRun: (id: string) =>
     req<{ run_id: string; status: string }>(`/api/v1/runs/${id}/stop`, { method: "POST" }),
   runSeries: (id: string, group = "*", res = 1) =>
-    req<SeriesPoint[]>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
+    reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
 
-  listWorkers: () => req<WorkerInfo[]>("/api/v1/workers"),
+  listWorkers: () => reqList<WorkerInfo>("/api/v1/workers"),
 
-  listSchedules: () => req<Schedule[]>("/api/v1/schedules"),
+  listSchedules: () => reqList<Schedule>("/api/v1/schedules"),
   createSchedule: (testId: string, intervalMinutes: number, desiredWorkers: number) =>
     req<{ id: string }>("/api/v1/schedules", {
       method: "POST",
@@ -90,7 +96,7 @@ export const api = {
   setScheduleEnabled: (id: string, enabled: boolean) =>
     req<{ enabled: boolean }>(`/api/v1/schedules/${id}/enabled?enabled=${enabled}`, { method: "POST" }),
 
-  listUsers: () => req<User[]>("/api/v1/users"),
+  listUsers: () => reqList<User>("/api/v1/users"),
   createUser: (body: { email: string; name: string; role: string; password: string }) =>
     req<User>("/api/v1/users", { method: "POST", body: JSON.stringify(body) }),
 };

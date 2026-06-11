@@ -63,7 +63,7 @@ func (d *Driver) Prepare(_ context.Context) error {
 // first iteration and reuses the connection afterwards; on any error the
 // connection is dropped so the next iteration redials.
 func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
-	res := protocols.Result{Group: d.group}
+	res := protocols.Result{Group: d.group, Method: "WS", URL: d.cfg.URL}
 
 	opCtx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
@@ -99,6 +99,10 @@ func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
 			return res
 		}
 		res.RecvBytes = int64(len(data))
+		if len(data) > protocols.RespBodyCap {
+			data = data[:protocols.RespBodyCap]
+		}
+		res.RespBody = string(data)
 		res.OK = true
 		return res
 	}
