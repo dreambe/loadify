@@ -30,6 +30,7 @@ type APIServer struct {
 	FeishuAppSecret   string
 	FeishuRedirectURL string
 	FrontendURL       string
+	WebhookURL        string
 	AdminEmail        string
 	AdminPassword     string
 	Postgres          Postgres
@@ -65,6 +66,7 @@ func LoadAPIServer() APIServer {
 		FeishuAppSecret:   env("LOADIFY_FEISHU_APP_SECRET", ""),
 		FeishuRedirectURL: env("LOADIFY_FEISHU_REDIRECT_URL", ""),
 		FrontendURL:       env("LOADIFY_FRONTEND_URL", "http://localhost:3000"),
+		WebhookURL:        env("LOADIFY_WEBHOOK_URL", ""),
 		AdminEmail:        env("LOADIFY_ADMIN_EMAIL", ""),
 		AdminPassword:     env("LOADIFY_ADMIN_PASSWORD", ""),
 		Postgres:          loadPostgres(),

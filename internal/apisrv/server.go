@@ -34,6 +34,7 @@ type Server struct {
 	jwtSecret   string
 	jwtTTL      time.Duration
 	frontendURL string
+	webhookURL  string
 }
 
 // Config configures the Server.
@@ -46,6 +47,8 @@ type Config struct {
 	JWTTTL      time.Duration
 	Feishu      *auth.FeishuClient
 	FrontendURL string
+	// WebhookURL, when set, receives a JSON POST whenever a run finishes.
+	WebhookURL string
 }
 
 // New builds the Server and its routes.
@@ -65,6 +68,7 @@ func New(c Config) *Server {
 		jwtSecret:   c.JWTSecret,
 		jwtTTL:      ttl,
 		frontendURL: c.FrontendURL,
+		webhookURL:  c.WebhookURL,
 	}
 	s.routes()
 	return s

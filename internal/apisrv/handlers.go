@@ -230,6 +230,7 @@ func (s *Server) finalizeRun(runID, status string) {
 	}
 	if switched {
 		s.log.Info("run finalized", "run", runID, "total", total, "status", status)
+		s.notifyWebhook(runID, status, payload)
 	}
 }
 
