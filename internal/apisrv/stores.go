@@ -29,7 +29,7 @@ type metaStore interface {
 
 	GetUserByEmail(ctx context.Context, email string) (*postgres.User, error)
 	GetUserByID(ctx context.Context, id string) (*postgres.User, error)
-	UpsertFeishuUser(ctx context.Context, openID, email, name string) (*postgres.User, error)
+	UpsertFeishuUser(ctx context.Context, openID, email, name, avatarURL string) (*postgres.User, error)
 	TouchLogin(ctx context.Context, id string) error
 	ListUsers(ctx context.Context, limit int) ([]postgres.User, error)
 	CreateUser(ctx context.Context, email, name, role, passwordHash string) (*postgres.User, error)

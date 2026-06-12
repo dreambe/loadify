@@ -15,10 +15,37 @@
   --green: #3ddc97;
   --red: #ff5d73;
   --yellow: #ffc857;
+  --nav-bg: rgba(7, 11, 18, 0.78);
+  --glow-1: rgba(54, 214, 231, 0.07);
+  --glow-2: rgba(124, 140, 248, 0.06);
+  --grid-line: rgba(126, 141, 166, 0.045);
   --font-ui: var(--font-grotesk), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Light theme: same instrument language on paper-white surfaces. The accent
+   darkens for contrast; status hues deepen similarly. */
+html[data-theme="light"] {
+  --bg: #f2f5f9;
+  --panel: #ffffff;
+  --panel-2: #f6f8fb;
+  --border: #dbe2ec;
+  --border-strong: #bcc8d8;
+  --text: #16202e;
+  --muted: #5e6c82;
+  --accent: #0d96a8;
+  --accent-soft: rgba(13, 150, 168, 0.16);
+  --accent-2: #5667e0;
+  --green: #109a64;
+  --red: #d6304b;
+  --yellow: #b07b10;
+  --nav-bg: rgba(255, 255, 255, 0.82);
+  --glow-1: rgba(13, 150, 168, 0.07);
+  --glow-2: rgba(86, 103, 224, 0.06);
+  --grid-line: rgba(94, 108, 130, 0.07);
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 18px rgba(22, 32, 46, 0.07);
 }
 
 * {
@@ -39,10 +66,10 @@ body {
 /* Atmosphere: twin signal glows over a faint engineering grid. */
 body {
   background-image:
-    radial-gradient(1100px 700px at 85% -10%, rgba(54, 214, 231, 0.07), transparent 60%),
-    radial-gradient(900px 600px at -15% 110%, rgba(124, 140, 248, 0.06), transparent 55%),
-    linear-gradient(rgba(126, 141, 166, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(126, 141, 166, 0.045) 1px, transparent 1px);
+    radial-gradient(1100px 700px at 85% -10%, var(--glow-1), transparent 60%),
+    radial-gradient(900px 600px at -15% 110%, var(--glow-2), transparent 55%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: auto, auto, 36px 36px, 36px 36px;
   background-attachment: fixed;
 }
@@ -92,7 +119,7 @@ a:hover {
   align-items: center;
   gap: 22px;
   padding: 13px 22px;
-  background: rgba(7, 11, 18, 0.78);
+  background: var(--nav-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
@@ -481,6 +508,97 @@ button:disabled {
 
 pre {
   font-family: var(--font-mono);
+}
+
+/* Numeric inputs read as instrument fields — no spinner chrome. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Required-field marker on labels. */
+label.req::after {
+  content: " *";
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* --- pager ------------------------------------------------------------------ */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- avatar / profile ------------------------------------------------------- */
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  object-fit: cover;
+  flex: none;
+}
+.avatar.fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #04222a;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+/* --- footer ------------------------------------------------------------------ */
+
+.footer {
+  margin-top: 48px;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, transparent, var(--glow-1));
+}
+.footer-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 22px 20px 28px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.footer .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text);
+}
+.footer .brand svg {
+  color: var(--accent);
+}
+.footer .spacer {
+  flex: 1;
+}
+.footer a {
+  color: var(--muted);
+}
+.footer a:hover {
+  color: var(--accent);
 }
 
 /* --- login ------------------------------------------------------------------ */

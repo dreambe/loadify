@@ -16,6 +16,7 @@ type User struct {
 	Role         string     `json:"role"`
 	PasswordHash string     `json:"-"`
 	FeishuOpenID string     `json:"feishu_open_id,omitempty"`
+	AvatarURL    string     `json:"avatar_url,omitempty"`
 	Disabled     bool       `json:"disabled"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
@@ -24,11 +25,11 @@ type User struct {
 // ErrUserNotFound is returned when a lookup matches no row.
 var ErrUserNotFound = errors.New("postgres: user not found")
 
-const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), disabled, created_at, last_login_at`
+const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), disabled, created_at, last_login_at`
 
 func scanUser(row pgx.Row) (*User, error) {
 	u := &User{}
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.Disabled, &u.CreatedAt, &u.LastLoginAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &u.Disabled, &u.CreatedAt, &u.LastLoginAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
@@ -59,13 +60,13 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 // UpsertFeishuUser creates or updates the account mapped to a Feishu open_id,
 // returning the resulting row. Existing roles are preserved; new accounts get
 // the viewer role.
-func (s *Store) UpsertFeishuUser(ctx context.Context, openID, email, name string) (*User, error) {
+func (s *Store) UpsertFeishuUser(ctx context.Context, openID, email, name, avatarURL string) (*User, error) {
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO users (email, name, role, feishu_open_id)
-		VALUES ($1,$2,'viewer',$3)
+		INSERT INTO users (email, name, role, feishu_open_id, avatar_url)
+		VALUES ($1,$2,'viewer',$3,$4)
 		ON CONFLICT (feishu_open_id) DO UPDATE
-		  SET name = EXCLUDED.name, last_login_at = now()
-		RETURNING `+userCols, email, name, openID)
+		  SET name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url, last_login_at = now()
+		RETURNING `+userCols, email, name, openID, avatarURL)
 	return scanUser(row)
 }
 

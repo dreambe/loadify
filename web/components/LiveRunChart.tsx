@@ -69,6 +69,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
           value={last ? (last.error_rate * 100).toFixed(2) + "%" : "–"}
         />
         <Metric label="p50" value={fmt(last?.p50_ms) + " ms"} />
+        <Metric label="p90" value={fmt(last?.p90_ms) + " ms"} />
         <Metric label="p95" value={fmt(last?.p95_ms) + " ms"} />
         <Metric label="p99" value={fmt(last?.p99_ms) + " ms"} />
       </div>
@@ -89,6 +90,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
           unit="ms"
           series={[
             { label: "p50", color: "#3ddc97", data: ticks.map((tk) => tk.p50_ms) },
+            { label: "p90", color: "#7c8cf8", data: ticks.map((tk) => tk.p90_ms) },
             { label: "p95", color: "#ffc857", data: ticks.map((tk) => tk.p95_ms) },
             { label: "p99", color: "#ff5d73", data: ticks.map((tk) => tk.p99_ms) },
           ]}

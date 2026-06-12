@@ -27,13 +27,14 @@ type publicUserView struct {
 	Email       string     `json:"email"`
 	Name        string     `json:"name"`
 	Role        string     `json:"role"`
+	AvatarURL   string     `json:"avatar_url,omitempty"`
 	Disabled    bool       `json:"disabled"`
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 }
 
 func userView(u *postgres.User) publicUserView {
-	v := publicUserView{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, Disabled: u.Disabled, LastLoginAt: u.LastLoginAt}
+	v := publicUserView{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, AvatarURL: u.AvatarURL, Disabled: u.Disabled, LastLoginAt: u.LastLoginAt}
 	if !u.CreatedAt.IsZero() {
 		ca := u.CreatedAt
 		v.CreatedAt = &ca
@@ -95,7 +96,7 @@ func (s *Server) handleFeishuCallback(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "feishu exchange failed")
 		return
 	}
-	u, err := s.pg.UpsertFeishuUser(ctx, fu.OpenID, fu.Email, fu.Name)
+	u, err := s.pg.UpsertFeishuUser(ctx, fu.OpenID, fu.Email, fu.Name, fu.AvatarURL)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -113,11 +114,18 @@ func (s *Server) handleFeishuCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.frontendURL+"/login#token="+token, http.StatusFound)
 }
 
-// handleMe returns the caller's claims.
+// handleMe returns the caller's full profile (claims identify the user; the
+// row supplies avatar, created/last-login timestamps).
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	c, ok := auth.FromContext(r.Context())
 	if !ok {
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if u, err := s.pg.GetUserByID(ctx, c.Subject); err == nil {
+		writeJSON(w, http.StatusOK, userView(u))
 		return
 	}
 	writeJSON(w, http.StatusOK, publicUserView{ID: c.Subject, Email: c.Email, Name: c.Name, Role: string(c.Role)})

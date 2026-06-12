@@ -2,8 +2,32 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { clearSession, getUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+
+const THEME_KEY = "loadify_theme";
+
+// useTheme persists a light/dark preference on <html data-theme>; dark is the
+// default and is encoded as the absence of the attribute.
+export function useTheme(): ["dark" | "light", () => void] {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    if (stored === "light") {
+      setTheme("light");
+      document.documentElement.dataset.theme = "light";
+    }
+  }, []);
+  const toggle = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    window.localStorage.setItem(THEME_KEY, next);
+    if (next === "light") document.documentElement.dataset.theme = "light";
+    else delete document.documentElement.dataset.theme;
+  };
+  return [theme, toggle];
+}
 
 // PulseMark is the brand glyph: a load-curve heartbeat.
 export function PulseMark({ size = 20 }: { size?: number }) {
@@ -28,6 +52,7 @@ export default function Nav() {
   const user = getUser();
   const pathname = usePathname();
   const { t, lang, setLang } = useI18n();
+  const [theme, toggleTheme] = useTheme();
 
   const item = (href: string, label: string) => (
     <Link href={href} className={pathname?.startsWith(href) ? "active" : undefined}>
@@ -47,6 +72,13 @@ export default function Nav() {
       {item("/workers", t("nav.workers"))}
       {item("/users", user?.role === "admin" ? t("nav.users") : t("nav.account"))}
       <span className="spacer" />
+      <button
+        className="secondary"
+        onClick={toggleTheme}
+        title={theme === "dark" ? t("nav.themeLight") : t("nav.themeDark")}
+      >
+        {theme === "dark" ? "☀" : "☾"}
+      </button>
       <button
         className="secondary"
         onClick={() => setLang(lang === "zh" ? "en" : "zh")}

@@ -54,7 +54,50 @@ type HTTPConfig struct {
 	// BodyContains, when set, fails the iteration unless the response body
 	// contains this substring (checked against the first 256 KiB).
 	BodyContains string `json:"body_contains,omitempty"`
-	Group        string `json:"group,omitempty"`
+	// Asserts are structured per-request checks (status / body / JSON field).
+	Asserts []HTTPAssert `json:"asserts,omitempty"`
+	Group   string       `json:"group,omitempty"`
+}
+
+// HTTPAssert is one per-request check evaluated against the response.
+//
+//   - source "status":  compares the HTTP status code
+//   - source "body":    compares the raw body text (first 256 KiB)
+//   - source "json":    extracts Path (dot notation, e.g. "data.items.0.id")
+//     from the JSON body and compares the extracted value
+//
+// Ops: eq, ne, gt, lt, gte, lte, contains, exists. A missing JSON field or an
+// unparsable body fails the assertion (with a descriptive reason) — it never
+// aborts the run.
+type HTTPAssert struct {
+	Source string `json:"source"`
+	Path   string `json:"path,omitempty"`
+	Op     string `json:"op"`
+	Value  string `json:"value,omitempty"`
+}
+
+var validAssertOps = map[string]bool{
+	"eq": true, "ne": true, "gt": true, "lt": true,
+	"gte": true, "lte": true, "contains": true, "exists": true,
+}
+
+// Validate checks a single assertion definition.
+func (a *HTTPAssert) Validate() error {
+	switch a.Source {
+	case "status", "body", "json":
+	default:
+		return fmt.Errorf("plan: assert source must be status/body/json, got %q", a.Source)
+	}
+	if !validAssertOps[a.Op] {
+		return fmt.Errorf("plan: assert op %q not one of eq/ne/gt/lt/gte/lte/contains/exists", a.Op)
+	}
+	if a.Source == "json" && a.Path == "" {
+		return fmt.Errorf("plan: json assert requires a path")
+	}
+	if a.Op != "exists" && a.Value == "" && a.Source != "body" {
+		return fmt.Errorf("plan: assert %s/%s requires a value", a.Source, a.Op)
+	}
+	return nil
 }
 
 // GRPCConfig describes a gRPC call (dynamic invocation by descriptor).
@@ -117,6 +160,11 @@ func (p *Plan) Validate() error {
 		}
 		if p.HTTP.Method == "" {
 			p.HTTP.Method = "GET"
+		}
+		for i := range p.HTTP.Asserts {
+			if err := p.HTTP.Asserts[i].Validate(); err != nil {
+				return err
+			}
 		}
 	case GRPC:
 		if p.GRPC == nil || p.GRPC.Target == "" || p.GRPC.FullMethod == "" {

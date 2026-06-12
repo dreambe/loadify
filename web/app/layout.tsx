@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
+import Footer from "@/components/Footer";
 
 // Distinctive type pairing: Space Grotesk for display/UI chrome, IBM Plex Mono
 // for data readouts — CJK text falls back to the platform's Chinese fonts.
@@ -26,7 +27,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN" className={`${grotesk.variable} ${plexMono.variable}`}>
       <body>
-        <LocaleProvider>{children}</LocaleProvider>
+        <LocaleProvider>
+          <div style={{ minHeight: "calc(100vh - 90px)" }}>{children}</div>
+          <Footer />
+        </LocaleProvider>
       </body>
     </html>
   );

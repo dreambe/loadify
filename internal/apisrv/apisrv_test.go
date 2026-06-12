@@ -71,7 +71,7 @@ func (f *fakeMeta) GetUserByEmail(_ context.Context, email string) (*postgres.Us
 func (f *fakeMeta) GetUserByID(_ context.Context, id string) (*postgres.User, error) {
 	return &postgres.User{ID: id}, nil
 }
-func (f *fakeMeta) UpsertFeishuUser(_ context.Context, _, _, _ string) (*postgres.User, error) {
+func (f *fakeMeta) UpsertFeishuUser(_ context.Context, _, _, _, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "u", Role: "viewer"}, nil
 }
 func (f *fakeMeta) TouchLogin(_ context.Context, _ string) error { return nil }

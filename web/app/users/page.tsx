@@ -95,6 +95,8 @@ export default function UsersPage() {
       <div className="container">
         <h1>{t("users.title")}</h1>
 
+        <ProfileCard />
+
         <ChangePasswordPanel onError={setErr} onDone={() => flash(t("users.pwChanged"))} />
 
         {!isAdmin && err && <div className="error">{err}</div>}
@@ -210,6 +212,47 @@ export default function UsersPage() {
         )}
       </div>
     </>
+  );
+}
+
+// ProfileCard shows the signed-in user's identity: avatar (Feishu's when
+// present, otherwise an initial), role, and account timestamps.
+function ProfileCard() {
+  const { t } = useI18n();
+  const [me, setMe] = useState<User | null>(null);
+  useEffect(() => {
+    api.me().then(setMe).catch(() => {});
+  }, []);
+  if (!me) return null;
+  const initial = (me.name || me.email || "?").trim().charAt(0).toUpperCase();
+  return (
+    <div className="panel">
+      <div className="row" style={{ alignItems: "center", gap: 16 }}>
+        {me.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="avatar" src={me.avatar_url} alt={me.name || me.email} />
+        ) : (
+          <span className="avatar fallback">{initial}</span>
+        )}
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>{me.name || me.email}</div>
+          <div className="muted" style={{ fontSize: 13 }}>
+            {me.email}
+          </div>
+        </div>
+        <span className="badge completed">{me.role}</span>
+        <div className="muted" style={{ fontSize: 12.5, textAlign: "right" }}>
+          <div>
+            {t("users.profileCreated")}:{" "}
+            {me.created_at ? new Date(me.created_at).toLocaleDateString() : "–"}
+          </div>
+          <div>
+            {t("users.colLastLogin")}:{" "}
+            {me.last_login_at ? new Date(me.last_login_at).toLocaleString() : "–"}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -154,9 +154,9 @@ func TestFeishuExchange(t *testing.T) {
 }
 
 func TestFeishuAuthCodeURL(t *testing.T) {
-	c := &auth.FeishuClient{AppID: "cli", AppSecret: "sec", RedirectURL: "https://app/cb", BaseURL: "https://feishu.test"}
+	c := &auth.FeishuClient{AppID: "cli", AppSecret: "sec", RedirectURL: "https://app/cb", AccountsURL: "https://feishu.test"}
 	got := c.AuthCodeURL("xyz")
-	for _, want := range []string{"app_id=cli", "redirect_uri=https%3A%2F%2Fapp%2Fcb", "state=xyz", "/open-apis/authen/v1/index"} {
+	for _, want := range []string{"client_id=cli", "redirect_uri=https%3A%2F%2Fapp%2Fcb", "response_type=code", "state=xyz", "/open-apis/authen/v1/authorize"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("auth url %q missing %q", got, want)
 		}

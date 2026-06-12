@@ -114,7 +114,7 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 	// Keep a head of the body for the live response log and assertions, drain
 	// the rest. Body assertions need more context than the log snippet.
 	capN := protocols.RespBodyCap
-	if d.cfg.BodyContains != "" {
+	if d.cfg.BodyContains != "" || len(d.cfg.Asserts) > 0 {
 		capN = assertBodyCap
 	}
 	head := make([]byte, capN)
@@ -144,6 +144,12 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 	if res.OK && d.cfg.BodyContains != "" && !strings.Contains(string(head[:hn]), d.cfg.BodyContains) {
 		res.OK = false
 		res.ErrorKind = "assert_body"
+	}
+	if res.OK && len(d.cfg.Asserts) > 0 {
+		if reason := evalAsserts(d.cfg.Asserts, resp.StatusCode, head[:hn]); reason != "" {
+			res.OK = false
+			res.ErrorKind = reason
+		}
 	}
 	return res
 }

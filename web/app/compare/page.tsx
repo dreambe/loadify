@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Nav from "@/components/Nav";
-import LineChart from "@/components/LineChart";
+import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
@@ -19,6 +19,7 @@ function metricsOf(r?: Run) {
     total: r?.summary?.total_requests ?? 0,
     error_rate: (s?.error_rate ?? 0) * 100,
     p50: s?.p50_ms ?? 0,
+    p90: s?.p90_ms ?? 0,
     p95: s?.p95_ms ?? 0,
     p99: s?.p99_ms ?? 0,
   };
@@ -31,6 +32,7 @@ function CompareInner() {
   const [bId, setBId] = useState("");
   const [a, setA] = useState<Side>({ series: [] });
   const [b, setB] = useState<Side>({ series: [] });
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     api.listRuns().then(setRuns).catch(() => {});
@@ -51,6 +53,12 @@ function CompareInner() {
 
   const ma = metricsOf(a.run);
   const mb = metricsOf(b.run);
+
+  // Charts align both runs on elapsed time since their own first sample, so
+  // the crosshair compares "the same moment into the test" across A and B.
+  const longer = a.series.length >= b.series.length ? a.series : b.series;
+  const base = longer.length > 0 ? new Date(longer[0].ts).getTime() : 0;
+  const xLabels = longer.map((p) => formatElapsed((new Date(p.ts).getTime() - base) / 1000));
 
   // For latency/error metrics, lower is better; for total/qps, higher is better.
   function delta(metric: string, av: number, bv: number) {
@@ -89,6 +97,7 @@ function CompareInner() {
     { key: "total", label: t("compare.total"), av: ma.total, bv: mb.total, fmt: (n) => n.toLocaleString() },
     { key: "error", label: t("compare.errorRate"), av: ma.error_rate, bv: mb.error_rate, fmt: (n) => n.toFixed(2) + "%" },
     { key: "p50", label: "p50", av: ma.p50, bv: mb.p50, fmt: (n) => n.toFixed(1) + " ms" },
+    { key: "p90", label: "p90", av: ma.p90, bv: mb.p90, fmt: (n) => n.toFixed(1) + " ms" },
     { key: "p95", label: "p95", av: ma.p95, bv: mb.p95, fmt: (n) => n.toFixed(1) + " ms" },
     { key: "p99", label: "p99", av: ma.p99, bv: mb.p99, fmt: (n) => n.toFixed(1) + " ms" },
   ];
@@ -135,6 +144,18 @@ function CompareInner() {
             </div>
 
             <div className="panel">
+              <h2>QPS</h2>
+              <LineChart
+                series={[
+                  { label: "A", color: "#36d6e7", data: a.series.map((p) => p.rps) },
+                  { label: "B", color: "#ffc857", data: b.series.map((p) => p.rps) },
+                ]}
+                xLabels={xLabels}
+                hoverIndex={hover}
+                onHover={setHover}
+              />
+            </div>
+            <div className="panel">
               <h2>p95 (ms)</h2>
               <LineChart
                 unit="ms"
@@ -142,15 +163,21 @@ function CompareInner() {
                   { label: "A", color: "#36d6e7", data: a.series.map((p) => p.p95_ms) },
                   { label: "B", color: "#ffc857", data: b.series.map((p) => p.p95_ms) },
                 ]}
+                xLabels={xLabels}
+                hoverIndex={hover}
+                onHover={setHover}
               />
             </div>
             <div className="panel">
-              <h2>QPS</h2>
+              <h2>{t("compare.errorRate")} (%)</h2>
               <LineChart
                 series={[
-                  { label: "A", color: "#36d6e7", data: a.series.map((p) => p.rps) },
-                  { label: "B", color: "#ffc857", data: b.series.map((p) => p.rps) },
+                  { label: "A", color: "#36d6e7", data: a.series.map((p) => p.error_rate * 100) },
+                  { label: "B", color: "#ffc857", data: b.series.map((p) => p.error_rate * 100) },
                 ]}
+                xLabels={xLabels}
+                hoverIndex={hover}
+                onHover={setHover}
               />
             </div>
           </>

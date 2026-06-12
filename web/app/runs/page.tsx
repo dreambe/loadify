@@ -4,10 +4,55 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import Help from "@/components/Help";
+import { Pager, usePager } from "@/components/Pager";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import type { Run, Schedule, TestDefinition } from "@/lib/types";
+
+// TestPicker is a searchable test selector: type to filter, pick from the
+// native datalist. Selection maps the typed label back to the test id.
+function TestPicker({
+  tests,
+  value,
+  onChange,
+  placeholder,
+  listId,
+}: {
+  tests: TestDefinition[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder: string;
+  listId: string;
+}) {
+  const label = (td: TestDefinition) => `${td.name} (${td.protocol})`;
+  const [text, setText] = useState("");
+  useEffect(() => {
+    const td = tests.find((x) => x.id === value);
+    setText(td ? label(td) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, tests.length]);
+  return (
+    <>
+      <input
+        list={listId}
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setText(e.target.value);
+          const td = tests.find((x) => label(x) === e.target.value);
+          onChange(td ? td.id : "");
+        }}
+        style={{ width: 260 }}
+      />
+      <datalist id={listId}>
+        {tests.map((td) => (
+          <option key={td.id} value={label(td)} />
+        ))}
+      </datalist>
+    </>
+  );
+}
 
 export default function RunsPage() {
   const { t } = useI18n();
@@ -80,6 +125,8 @@ export default function RunsPage() {
     refresh();
   }
 
+  const runPager = usePager(runs, 10);
+
   if (!ready) return null;
   const canRun = roleAtLeast(user?.role, "operator");
 
@@ -94,15 +141,14 @@ export default function RunsPage() {
             <h2>{t("runs.start")}</h2>
             <div className="row">
               <div>
-                <label>{t("runs.test")}</label>
-                <select value={testId} onChange={(e) => setTestId(e.target.value)}>
-                  <option value="">{t("runs.selectTest")}</option>
-                  {tests.map((td) => (
-                    <option key={td.id} value={td.id}>
-                      {td.name} ({td.protocol})
-                    </option>
-                  ))}
-                </select>
+                <label className="req">{t("runs.test")}</label>
+                <TestPicker
+                  tests={tests}
+                  value={testId}
+                  onChange={setTestId}
+                  placeholder={t("runs.searchTest")}
+                  listId="run-tests"
+                />
               </div>
               <div style={{ flex: 1 }}>
                 <label>{t("runs.name")}</label>
@@ -150,14 +196,13 @@ export default function RunsPage() {
                 <div className="row">
                   <div>
                     <label>{t("runs.test")}</label>
-                    <select value={schedTestId} onChange={(e) => setSchedTestId(e.target.value)}>
-                      <option value="">{t("runs.selectTest")}</option>
-                      {tests.map((td) => (
-                        <option key={td.id} value={td.id}>
-                          {td.name} ({td.protocol})
-                        </option>
-                      ))}
-                    </select>
+                    <TestPicker
+                      tests={tests}
+                      value={schedTestId}
+                      onChange={setSchedTestId}
+                      placeholder={t("runs.searchTest")}
+                      listId="sched-tests"
+                    />
                   </div>
                   <div>
                     <label>{t("sched.every")}</label>
@@ -219,7 +264,7 @@ export default function RunsPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => (
+              {runPager.slice.map((r) => (
                 <tr key={r.id}>
                   <td>
                     <Link href={`/runs/${r.id}`}>{r.name || r.id.slice(0, 8)}</Link>
@@ -250,6 +295,12 @@ export default function RunsPage() {
               )}
             </tbody>
           </table>
+          <Pager
+            page={runPager.page}
+            pages={runPager.pages}
+            total={runPager.total}
+            onPage={runPager.setPage}
+          />
         </div>
       </div>
     </>

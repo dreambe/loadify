@@ -5,6 +5,14 @@ import { api, type DebugResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 
+// Assert mirrors the backend plan.HTTPAssert: one per-request check.
+export interface Assert {
+  source: "status" | "body" | "json";
+  path: string;
+  op: string;
+  value: string;
+}
+
 // HttpRequest is the structured form of an HTTP/HTTPS plan, kept in component
 // state and serialized into the plan JSON the API expects.
 export interface HttpRequest {
@@ -12,8 +20,7 @@ export interface HttpRequest {
   url: string;
   headers: { key: string; value: string }[];
   body: string;
-  expectStatus: number;
-  bodyContains: string;
+  asserts: Assert[];
   insecureSkipVerify: boolean;
 }
 
@@ -22,15 +29,24 @@ export const emptyHttpRequest: HttpRequest = {
   url: "",
   headers: [],
   body: "",
-  expectStatus: 0,
-  bodyContains: "",
+  asserts: [{ source: "status", path: "", op: "eq", value: "200" }],
   insecureSkipVerify: false,
 };
+
+const OPS = ["eq", "ne", "gt", "lt", "gte", "lte", "contains", "exists"];
 
 // toPlan converts the form into the backend plan object.
 export function httpRequestToPlan(protocol: string, r: HttpRequest): unknown {
   const headers: Record<string, string> = {};
   for (const h of r.headers) if (h.key) headers[h.key] = h.value;
+  const asserts = r.asserts
+    .filter((a) => a.op === "exists" || a.value !== "" || a.source === "body")
+    .map((a) => ({
+      source: a.source,
+      ...(a.source === "json" ? { path: a.path } : {}),
+      op: a.op,
+      ...(a.op !== "exists" ? { value: a.value } : {}),
+    }));
   return {
     protocol,
     http: {
@@ -38,16 +54,28 @@ export function httpRequestToPlan(protocol: string, r: HttpRequest): unknown {
       url: r.url,
       ...(Object.keys(headers).length ? { headers } : {}),
       ...(r.body ? { body: r.body } : {}),
-      ...(r.expectStatus ? { expect_status: r.expectStatus } : {}),
-      ...(r.bodyContains ? { body_contains: r.bodyContains } : {}),
+      ...(asserts.length ? { asserts } : {}),
       ...(r.insecureSkipVerify ? { insecure_skip_verify: true } : {}),
     },
   };
 }
 
 // planToHttpRequest rebuilds the form state from a stored plan (edit / copy).
+// Legacy expect_status / body_contains fields become assertion rows.
 export function planToHttpRequest(plan: any): HttpRequest {
   const h = plan?.http ?? {};
+  const asserts: Assert[] = (h.asserts ?? []).map((a: any) => ({
+    source: a.source ?? "status",
+    path: a.path ?? "",
+    op: a.op ?? "eq",
+    value: a.value ?? "",
+  }));
+  if (h.expect_status) {
+    asserts.push({ source: "status", path: "", op: "eq", value: String(h.expect_status) });
+  }
+  if (h.body_contains) {
+    asserts.push({ source: "body", path: "", op: "contains", value: h.body_contains });
+  }
   return {
     method: h.method || "GET",
     url: h.url || "",
@@ -56,10 +84,47 @@ export function planToHttpRequest(plan: any): HttpRequest {
       value: String(value),
     })),
     body: h.body || "",
-    expectStatus: h.expect_status || 0,
-    bodyContains: h.body_contains || "",
+    asserts,
     insecureSkipVerify: !!h.insecure_skip_verify,
   };
+}
+
+// evalAssertPreview mirrors the backend evaluation so the builder can show
+// each assertion's verdict against the latest debug response.
+function evalAssertPreview(a: Assert, dr: DebugResponse): { ok: boolean; got: string } | null {
+  if (dr.error) return null;
+  let actual: unknown;
+  if (a.source === "status") actual = dr.status;
+  else if (a.source === "body") actual = dr.body;
+  else {
+    try {
+      let cur: any = JSON.parse(dr.body);
+      for (const seg of a.path.split(".")) {
+        if (seg === "" || cur == null) return { ok: false, got: "(missing)" };
+        cur = Array.isArray(cur) ? cur[parseInt(seg, 10)] : cur[seg];
+        if (cur === undefined) return { ok: a.op === "ne", got: "(missing)" };
+      }
+      actual = cur;
+    } catch {
+      return { ok: false, got: "(not json)" };
+    }
+  }
+  const got = typeof actual === "string" ? actual : JSON.stringify(actual);
+  const short = got.length > 40 ? got.slice(0, 40) + "…" : got;
+  if (a.op === "exists") return { ok: actual !== undefined, got: short };
+  if (a.op === "contains") return { ok: got.includes(a.value), got: short };
+  if (a.op === "eq" || a.op === "ne") {
+    let eq: boolean;
+    if (typeof actual === "number") eq = actual === parseFloat(a.value);
+    else if (typeof actual === "boolean") eq = String(actual) === a.value.trim();
+    else eq = got === a.value;
+    return { ok: a.op === "eq" ? eq : !eq, got: short };
+  }
+  const af = typeof actual === "number" ? actual : parseFloat(got);
+  const wf = parseFloat(a.value);
+  if (Number.isNaN(af) || Number.isNaN(wf)) return { ok: false, got: short };
+  const cmp = { gt: af > wf, lt: af < wf, gte: af >= wf, lte: af <= wf }[a.op];
+  return { ok: !!cmp, got: short };
 }
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
@@ -78,11 +143,8 @@ export default function HttpRequestBuilder({
   function setHeader(i: number, patch: Partial<{ key: string; value: string }>) {
     onChange({ ...value, headers: value.headers.map((h, idx) => (idx === i ? { ...h, ...patch } : h)) });
   }
-  function addHeader() {
-    onChange({ ...value, headers: [...value.headers, { key: "", value: "" }] });
-  }
-  function removeHeader(i: number) {
-    onChange({ ...value, headers: value.headers.filter((_, idx) => idx !== i) });
+  function setAssert(i: number, patch: Partial<Assert>) {
+    onChange({ ...value, asserts: value.asserts.map((a, idx) => (idx === i ? { ...a, ...patch } : a)) });
   }
 
   async function runDebug() {
@@ -117,16 +179,6 @@ export default function HttpRequestBuilder({
     }
   }
 
-  // Live preview of how the configured assertions judge the debug response.
-  const statusPass =
-    debug && !debug.error
-      ? value.expectStatus
-        ? debug.status === value.expectStatus
-        : debug.status < 400
-      : null;
-  const bodyPass =
-    debug && !debug.error && value.bodyContains ? debug.body.includes(value.bodyContains) : null;
-
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14 }}>
       <div className="row">
@@ -139,12 +191,13 @@ export default function HttpRequestBuilder({
           </select>
         </div>
         <div style={{ flex: 1 }}>
-          <label>{t("http.url")}</label>
+          <label className="req">{t("http.url")}</label>
           <input
             value={value.url}
             onChange={(e) => onChange({ ...value, url: e.target.value })}
-            placeholder="http://echo:8088/"
+            placeholder="https://api.example.com/v1/ping"
             style={{ width: "100%" }}
+            required
           />
         </div>
         <button type="button" className="secondary" onClick={runDebug} disabled={!value.url || debugging}>
@@ -167,12 +220,20 @@ export default function HttpRequestBuilder({
             onChange={(e) => setHeader(i, { value: e.target.value })}
             style={{ flex: 1 }}
           />
-          <button type="button" className="secondary" onClick={() => removeHeader(i)}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => onChange({ ...value, headers: value.headers.filter((_, idx) => idx !== i) })}
+          >
             {t("ramp.remove")}
           </button>
         </div>
       ))}
-      <button type="button" className="secondary" onClick={addHeader}>
+      <button
+        type="button"
+        className="secondary"
+        onClick={() => onChange({ ...value, headers: [...value.headers, { key: "", value: "" }] })}
+      >
         + {t("http.addHeader")}
       </button>
 
@@ -183,28 +244,72 @@ export default function HttpRequestBuilder({
         {t("assert.title")}
         <Help tip={t("assert.help")} />
       </label>
-      <div className="row">
-        <div>
-          <label style={{ margin: 0 }}>{t("assert.status")}</label>
-          <input
-            type="number"
-            min={0}
-            value={value.expectStatus || ""}
-            placeholder={t("assert.statusPh")}
-            onChange={(e) => onChange({ ...value, expectStatus: parseInt(e.target.value || "0", 10) })}
-            style={{ width: 150 }}
-          />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ margin: 0 }}>{t("assert.bodyContains")}</label>
-          <input
-            value={value.bodyContains}
-            placeholder={t("assert.bodyPh")}
-            onChange={(e) => onChange({ ...value, bodyContains: e.target.value })}
-            style={{ width: "100%" }}
-          />
-        </div>
-      </div>
+      {value.asserts.map((a, i) => {
+        const verdict = debug && !debug.error ? evalAssertPreview(a, debug) : null;
+        return (
+          <div className="row" key={i} style={{ marginBottom: 6, alignItems: "center" }}>
+            <select
+              value={a.source}
+              onChange={(e) => setAssert(i, { source: e.target.value as Assert["source"] })}
+              style={{ width: 130 }}
+            >
+              <option value="status">{t("assert.srcStatus")}</option>
+              <option value="body">{t("assert.srcBody")}</option>
+              <option value="json">{t("assert.srcJson")}</option>
+            </select>
+            {a.source === "json" && (
+              <input
+                placeholder={t("assert.pathPh")}
+                value={a.path}
+                onChange={(e) => setAssert(i, { path: e.target.value })}
+                style={{ width: 200, fontFamily: "var(--font-mono)" }}
+              />
+            )}
+            <select value={a.op} onChange={(e) => setAssert(i, { op: e.target.value })} style={{ width: 110 }}>
+              {OPS.map((op) => (
+                <option key={op} value={op}>
+                  {t(`assert.op.${op}`)}
+                </option>
+              ))}
+            </select>
+            {a.op !== "exists" && (
+              <input
+                placeholder={t("assert.valuePh")}
+                value={a.value}
+                onChange={(e) => setAssert(i, { value: e.target.value })}
+                style={{ flex: 1, fontFamily: "var(--font-mono)" }}
+              />
+            )}
+            {verdict && (
+              <span
+                style={{ color: verdict.ok ? "var(--green)" : "var(--red)", fontSize: 12, whiteSpace: "nowrap" }}
+                title={verdict.got}
+              >
+                {verdict.ok ? "✓" : `✗ ${verdict.got}`}
+              </span>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => onChange({ ...value, asserts: value.asserts.filter((_, idx) => idx !== i) })}
+            >
+              {t("ramp.remove")}
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="secondary"
+        onClick={() =>
+          onChange({
+            ...value,
+            asserts: [...value.asserts, { source: "json", path: "", op: "eq", value: "" }],
+          })
+        }
+      >
+        + {t("assert.add")}
+      </button>
 
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
         <input
@@ -238,16 +343,6 @@ export default function HttpRequestBuilder({
                 <span className="muted" style={{ fontFamily: "var(--font-mono)" }}>
                   {debug.latency_ms.toFixed(1)} ms · {formatBytes(debug.recv_bytes)}
                 </span>
-                {statusPass !== null && (
-                  <span style={{ color: statusPass ? "var(--green)" : "var(--red)" }}>
-                    {statusPass ? "✓" : "✗"} {t("assert.status")}
-                  </span>
-                )}
-                {bodyPass !== null && (
-                  <span style={{ color: bodyPass ? "var(--green)" : "var(--red)" }}>
-                    {bodyPass ? "✓" : "✗"} {t("assert.bodyContains")}
-                  </span>
-                )}
               </div>
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
                 {t("debug.respBody")}
@@ -263,7 +358,7 @@ export default function HttpRequestBuilder({
                   fontSize: 12,
                 }}
               >
-                {debug.body || t("log.bodyEmpty")}
+                {prettyBody(debug.body) || t("log.bodyEmpty")}
               </pre>
             </>
           )}
@@ -271,6 +366,15 @@ export default function HttpRequestBuilder({
       )}
     </div>
   );
+}
+
+// prettyBody re-indents JSON bodies for readability; other content untouched.
+function prettyBody(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
 }
 
 function formatBytes(n: number): string {

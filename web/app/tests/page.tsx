@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Help from "@/components/Help";
+import { Pager, usePager } from "@/components/Pager";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
 import HttpRequestBuilder, {
   emptyHttpRequest,
@@ -20,6 +21,24 @@ import type { TestDefinition, Threshold } from "@/lib/types";
 const SAMPLE_PLAN = `{
   "protocol": "grpc",
   "grpc": { "target": "echo:8089", "full_method": "/grpc.health.v1.Health/Check", "plaintext": true }
+}`;
+
+// SCRIPT_TEMPLATE shows the multi-interface pattern: several requests per
+// iteration, parameter chaining between them, and per-interface groups.
+const SCRIPT_TEMPLATE = `function iteration() {
+  // 1) login — interfaces are separated into metric groups via headers/urls
+  var login = http.post("https://api.example.com/login",
+    JSON.stringify({ user: "alice", pass: "secret" }),
+    { headers: { "Content-Type": "application/json" } });
+  check("login 200", login.status === 200);
+
+  // 2) chain: extract the token from A and pass it to B
+  var token = JSON.parse(login.body).token;
+  var me = http.get("https://api.example.com/me",
+    { headers: { "Authorization": "Bearer " + token } });
+  check("me ok", me.status === 200);
+
+  // optional dataset row: var row = nextRow();
 }`;
 
 // rampToSpec rebuilds the ramp builder state from a stored ramp (edit / copy).
@@ -42,10 +61,13 @@ export default function TestsPage() {
   const { t } = useI18n();
   const { user, ready } = useAuth();
   const [tests, setTests] = useState<TestDefinition[]>([]);
+  const [filter, setFilter] = useState("");
+  const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [protocol, setProtocol] = useState("http");
-  const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest, url: "http://echo:8088/" });
+  const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest });
   const [sse, setSse] = useState<SSEConfig>(emptySSE);
   const [plan, setPlan] = useState(SAMPLE_PLAN);
   const [ramp, setRamp] = useState<RampSpec>(defaultRamp);
@@ -56,7 +78,7 @@ export default function TestsPage() {
   const [ok, setOk] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
 
-  const isHTTP = protocol === "http" || protocol === "https";
+  const isHTTP = protocol === "http";
 
   function refresh() {
     api.listTests().then(setTests).catch((e) => setErr(e.message));
@@ -65,11 +87,16 @@ export default function TestsPage() {
     if (ready) refresh();
   }, [ready]);
 
+  const filtered = filter
+    ? tests.filter((td) => (td.name + td.protocol + (td.creator_name || "")).toLowerCase().includes(filter.toLowerCase()))
+    : tests;
+  const pager = usePager(filtered, 10);
+
   function resetForm() {
     setEditingId(null);
     setName("");
     setProtocol("http");
-    setHttp({ ...emptyHttpRequest, url: "http://echo:8088/" });
+    setHttp({ ...emptyHttpRequest });
     setSse(emptySSE);
     setPlan(SAMPLE_PLAN);
     setRamp(defaultRamp);
@@ -81,9 +108,11 @@ export default function TestsPage() {
   // loadIntoForm fills the builder from an existing test (edit keeps the id,
   // copy clears it so submitting creates a new test).
   function loadIntoForm(td: TestDefinition, mode: "edit" | "copy") {
+    setShowForm(true);
+    setSavedId(null);
     setEditingId(mode === "edit" ? td.id : null);
     setName(mode === "copy" ? `${td.name} ${t("tests.copySuffix")}` : td.name);
-    setProtocol(td.protocol);
+    setProtocol(td.protocol === "https" ? "http" : td.protocol);
     if (td.protocol === "http" || td.protocol === "https") {
       setHttp(planToHttpRequest(td.plan));
     } else if (td.protocol === "sse") {
@@ -97,15 +126,28 @@ export default function TestsPage() {
     setDataset(td.dataset ? JSON.stringify(td.dataset, null, 2) : "");
     setErr("");
     setOk("");
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
   async function remove(td: TestDefinition) {
     if (!window.confirm(t("tests.deleteConfirm").replace("{name}", td.name))) return;
     try {
       await api.deleteTest(td.id);
-      if (editingId === td.id) resetForm();
+      if (editingId === td.id) {
+        resetForm();
+        setShowForm(false);
+      }
       refresh();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  async function quickRun() {
+    if (!savedId) return;
+    try {
+      const res = await api.startRun(savedId, 1, "");
+      window.location.href = `/runs/${res.run_id}`;
     } catch (e: any) {
       setErr(e.message);
     }
@@ -115,11 +157,31 @@ export default function TestsPage() {
     e.preventDefault();
     setErr("");
     setOk("");
+    // Required-field validation with a human message (HTML required attrs
+    // cover most, but builder fields live outside native validation).
+    if (!name.trim()) {
+      setErr(t("tests.errName"));
+      return;
+    }
+    if (isHTTP && !http.url.trim()) {
+      setErr(t("tests.errUrl"));
+      return;
+    }
+    if (protocol === "sse" && !sse.url.trim()) {
+      setErr(t("tests.errUrl"));
+      return;
+    }
+    if (protocol === "script" && !script.trim()) {
+      setErr(t("tests.errScript"));
+      return;
+    }
+    // https is not a separate choice — it is derived from the URL scheme.
+    const effProtocol = isHTTP && http.url.trim().toLowerCase().startsWith("https") ? "https" : protocol;
     let planObj: any;
     if (protocol === "script") {
       planObj = { protocol: "script" };
     } else if (isHTTP) {
-      planObj = httpRequestToPlan(protocol, http);
+      planObj = httpRequestToPlan(effProtocol, http);
     } else if (protocol === "sse") {
       planObj = sseToPlan(sse);
     } else {
@@ -150,7 +212,7 @@ export default function TestsPage() {
     }
     const body = {
       name,
-      protocol,
+      protocol: effProtocol,
       plan: planObj,
       ramp: rampObj,
       script: script || undefined,
@@ -160,12 +222,13 @@ export default function TestsPage() {
     try {
       if (editingId) {
         await api.updateTest(editingId, body);
+        setSavedId(editingId);
         setOk(t("tests.updated"));
       } else {
-        await api.createTest(body);
+        const res = await api.createTest(body);
+        setSavedId(res.id);
         setOk(t("tests.created"));
       }
-      resetForm();
       refresh();
     } catch (e: any) {
       setErr(e.message);
@@ -179,22 +242,42 @@ export default function TestsPage() {
     <>
       <Nav />
       <div className="container">
-        <h1>{t("tests.title")}</h1>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <h1 style={{ margin: 0 }}>{t("tests.title")}</h1>
+          {canCreate && (
+            <button
+              onClick={() => {
+                if (showForm) {
+                  setShowForm(false);
+                } else {
+                  resetForm();
+                  setSavedId(null);
+                  setShowForm(true);
+                }
+              }}
+            >
+              {showForm ? t("tests.closeForm") : `+ ${t("tests.new")}`}
+            </button>
+          )}
+        </div>
+        <div style={{ height: 16 }} />
 
-        {canCreate && (
+        {canCreate && showForm && (
           <form className="panel" onSubmit={submit} ref={formRef}>
             <h2>{editingId ? t("tests.editTitle") : t("tests.new")}</h2>
             <div className="row">
               <div style={{ flex: 1 }}>
-                <label>{t("tests.name")}</label>
+                <label className="req">{t("tests.name")}</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} required style={{ width: "100%" }} />
               </div>
               <div>
                 <label>{t("tests.protocol")}</label>
                 <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
-                  {["http", "https", "grpc", "websocket", "sse", "script"].map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
+                  <option value="http">HTTP / HTTPS</option>
+                  <option value="grpc">gRPC</option>
+                  <option value="websocket">WebSocket</option>
+                  <option value="sse">SSE</option>
+                  <option value="script">{t("tests.protoScript")}</option>
                 </select>
               </div>
             </div>
@@ -231,17 +314,15 @@ export default function TestsPage() {
             <ThresholdsEditor value={thresholds} onChange={setThresholds} />
             {protocol === "script" && (
               <>
-                <label>{t("tests.script")}</label>
+                <label className="req">
+                  {t("tests.script")}
+                  <Help tip={t("tests.scriptHelp")} />
+                </label>
                 <textarea
-                  rows={4}
+                  rows={10}
                   value={script}
                   onChange={(e) => setScript(e.target.value)}
-                  placeholder={`function iteration() {
-  var row = nextRow();              // data feeder (optional)
-  var r = http.get("http://echo:8088/", { headers: { "X-User": row ? row.user : "" } });
-  check("status 200", r.status === 200);
-  // extract & chain: var data = JSON.parse(r.body); http.post(url, JSON.stringify(data));
-}`}
+                  placeholder={SCRIPT_TEMPLATE}
                 />
                 <label>
                   {t("tests.dataset")}
@@ -256,19 +337,39 @@ export default function TestsPage() {
               </>
             )}
             {err && <div className="error">{err}</div>}
-            {ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
+            {ok && savedId && (
+              <div className="row" style={{ alignItems: "center", marginTop: 8 }}>
+                <span style={{ color: "var(--green)" }}>{ok}</span>
+                <button type="button" onClick={quickRun}>
+                  ▶ {t("tests.runNow")}
+                </button>
+              </div>
+            )}
             <div className="row" style={{ marginTop: 12 }}>
               <button type="submit">{editingId ? t("tests.save") : t("tests.create")}</button>
-              {editingId && (
-                <button type="button" className="secondary" onClick={resetForm}>
-                  {t("tests.cancelEdit")}
-                </button>
-              )}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  resetForm();
+                  setShowForm(false);
+                }}
+              >
+                {t("tests.cancelEdit")}
+              </button>
             </div>
           </form>
         )}
 
         <div className="panel">
+          <div className="row" style={{ marginBottom: 4 }}>
+            <input
+              placeholder={t("tests.searchPh")}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              style={{ width: 280 }}
+            />
+          </div>
           <table>
             <thead>
               <tr>
@@ -280,15 +381,26 @@ export default function TestsPage() {
               </tr>
             </thead>
             <tbody>
-              {tests.map((td) => (
+              {pager.slice.map((td) => (
                 <tr key={td.id}>
                   <td>{td.name}</td>
-                  <td>{td.protocol}</td>
+                  <td className="muted">{td.protocol}</td>
                   <td className="muted">{td.creator_name || "–"}</td>
                   <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
                   {canCreate && (
                     <td>
                       <div className="row" style={{ gap: 8 }}>
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            api
+                              .startRun(td.id, 1, "")
+                              .then((res) => (window.location.href = `/runs/${res.run_id}`))
+                              .catch((e) => setErr(e.message))
+                          }
+                        >
+                          ▶ {t("tests.run")}
+                        </button>
                         <button className="secondary" onClick={() => loadIntoForm(td, "edit")}>
                           {t("tests.edit")}
                         </button>
@@ -303,7 +415,7 @@ export default function TestsPage() {
                   )}
                 </tr>
               ))}
-              {tests.length === 0 && (
+              {filtered.length === 0 && (
                 <tr>
                   <td colSpan={canCreate ? 5 : 4} className="muted">
                     {t("tests.empty")}
@@ -312,6 +424,7 @@ export default function TestsPage() {
               )}
             </tbody>
           </table>
+          <Pager page={pager.page} pages={pager.pages} total={pager.total} onPage={pager.setPage} />
         </div>
       </div>
     </>

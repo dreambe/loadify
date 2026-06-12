@@ -34,7 +34,7 @@ export default function RampBuilder({
   onChange: (s: RampSpec) => void;
 }) {
   const { t } = useI18n();
-  const [startN, setStartN] = useState(0);
+  const [startN, setStartN] = useState(1);
   const [step, setStep] = useState(10);
   const [rounds, setRounds] = useState(3);
   const [hold, setHold] = useState(30);
@@ -88,21 +88,20 @@ export default function RampBuilder({
           {t("ramp.modeRps")}
         </button>
         <Help tip={t("ramp.rpsHelp")} />
-        {isRPS && (
-          <div>
-            <label style={{ margin: 0 }}>
-              {t("ramp.maxVus")}
-              <Help tip={t("ramp.maxVusHelp")} />
-            </label>
-            <input
-              type="number"
-              min={0}
-              value={value.maxVus}
-              onChange={(e) => set({ maxVus: parseInt(e.target.value || "0", 10) })}
-              style={{ width: 100 }}
-            />
-          </div>
-        )}
+        {/* Always occupy this slot so toggling modes never shifts the layout. */}
+        <div style={{ visibility: isRPS ? "visible" : "hidden" }}>
+          <label style={{ margin: 0 }}>
+            {t("ramp.maxVus")}
+            <Help tip={t("ramp.maxVusHelp")} />
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={value.maxVus}
+            onChange={(e) => set({ maxVus: parseInt(e.target.value || "0", 10) })}
+            style={{ width: 100 }}
+          />
+        </div>
       </div>
 
       {/* Stepped generator */}
@@ -171,6 +170,69 @@ export default function RampBuilder({
           {t("ramp.peak")}: {peak} {isRPS ? "req/s" : "VU"} · {t("ramp.total")}: {total}s
         </span>
       </div>
+
+      <RampPreview stages={value.stages} unit={isRPS ? "req/s" : "VU"} />
+    </div>
+  );
+}
+
+// RampPreview draws the load profile the stages describe: linear ramp from
+// the previous target to each stage's target over its duration.
+function RampPreview({ stages, unit }: { stages: Stage[]; unit: string }) {
+  const { t } = useI18n();
+  const width = 720;
+  const height = 120;
+  const pad = { top: 12, right: 12, bottom: 18, left: 40 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+
+  const total = stages.reduce((s, st) => s + Math.max(0, st.duration_s), 0);
+  const peak = Math.max(1, ...stages.map((s) => s.target));
+  if (total <= 0 || stages.length === 0) return null;
+
+  // Points: start at (0, 0-or-first-target? ramps interpolate from previous
+  // target, starting from 0).
+  const pts: [number, number][] = [[0, 0]];
+  let elapsed = 0;
+  for (const st of stages) {
+    elapsed += Math.max(0, st.duration_s);
+    pts.push([elapsed, st.target]);
+  }
+  const x = (s: number) => pad.left + (s / total) * innerW;
+  const y = (v: number) => pad.top + innerH - (v / peak) * innerH;
+  const path = pts.map(([s, v], i) => `${i === 0 ? "M" : "L"}${x(s).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = `${path} L${x(total).toFixed(1)},${(pad.top + innerH).toFixed(1)} L${pad.left},${(pad.top + innerH).toFixed(1)} Z`;
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+        {t("ramp.preview")}
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label="ramp preview">
+        <defs>
+          <linearGradient id="ramp-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <line x1={pad.left} x2={width - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="var(--border-strong)" strokeWidth={1} />
+        <path d={area} fill="url(#ramp-fill)" stroke="none" />
+        <path d={path} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" />
+        {pts.slice(1).map(([s, v], i) => (
+          <g key={i}>
+            <circle cx={x(s)} cy={y(v)} r={3} fill="var(--accent)" stroke="var(--bg)" strokeWidth={1.5} />
+            <text x={x(s)} y={y(v) - 7} fill="var(--muted)" fontSize={10} textAnchor="middle" fontFamily="var(--font-mono)">
+              {v}
+            </text>
+            <text x={x(s)} y={height - 4} fill="var(--muted)" fontSize={10} textAnchor="middle" fontFamily="var(--font-mono)">
+              {s}s
+            </text>
+          </g>
+        ))}
+        <text x={4} y={pad.top + 4} fill="var(--muted)" fontSize={10} fontFamily="var(--font-mono)">
+          {peak} {unit}
+        </text>
+      </svg>
     </div>
   );
 }
