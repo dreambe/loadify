@@ -130,9 +130,46 @@ func (s *Server) dispatch(ctx context.Context, name string, args json.RawMessage
 		return s.runStatus(ctx, args)
 	case "loadify_list_workers":
 		return s.listWorkers(ctx)
+	case "loadify_list_tests":
+		return s.listTests(ctx)
+	case "loadify_list_runs":
+		return s.listRuns(ctx)
+	case "loadify_import_test":
+		return s.importTest(ctx, args)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+func (s *Server) listTests(ctx context.Context) (string, error) {
+	ts, err := s.client.ListTests(ctx)
+	if err != nil {
+		return "", err
+	}
+	return jsonString(map[string]any{"tests": ts, "count": len(ts)}), nil
+}
+
+func (s *Server) listRuns(ctx context.Context) (string, error) {
+	rs, err := s.client.ListRuns(ctx)
+	if err != nil {
+		return "", err
+	}
+	return jsonString(map[string]any{"runs": rs, "count": len(rs)}), nil
+}
+
+func (s *Server) importTest(ctx context.Context, raw json.RawMessage) (string, error) {
+	var a struct {
+		Format  string `json:"format"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
+	draft, err := s.client.ImportTest(ctx, a.Format, a.Content)
+	if err != nil {
+		return "", err
+	}
+	return jsonString(draft), nil
 }
 
 type quickRunArgs struct {

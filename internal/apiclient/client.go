@@ -63,6 +63,58 @@ func (c *Client) CreateTest(ctx context.Context, req CreateTestRequest) (string,
 	return resp.ID, nil
 }
 
+// TestSummary is a test definition in list/get responses (agent-friendly).
+type TestSummary struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Protocol    string          `json:"protocol"`
+	CreatorName string          `json:"creator_name,omitempty"`
+	Plan        json.RawMessage `json:"plan,omitempty"`
+	CreatedAt   *time.Time      `json:"created_at,omitempty"`
+}
+
+// ListTests returns the non-archived test definitions.
+func (c *Client) ListTests(ctx context.Context) ([]TestSummary, error) {
+	var out []TestSummary
+	if err := c.do(ctx, http.MethodGet, "/api/v1/tests", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetTest fetches a test definition by id.
+func (c *Client) GetTest(ctx context.Context, id string) (*TestSummary, error) {
+	var t TestSummary
+	if err := c.do(ctx, http.MethodGet, "/api/v1/tests/"+id, nil, &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// ImportTest converts an external format (curl/har/postman/openapi) into a
+// test draft (not persisted).
+func (c *Client) ImportTest(ctx context.Context, format, content string) (*CreateTestRequest, error) {
+	var d struct {
+		Name     string          `json:"name"`
+		Protocol string          `json:"protocol"`
+		Plan     json.RawMessage `json:"plan"`
+	}
+	body := map[string]string{"format": format, "content": content}
+	if err := c.do(ctx, http.MethodPost, "/api/v1/tests/import", body, &d); err != nil {
+		return nil, err
+	}
+	return &CreateTestRequest{Name: d.Name, Protocol: d.Protocol, Plan: d.Plan, Ramp: []any{}}, nil
+}
+
+// ListRuns returns recent runs.
+func (c *Client) ListRuns(ctx context.Context) ([]Run, error) {
+	var out []Run
+	if err := c.do(ctx, http.MethodGet, "/api/v1/runs", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StartRun dispatches a run for a test and returns the run id.
 func (c *Client) StartRun(ctx context.Context, testID string, workers int) (string, error) {
 	var resp struct {
@@ -83,6 +135,8 @@ func (c *Client) StopRun(ctx context.Context, runID string) error {
 // Run is a run's stored state.
 type Run struct {
 	ID        string          `json:"id"`
+	Name      string          `json:"name,omitempty"`
+	TestDefID string          `json:"test_def_id,omitempty"`
 	Status    string          `json:"status"`
 	Summary   json.RawMessage `json:"summary"`
 	StartedAt *time.Time      `json:"started_at,omitempty"`

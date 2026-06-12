@@ -1,204 +1,287 @@
-// Command loadifyctl is a small CLI that drives a load test end-to-end against a
-// running apisrv: it authenticates, creates a test definition, starts a run and
-// polls for the summary. Handy for CI smoke tests and local use.
+// Command loadifyctl drives the loadify apisrv from the shell — for humans, CI,
+// and agents. It exposes subcommands with machine-readable --json output and
+// stable exit codes so an autonomous caller can script the full test lifecycle.
+//
+// Exit codes: 0 ok · 1 error · 2 usage · 3 SLA breach (run failed thresholds).
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/dreambe/loadify/internal/apiclient"
 )
+
+const usage = `loadifyctl — drive the loadify load-testing API
+
+Usage: loadifyctl [--api URL] [--token T | --email E --password P] <command> [args]
+
+Commands:
+  run        --url U [--method M | --script F] [--vus N | --rps N] [--duration D] [--workers N] [--name S]
+             Create a test and run it to completion (smoke test); prints the run.
+  tests list                       List test definitions
+  tests get <id>                   Show one test definition
+  tests import <format> <file>     Convert curl|har|postman|openapi to a draft (format=- reads stdin)
+  runs list                        List recent runs
+  run status <id>                  Show a run's status + summary
+  run stop <id>                    Stop a running run
+  workers                          List connected workers
+
+Global flags (before the command):
+  --api URL        apisrv base URL (default http://localhost:8080, env LOADIFY_API)
+  --token T        bearer token (env LOADIFY_TOKEN)
+  --email/-password  login if no token (env LOADIFY_EMAIL / LOADIFY_PASSWORD)
+  --json           machine-readable JSON output
+`
 
 func main() {
 	var (
-		api      = flag.String("api", "http://localhost:8080", "apisrv base URL")
-		token    = flag.String("token", os.Getenv("LOADIFY_TOKEN"), "bearer token (or set LOADIFY_TOKEN)")
-		email    = flag.String("email", os.Getenv("LOADIFY_EMAIL"), "login email (if no token)")
-		password = flag.String("password", os.Getenv("LOADIFY_PASSWORD"), "login password (if no token)")
-		url      = flag.String("url", "", "target URL to load test (http protocol)")
-		method   = flag.String("method", "GET", "HTTP method")
-		protocol = flag.String("protocol", "http", "protocol: http|https|script")
-		script   = flag.String("script", "", "path to a goja JS script (implies protocol=script)")
-		vus      = flag.Int("vus", 20, "virtual users")
-		dur      = flag.Duration("duration", 15*time.Second, "test duration")
-		workers  = flag.Int("workers", 0, "desired workers (0 = all)")
-		name     = flag.String("name", "loadifyctl-run", "test name")
+		api      = flag.String("api", env("LOADIFY_API", "http://localhost:8080"), "apisrv base URL")
+		token    = flag.String("token", os.Getenv("LOADIFY_TOKEN"), "bearer token")
+		email    = flag.String("email", os.Getenv("LOADIFY_EMAIL"), "login email")
+		password = flag.String("password", os.Getenv("LOADIFY_PASSWORD"), "login password")
+		jsonOut  = flag.Bool("json", false, "machine-readable JSON output")
+		// run-subcommand flags (parsed from the global set for backward-compat).
+		url      = flag.String("url", "", "target URL (run)")
+		method   = flag.String("method", "GET", "HTTP method (run)")
+		script   = flag.String("script", "", "goja script path (run; implies protocol=script)")
+		vus      = flag.Int("vus", 20, "virtual users (run)")
+		rps      = flag.Int("rps", 0, "target req/s; open model (run)")
+		dur      = flag.Duration("duration", 15*time.Second, "duration (run)")
+		workers  = flag.Int("workers", 0, "desired workers (run)")
+		name     = flag.String("name", "loadifyctl-run", "test name (run)")
 	)
+	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
 
-	c := &client{base: *api, token: *token, http: &http.Client{Timeout: 30 * time.Second}}
-
-	// Authenticate if no token was supplied directly.
-	if c.token == "" && *email != "" {
-		tok, err := c.login(*email, *password)
-		must(err)
-		c.token = tok
+	args := flag.Args()
+	if len(args) == 0 {
+		flag.Usage()
+		os.Exit(2)
 	}
 
-	proto := *protocol
+	c := apiclient.New(*api, *token)
+	ctx := context.Background()
+	if c.Token == "" && *email != "" {
+		if _, err := c.Login(ctx, *email, *password); err != nil {
+			fail(err)
+		}
+	}
+
+	out := &printer{json: *jsonOut}
+	switch args[0] {
+	case "run":
+		// `run status|stop <id>` vs the smoke-test `run`.
+		if len(args) >= 2 && (args[1] == "status" || args[1] == "stop") {
+			runSub(ctx, c, out, args[1:])
+			return
+		}
+		cmdRun(ctx, c, out, runOpts{
+			url: *url, method: *method, script: *script, vus: *vus,
+			rps: *rps, dur: *dur, workers: *workers, name: *name,
+		})
+	case "runs":
+		if len(args) >= 2 && args[1] == "list" {
+			runs, err := c.ListRuns(ctx)
+			must(err)
+			out.runs(runs)
+			return
+		}
+		usageErr("runs list")
+	case "tests":
+		cmdTests(ctx, c, out, args[1:])
+	case "workers":
+		ws, err := c.ListWorkers(ctx)
+		must(err)
+		out.workers(ws)
+	case "help", "-h", "--help":
+		flag.Usage()
+	default:
+		usageErr("unknown command " + args[0])
+	}
+}
+
+type runOpts struct {
+	url, method, script, name string
+	vus, rps, workers         int
+	dur                       time.Duration
+}
+
+func cmdRun(ctx context.Context, c *apiclient.Client, out *printer, o runOpts) {
+	proto := "http"
 	var scriptJS string
-	if *script != "" {
+	if o.script != "" {
 		proto = "script"
-		b, err := os.ReadFile(*script)
+		b, err := os.ReadFile(o.script)
 		must(err)
 		scriptJS = string(b)
 	}
-
-	planJSON := map[string]any{"protocol": proto}
-	switch proto {
-	case "http", "https":
-		if *url == "" {
-			fmt.Fprintln(os.Stderr, "error: --url is required for http/https")
-			os.Exit(2)
+	plan := map[string]any{"protocol": proto}
+	if proto == "http" {
+		if o.url == "" {
+			usageErr("--url is required")
 		}
-		planJSON["http"] = map[string]any{"method": *method, "url": *url}
-	case "script":
-		// no target config; the script generates traffic
-	default:
-		fmt.Fprintf(os.Stderr, "error: --protocol %q not supported by loadifyctl (use the API/UI)\n", proto)
-		os.Exit(2)
+		if strings.HasPrefix(strings.ToLower(o.url), "https") {
+			plan["protocol"] = "https"
+			proto = "https"
+		}
+		plan["http"] = map[string]any{"method": o.method, "url": o.url}
 	}
-	rampJSON := []map[string]any{{"duration_ms": dur.Milliseconds(), "target_vus": *vus}}
-
-	testID, err := c.createTest(*name, proto, planJSON, rampJSON, scriptJS)
+	var ramp []map[string]any
+	if o.rps > 0 {
+		ramp = []map[string]any{{"duration_ms": o.dur.Milliseconds(), "target_rps": o.rps}}
+	} else {
+		ramp = []map[string]any{{"duration_ms": o.dur.Milliseconds(), "target_vus": o.vus}}
+	}
+	testID, err := c.CreateTest(ctx, apiclient.CreateTestRequest{
+		Name: o.name, Protocol: proto, Plan: plan, Ramp: ramp, Script: scriptJS,
+	})
 	must(err)
-	fmt.Printf("created test %s\n", testID)
-
-	runID, err := c.startRun(testID, *workers)
+	runID, err := c.StartRun(ctx, testID, o.workers)
 	must(err)
-	fmt.Printf("started run %s; waiting %s ...\n", runID, *dur)
+	wctx, cancel := context.WithTimeout(ctx, o.dur+60*time.Second)
+	defer cancel()
+	run, err := c.WaitForRun(wctx, runID, 2*time.Second)
+	must(err)
+	out.run(run)
+	if run.Status == "failed" {
+		os.Exit(3)
+	}
+	if run.Status == "aborted" {
+		os.Exit(1)
+	}
+}
 
-	deadline := time.Now().Add(*dur + 30*time.Second)
-	for time.Now().Before(deadline) {
-		run, err := c.getRun(runID)
+func runSub(ctx context.Context, c *apiclient.Client, out *printer, args []string) {
+	if len(args) < 2 {
+		usageErr("run " + args[0] + " <id>")
+	}
+	switch args[0] {
+	case "status":
+		run, err := c.GetRun(ctx, args[1])
 		must(err)
-		if run.Status == "completed" || run.Status == "failed" {
-			out, _ := json.MarshalIndent(run, "", "  ")
-			fmt.Printf("run %s:\n%s\n", run.Status, out)
-			if run.Status == "failed" {
-				os.Exit(1)
-			}
-			return
+		out.run(run)
+	case "stop":
+		must(c.StopRun(ctx, args[1]))
+		out.ok("stopping " + args[1])
+	}
+}
+
+func cmdTests(ctx context.Context, c *apiclient.Client, out *printer, args []string) {
+	if len(args) == 0 {
+		usageErr("tests list|get|import")
+	}
+	switch args[0] {
+	case "list":
+		ts, err := c.ListTests(ctx)
+		must(err)
+		out.tests(ts)
+	case "get":
+		if len(args) < 2 {
+			usageErr("tests get <id>")
 		}
-		time.Sleep(2 * time.Second)
+		td, err := c.GetTest(ctx, args[1])
+		must(err)
+		out.any(td)
+	case "import":
+		if len(args) < 3 {
+			usageErr("tests import <format> <file|->")
+		}
+		content := readFileOrStdin(args[2])
+		draft, err := c.ImportTest(ctx, args[1], content)
+		must(err)
+		out.any(draft)
+	default:
+		usageErr("tests list|get|import")
 	}
-	fmt.Fprintln(os.Stderr, "timed out waiting for run")
-	os.Exit(1)
 }
 
-type client struct {
-	base  string
-	token string
-	http  *http.Client
+// --- output ---
+
+type printer struct{ json bool }
+
+func (p *printer) any(v any) { b, _ := json.MarshalIndent(v, "", "  "); fmt.Println(string(b)) }
+func (p *printer) ok(msg string) {
+	if p.json {
+		p.any(map[string]string{"status": "ok", "message": msg})
+		return
+	}
+	fmt.Println(msg)
+}
+func (p *printer) run(r *apiclient.Run) {
+	if p.json {
+		p.any(r)
+		return
+	}
+	fmt.Printf("run %s  %s  %s\n", r.ID, r.Status, r.Name)
+	if len(r.Summary) > 0 {
+		fmt.Println(string(r.Summary))
+	}
+}
+func (p *printer) runs(rs []apiclient.Run) {
+	if p.json {
+		p.any(rs)
+		return
+	}
+	for _, r := range rs {
+		fmt.Printf("%s  %-10s  %s\n", r.ID, r.Status, r.Name)
+	}
+}
+func (p *printer) tests(ts []apiclient.TestSummary) {
+	if p.json {
+		p.any(ts)
+		return
+	}
+	for _, t := range ts {
+		fmt.Printf("%s  %-10s  %s\n", t.ID, t.Protocol, t.Name)
+	}
+}
+func (p *printer) workers(ws []apiclient.Worker) {
+	if p.json {
+		p.any(ws)
+		return
+	}
+	for _, w := range ws {
+		fmt.Printf("%s  %-8s  region=%s  vus=%d\n", w.WorkerID, w.Status, w.Region, w.ActiveVUs)
+	}
 }
 
-func (c *client) login(email, password string) (string, error) {
-	var resp struct {
-		Token string `json:"token"`
+// --- helpers ---
+
+func env(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
 	}
-	if err := c.post("/api/v1/auth/login", map[string]any{"email": email, "password": password}, &resp); err != nil {
-		return "", err
-	}
-	if resp.Token == "" {
-		return "", fmt.Errorf("login returned no token")
-	}
-	return resp.Token, nil
+	return def
 }
 
-func (c *client) createTest(name, proto string, plan any, ramp any, scriptJS string) (string, error) {
-	planB, _ := json.Marshal(plan)
-	rampB, _ := json.Marshal(ramp)
-	body := map[string]any{
-		"name":     name,
-		"protocol": proto,
-		"plan":     json.RawMessage(planB),
-		"ramp":     json.RawMessage(rampB),
+func readFileOrStdin(path string) string {
+	if path == "-" {
+		b, err := io.ReadAll(os.Stdin)
+		must(err)
+		return string(b)
 	}
-	if scriptJS != "" {
-		body["script"] = scriptJS
-	}
-	var resp struct {
-		ID string `json:"id"`
-	}
-	if err := c.post("/api/v1/tests", body, &resp); err != nil {
-		return "", err
-	}
-	return resp.ID, nil
-}
-
-func (c *client) startRun(testID string, workers int) (string, error) {
-	var resp struct {
-		RunID string `json:"run_id"`
-	}
-	if err := c.post("/api/v1/runs", map[string]any{"test_id": testID, "desired_workers": workers}, &resp); err != nil {
-		return "", err
-	}
-	return resp.RunID, nil
-}
-
-type runView struct {
-	ID      string          `json:"id"`
-	Status  string          `json:"status"`
-	Summary json.RawMessage `json:"summary"`
-}
-
-func (c *client) getRun(id string) (*runView, error) {
-	var rv runView
-	if err := c.get("/api/v1/runs/"+id, &rv); err != nil {
-		return nil, err
-	}
-	return &rv, nil
-}
-
-func (c *client) post(path string, body, out any) error {
-	b, _ := json.Marshal(body)
-	req, err := http.NewRequest(http.MethodPost, c.base+path, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return c.do(req, out)
-}
-
-func (c *client) get(path string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, c.base+path, nil)
-	if err != nil {
-		return err
-	}
-	return c.do(req, out)
-}
-
-func (c *client) do(req *http.Request, out any) error {
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	return decode(resp, out)
-}
-
-func decode(resp *http.Response, out any) error {
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("http %d: %s", resp.StatusCode, string(data))
-	}
-	if out == nil {
-		return nil
-	}
-	return json.Unmarshal(data, out)
+	b, err := os.ReadFile(path)
+	must(err)
+	return string(b)
 }
 
 func must(err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fail(err)
 	}
+}
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
+}
+func usageErr(msg string) {
+	fmt.Fprintln(os.Stderr, "usage:", msg)
+	os.Exit(2)
 }

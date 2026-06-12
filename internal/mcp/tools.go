@@ -36,5 +36,27 @@ func toolDefs() []map[string]any {
 			"description": "List connected load-generation workers and their status.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
 		},
+		{
+			"name":        "loadify_list_tests",
+			"description": "List saved test definitions (id, name, protocol, creator).",
+			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		{
+			"name":        "loadify_list_runs",
+			"description": "List recent runs (id, name, status). Use loadify_run_status for one run's summary.",
+			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		{
+			"name":        "loadify_import_test",
+			"description": "Convert a curl command, HAR, Postman collection or OpenAPI/Swagger doc into a test draft (not saved). Returns the draft plan so an agent can review or run it.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"format":  map[string]any{"type": "string", "enum": []string{"curl", "har", "postman", "openapi"}},
+					"content": map[string]any{"type": "string", "description": "raw content (the curl command, or file text)"},
+				},
+				"required": []string{"format", "content"},
+			},
+		},
 	}
 }
