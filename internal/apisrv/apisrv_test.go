@@ -71,6 +71,10 @@ func (f *fakeMeta) UpsertFeishuUser(_ context.Context, _, _, _ string) (*postgre
 	return &postgres.User{ID: "u", Role: "viewer"}, nil
 }
 func (f *fakeMeta) TouchLogin(_ context.Context, _ string) error { return nil }
+func (f *fakeMeta) UpdateUserRole(_ context.Context, _, _ string) error       { return nil }
+func (f *fakeMeta) SetUserPassword(_ context.Context, _, _ string) error      { return nil }
+func (f *fakeMeta) SetUserDisabled(_ context.Context, _ string, _ bool) error { return nil }
+func (f *fakeMeta) DeleteUser(_ context.Context, _ string) error              { return nil }
 func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error) { return nil, nil }
 func (f *fakeMeta) CreateUser(_ context.Context, email, name, role, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "new", Email: email, Name: name, Role: role}, nil
@@ -281,5 +285,50 @@ func TestListEndpointsReturnArrays(t *testing.T) {
 		if _, ok := v.([]any); !ok {
 			t.Errorf("%s: body = %s, want a JSON array", path, rr.Body.String())
 		}
+	}
+}
+
+// TestUserManagementGuards covers the admin user-management endpoints: RBAC,
+// self-lockout protection, and the self-service password change.
+func TestUserManagementGuards(t *testing.T) {
+	srv := newTestServer(newFakeMeta(), &fakeCoord{})
+	h := srv.Handler()
+
+	do := func(method, path, tok, body string) int {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	adm := token(t, auth.RoleAdmin) // subject "u"
+	// An admin cannot lock themselves out.
+	if c := do("PATCH", "/api/v1/users/u", adm, `{"disabled":true}`); c != http.StatusBadRequest {
+		t.Errorf("self-disable: got %d want 400", c)
+	}
+	if c := do("PATCH", "/api/v1/users/u", adm, `{"role":"viewer"}`); c != http.StatusBadRequest {
+		t.Errorf("self-demote: got %d want 400", c)
+	}
+	if c := do("DELETE", "/api/v1/users/u", adm, ""); c != http.StatusBadRequest {
+		t.Errorf("self-delete: got %d want 400", c)
+	}
+	// Managing another account works.
+	if c := do("PATCH", "/api/v1/users/other", adm, `{"role":"operator","disabled":true}`); c != http.StatusOK {
+		t.Errorf("patch other: got %d want 200", c)
+	}
+	if c := do("DELETE", "/api/v1/users/other", adm, ""); c != http.StatusNoContent {
+		t.Errorf("delete other: got %d want 204", c)
+	}
+	// Non-admins are rejected.
+	if c := do("PATCH", "/api/v1/users/other", token(t, auth.RoleOperator), `{"role":"viewer"}`); c != http.StatusForbidden {
+		t.Errorf("operator patch: got %d want 403", c)
+	}
+	// Anyone signed in can rotate their own password; short ones are rejected.
+	if c := do("POST", "/api/v1/auth/password", token(t, auth.RoleViewer), `{"new_password":"longenough1"}`); c != http.StatusNoContent {
+		t.Errorf("change password: got %d want 204", c)
+	}
+	if c := do("POST", "/api/v1/auth/password", token(t, auth.RoleViewer), `{"new_password":"short"}`); c != http.StatusBadRequest {
+		t.Errorf("short password: got %d want 400", c)
 	}
 }

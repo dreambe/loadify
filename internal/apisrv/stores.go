@@ -31,6 +31,10 @@ type metaStore interface {
 	TouchLogin(ctx context.Context, id string) error
 	ListUsers(ctx context.Context, limit int) ([]postgres.User, error)
 	CreateUser(ctx context.Context, email, name, role, passwordHash string) (*postgres.User, error)
+	UpdateUserRole(ctx context.Context, id, role string) error
+	SetUserPassword(ctx context.Context, id, passwordHash string) error
+	SetUserDisabled(ctx context.Context, id string, disabled bool) error
+	DeleteUser(ctx context.Context, id string) error
 
 	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)
 	ListSchedules(ctx context.Context, limit int) ([]postgres.Schedule, error)

@@ -99,6 +99,14 @@ export const api = {
   listUsers: () => reqList<User>("/api/v1/users"),
   createUser: (body: { email: string; name: string; role: string; password: string }) =>
     req<User>("/api/v1/users", { method: "POST", body: JSON.stringify(body) }),
+  updateUser: (id: string, body: { role?: string; password?: string; disabled?: boolean }) =>
+    req<User>(`/api/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteUser: (id: string) => req<void>(`/api/v1/users/${id}`, { method: "DELETE" }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    req<void>("/api/v1/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+    }),
 };
 
 // liveSocketURL builds the WebSocket URL for a run's live stream, carrying the

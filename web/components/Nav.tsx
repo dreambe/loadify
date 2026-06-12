@@ -17,7 +17,7 @@ export default function Nav() {
       <Link href="/schedules">{t("nav.schedules")}</Link>
       <Link href="/compare">{t("nav.compare")}</Link>
       <Link href="/workers">{t("nav.workers")}</Link>
-      {user?.role === "admin" && <Link href="/users">{t("nav.users")}</Link>}
+      <Link href="/users">{user?.role === "admin" ? t("nav.users") : t("nav.account")}</Link>
       <span className="spacer" />
       <button
         className="secondary"

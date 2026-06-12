@@ -99,6 +99,7 @@ func (s *Server) routes() {
 		r.Get("/auth/feishu/login", s.handleFeishuLogin)
 		r.Get("/auth/feishu/callback", s.handleFeishuCallback)
 		r.With(viewer).Get("/auth/me", s.handleMe)
+		r.With(viewer).Post("/auth/password", s.handleChangePassword)
 
 		// Reads require a viewer (or higher).
 		r.With(viewer).Get("/tests", s.handleListTests)
@@ -123,6 +124,8 @@ func (s *Server) routes() {
 		// User management is admin-only.
 		r.With(admin).Get("/users", s.handleListUsers)
 		r.With(admin).Post("/users", s.handleCreateUser)
+		r.With(admin).Patch("/users/{id}", s.handleUpdateUser)
+		r.With(admin).Delete("/users/{id}", s.handleDeleteUser)
 	})
 	s.mux = r
 }
@@ -130,7 +133,7 @@ func (s *Server) routes() {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

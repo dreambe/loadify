@@ -16,6 +16,7 @@ type User struct {
 	Role         string     `json:"role"`
 	PasswordHash string     `json:"-"`
 	FeishuOpenID string     `json:"feishu_open_id,omitempty"`
+	Disabled     bool       `json:"disabled"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 }
@@ -23,11 +24,11 @@ type User struct {
 // ErrUserNotFound is returned when a lookup matches no row.
 var ErrUserNotFound = errors.New("postgres: user not found")
 
-const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), created_at, last_login_at`
+const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), disabled, created_at, last_login_at`
 
 func scanUser(row pgx.Row) (*User, error) {
 	u := &User{}
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.CreatedAt, &u.LastLoginAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.Disabled, &u.CreatedAt, &u.LastLoginAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
@@ -74,6 +75,43 @@ func (s *Store) TouchLogin(ctx context.Context, id string) error {
 	return err
 }
 
+// UpdateUserRole changes a user's role.
+func (s *Store) UpdateUserRole(ctx context.Context, id, role string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, id, role)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return err
+}
+
+// SetUserPassword replaces a user's password hash.
+func (s *Store) SetUserPassword(ctx context.Context, id, passwordHash string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET password_hash=nullif($2,'') WHERE id=$1`, id, passwordHash)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return err
+}
+
+// SetUserDisabled toggles whether an account may sign in.
+func (s *Store) SetUserDisabled(ctx context.Context, id string, disabled bool) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET disabled=$2 WHERE id=$1`, id, disabled)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return err
+}
+
+// DeleteUser removes an account. Owned runs/tests keep their rows (created_by
+// is set NULL by the FK).
+func (s *Store) DeleteUser(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return err
+}
+
 // ListUsers returns up to limit users, newest first.
 func (s *Store) ListUsers(ctx context.Context, limit int) ([]User, error) {
 	if limit <= 0 {
@@ -84,7 +122,7 @@ func (s *Store) ListUsers(ctx context.Context, limit int) ([]User, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []User
+	out := []User{}
 	for rows.Next() {
 		u, err := scanUser(rows)
 		if err != nil {

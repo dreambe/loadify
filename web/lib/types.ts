@@ -5,6 +5,9 @@ export interface User {
   email: string;
   name: string;
   role: Role;
+  disabled?: boolean;
+  created_at?: string;
+  last_login_at?: string;
 }
 
 export interface TestDefinition {
