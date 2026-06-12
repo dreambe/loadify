@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import Help from "@/components/Help";
 import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import { parseCSV } from "@/lib/csv";
@@ -73,6 +74,7 @@ export default function TestsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [tests, setTests] = useState<TestDefinition[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -97,7 +99,11 @@ export default function TestsPage() {
   const isHTTP = protocol === "http";
 
   function refresh() {
-    api.listTests().then(setTests).catch((e) => setErr(e.message));
+    api
+      .listTests()
+      .then(setTests)
+      .catch((e) => toast.error(e.message))
+      .finally(() => setLoaded(true));
   }
   useEffect(() => {
     if (ready) refresh();
@@ -498,7 +504,9 @@ export default function TestsPage() {
               style={{ width: 280 }}
             />
           </div>
-          {filtered.length === 0 ? (
+          {!loaded ? (
+            <TableSkeleton cols={canCreate ? 5 : 4} />
+          ) : filtered.length === 0 ? (
             <EmptyState
               title={t("tests.empty")}
               hint={canCreate ? t("tests.emptyHint") : undefined}

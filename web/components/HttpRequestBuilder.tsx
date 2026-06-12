@@ -180,7 +180,7 @@ export default function HttpRequestBuilder({
   }
 
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14 }}>
+    <div className="builder">
       <div className="row">
         <div>
           <label>{t("http.method")}</label>

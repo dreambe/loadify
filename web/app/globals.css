@@ -834,6 +834,44 @@ label.req::after {
   margin-top: var(--s4);
 }
 
+/* --- builder container (shared by the protocol builders) -------------------- */
+
+.builder {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--s4);
+  background: var(--panel-2);
+}
+
+/* --- responsive ------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .container {
+    padding: var(--s4) var(--s3) var(--s6);
+  }
+  /* Nav scrolls horizontally instead of wrapping into a tall block. */
+  .nav {
+    gap: var(--s4);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav .me {
+    display: none;
+  }
+  h1 {
+    font-size: 20px;
+  }
+  /* Action cells may wrap on small screens rather than overflow. */
+  td .actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .footer-inner {
+    flex-wrap: wrap;
+    gap: var(--s2) var(--s3);
+  }
+}
+
 /* --- login ------------------------------------------------------------------ */
 
 .login-shell {

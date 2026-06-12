@@ -47,29 +47,29 @@ export default function SSEBuilder({
 }) {
   const { t } = useI18n();
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12 }}>
+    <div className="builder">
       <p className="muted" style={{ marginTop: 0 }}>
         {t("sse.hint")}
       </p>
-      <label>{t("sse.url")}</label>
-      <input
-        value={value.url}
-        onChange={(e) => onChange({ ...value, url: e.target.value })}
-        placeholder="https://api/stream"
-        style={{ width: "100%" }}
-      />
-      <div className="row">
-        <div>
+      <div className="form-grid">
+        <div className="field span-2">
+          <label>{t("sse.url")}</label>
+          <input
+            value={value.url}
+            onChange={(e) => onChange({ ...value, url: e.target.value })}
+            placeholder="https://api/stream"
+          />
+        </div>
+        <div className="field">
           <label>{t("sse.maxEvents")}</label>
           <input
             type="number"
             min={1}
             value={value.maxEvents}
             onChange={(e) => onChange({ ...value, maxEvents: parseInt(e.target.value || "1", 10) })}
-            style={{ width: 120 }}
           />
         </div>
-        <div>
+        <div className="field">
           <label>{t("sse.timeoutMs")}</label>
           <input
             type="number"
@@ -77,7 +77,6 @@ export default function SSEBuilder({
             step={1000}
             value={value.timeoutMs}
             onChange={(e) => onChange({ ...value, timeoutMs: parseInt(e.target.value || "1000", 10) })}
-            style={{ width: 140 }}
           />
         </div>
       </div>
