@@ -4,12 +4,14 @@ package aggregator
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/metrics"
+	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/store"
 )
 
@@ -31,6 +33,23 @@ type Aggregator struct {
 	listeners   []chan *loadifyv1.LiveTick
 	lastEmitted int64
 	totalCount  int64
+
+	// Auto-stop circuit breaker (cross-worker error-rate over a window).
+	autoStop  plan.AutoStopConfig
+	onStop    func(runID, reason string)
+	autoWin   []secStat
+	autoFired bool
+}
+
+type secStat struct{ count, errors int64 }
+
+// SetAutoStop arms the circuit breaker with a config and a stop callback. The
+// callback is invoked at most once, off the aggregator lock.
+func (a *Aggregator) SetAutoStop(cfg plan.AutoStopConfig, onStop func(runID, reason string)) {
+	a.mu.Lock()
+	a.autoStop = cfg
+	a.onStop = onStop
+	a.mu.Unlock()
 }
 
 // liveSampleCap bounds how many raw samples ride along on a single LiveTick.
@@ -161,6 +180,52 @@ func (a *Aggregator) finalize(now time.Time) {
 			}
 		}
 	}
+	a.evalAutoStop(ticks)
+}
+
+// evalAutoStop feeds finalized per-second ticks into a trailing window and
+// fires the stop callback once if the windowed error rate crosses the
+// threshold (and enough requests have accumulated to avoid startup jitter).
+// Transaction pseudo-groups don't add to the count here — ticks are the
+// aggregate across real request groups already.
+func (a *Aggregator) evalAutoStop(ticks []*loadifyv1.LiveTick) {
+	a.mu.Lock()
+	if !a.autoStop.AutoStopEnabled() || a.onStop == nil || a.autoFired || len(ticks) == 0 {
+		a.mu.Unlock()
+		return
+	}
+	win := a.autoStop.WindowSec
+	if win <= 0 {
+		win = 10
+	}
+	for _, tk := range ticks {
+		cnt := int64(tk.Rps + 0.5)
+		errs := int64(tk.ErrorRate*tk.Rps + 0.5)
+		a.autoWin = append(a.autoWin, secStat{count: cnt, errors: errs})
+	}
+	if len(a.autoWin) > win {
+		a.autoWin = a.autoWin[len(a.autoWin)-win:]
+	}
+	var c, e int64
+	for _, s := range a.autoWin {
+		c += s.count
+		e += s.errors
+	}
+	if c < int64(a.autoStop.MinRequests) || c == 0 {
+		a.mu.Unlock()
+		return
+	}
+	rate := float64(e) / float64(c) * 100
+	if rate <= a.autoStop.ErrorRatePct {
+		a.mu.Unlock()
+		return
+	}
+	a.autoFired = true
+	onStop := a.onStop
+	reason := fmt.Sprintf("auto-stopped: error rate %.0f%% > %.0f%% over %ds", rate, a.autoStop.ErrorRatePct, win)
+	a.mu.Unlock()
+	a.log.Warn("auto-stop triggered", "run", a.runID, "reason", reason)
+	onStop(a.runID, reason)
 }
 
 // collect turns one second's buckets into a rollup row set plus an aggregate

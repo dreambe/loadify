@@ -64,6 +64,7 @@ message RunState {
   int64 active_vus = 4;
   int64 started_at_unix_ms = 5;
   int64 ended_at_unix_ms = 6;
+  string reason = 7; // why a run was aborted (e.g. auto-stop circuit breaker)
 }
 
 message ListWorkersRequest {}

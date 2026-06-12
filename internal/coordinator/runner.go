@@ -17,6 +17,7 @@ type runState struct {
 	assigned  map[string]bool
 	finished  map[string]bool
 	status    loadifyv1.RunStatus
+	reason    string
 	startedAt time.Time
 	endedAt   time.Time
 }
@@ -29,6 +30,7 @@ func (r *runState) toProto(activeVUs int64) *loadifyv1.RunState {
 		StartedAtUnixMs: r.startedAt.UnixMilli(),
 	}
 	rs.ActiveWorkers = int32(len(r.assigned) - len(r.finished))
+	rs.Reason = r.reason
 	if !r.endedAt.IsZero() {
 		rs.EndedAtUnixMs = r.endedAt.UnixMilli()
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/dreambe/loadify/internal/coordinator/aggregator"
 	"github.com/dreambe/loadify/internal/coordinator/registry"
 	"github.com/dreambe/loadify/internal/coordinator/scheduler"
+	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -246,6 +247,10 @@ func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
 
 	aggCtx, aggCancel := context.WithCancel(context.Background())
 	agg := aggregator.New(req.RunId, req.Protocol, s.writer, s.log)
+	// Arm the auto-stop circuit breaker from the plan (enabled by default).
+	if p, perr := plan.Parse(req.PlanJson); perr == nil {
+		agg.SetAutoStop(p.AutoStopOrDefault(), s.autoStopRun)
+	}
 	go agg.Run(aggCtx)
 
 	rs := &runState{
@@ -322,6 +327,18 @@ func (s *Service) StopRun(_ context.Context, req *loadifyv1.StopRunRequest) (*lo
 		}
 	}
 	return &loadifyv1.StopRunResponse{RunId: req.RunId}, nil
+}
+
+// autoStopRun is the aggregator's circuit-breaker callback: it records the
+// abort reason and signals all assigned workers to stop the run.
+func (s *Service) autoStopRun(runID, reason string) {
+	s.mu.Lock()
+	if rs := s.runs[runID]; rs != nil {
+		rs.status = loadifyv1.RunStatus_RUN_STATUS_ABORTED
+		rs.reason = reason
+	}
+	s.mu.Unlock()
+	_, _ = s.StopRun(context.Background(), &loadifyv1.StopRunRequest{RunId: runID, Graceful: true})
 }
 
 // GetRunState returns the current state of a run.

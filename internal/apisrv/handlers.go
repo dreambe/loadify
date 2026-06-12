@@ -278,21 +278,35 @@ func (s *Server) watchRun(runID string) {
 			}
 		}
 	}
-	// Allow rollups to flush, then summarize.
+	// Allow rollups to flush, then summarize. If the coordinator aborted the run
+	// (e.g. the auto-stop circuit breaker), finalize it as aborted with reason.
 	time.Sleep(2 * time.Second)
-	s.finalizeRun(runID, "completed")
+	status, reason := "completed", ""
+	if st, serr := s.coord.GetRunState(context.Background(), &loadifyv1.RunStateRequest{RunId: runID}); serr == nil &&
+		st.Status == loadifyv1.RunStatus_RUN_STATUS_ABORTED {
+		status, reason = "aborted", st.Reason
+	}
+	s.finalizeRunReason(runID, status, reason)
 }
 
 // finalizeRun computes a run's summary, evaluates SLA thresholds and marks the
 // run terminal. It is idempotent (FinishRun is a no-op once terminal), so the
 // watcher and the reaper may both call it safely.
-func (s *Server) finalizeRun(runID, status string) {
+func (s *Server) finalizeRun(runID, status string) { s.finalizeRunReason(runID, status, "") }
+
+// finalizeRunReason is finalizeRun with an optional abort reason recorded in
+// the summary (used by the auto-stop circuit breaker).
+func (s *Server) finalizeRunReason(runID, status, reason string) {
 	sctx, scancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer scancel()
 	summary, total, serr := s.ch.Summary(sctx, runID)
 	payload := map[string]any{"total_requests": total, "summary": summary}
 	if serr != nil {
 		s.log.Warn("run summary failed", "run", runID, "err", serr)
+	}
+	if reason != "" {
+		payload["auto_stopped"] = true
+		payload["reason"] = reason
 	}
 	if passed, checks, ok := s.evaluateThresholds(sctx, runID, summary, total); ok {
 		payload["passed"] = passed
