@@ -10,9 +10,12 @@ package script
 
 import (
 	"context"
+	crand "crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	mrand "math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -105,6 +108,38 @@ func (d *Driver) Exec(ctx context.Context, vuState *protocols.VU) protocols.Resu
 	return res
 }
 
+// ExecMulti runs one iteration and returns every result it produced. A scenario
+// harness pushes one result per step (plus a transaction total) via __emit__;
+// a plain script yields the single folded result. This is how per-interface
+// and transaction metrics are captured for scenarios.
+func (d *Driver) ExecMulti(ctx context.Context, vuState *protocols.VU) []protocols.Result {
+	v, err := d.vuFor(vuState.ID)
+	if err != nil {
+		return []protocols.Result{{Group: d.group, ErrorKind: "script_init"}}
+	}
+	v.acc.reset()
+	v.acc.ctx = ctx
+	v.em.results = v.em.results[:0]
+
+	_, callErr := v.fn(goja.Undefined())
+
+	if len(v.em.results) > 0 {
+		// Scenario emitted labeled per-step results; copy out (the backing slice
+		// is reused next iteration).
+		out := make([]protocols.Result, len(v.em.results))
+		copy(out, v.em.results)
+		return out
+	}
+	res := v.acc.result(d.group)
+	if callErr != nil {
+		res.OK = false
+		if res.ErrorKind == "" {
+			res.ErrorKind = "script_error"
+		}
+	}
+	return []protocols.Result{res}
+}
+
 // Teardown releases idle connections.
 func (d *Driver) Teardown(_ context.Context) error {
 	if d.client != nil {
@@ -135,16 +170,20 @@ type vu struct {
 	rt  *goja.Runtime
 	fn  goja.Callable
 	acc *accumulator
+	em  *emitter
 }
 
 func (d *Driver) buildVU() (*vu, error) {
 	rt := goja.New()
 	rt.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 	acc := &accumulator{}
+	em := &emitter{}
 
 	bindConsole(rt)
 	bindSleep(rt)
 	bindCheck(rt, acc)
+	bindFuncs(rt)
+	bindEmit(rt, em)
 	d.bindData(rt)
 	if err := bindHTTP(rt, d.client, acc); err != nil {
 		return nil, err
@@ -157,7 +196,14 @@ func (d *Driver) buildVU() (*vu, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &vu{rt: rt, fn: fn, acc: acc}, nil
+	return &vu{rt: rt, fn: fn, acc: acc, em: em}, nil
+}
+
+// emitter collects per-step results pushed from a scenario's compiled harness
+// via __emit__, so one iteration can yield several labeled metrics (per
+// interface + a transaction total). Owned by one single-threaded VU runtime.
+type emitter struct {
+	results []protocols.Result
 }
 
 // bindData exposes the data feeder to a VU runtime: `data` is the full row
@@ -284,4 +330,99 @@ func bindSleep(rt *goja.Runtime) {
 		}
 		return goja.Undefined()
 	})
+}
+
+// bindFuncs injects data-generation helpers for parameterization:
+//
+//	uuid()            → RFC4122-ish random v4 string
+//	randomInt(a,b)    → integer in [a,b]
+//	random()          → float in [0,1)
+//	timestamp()       → unix milliseconds
+//	now()             → RFC3339 timestamp
+//	counter()         → per-VU monotonically increasing integer (from 1)
+//	randomItem(array) → a random element of the array
+func bindFuncs(rt *goja.Runtime) {
+	var ctr int64
+	_ = rt.Set("uuid", func(goja.FunctionCall) goja.Value { return rt.ToValue(newUUID()) })
+	_ = rt.Set("randomInt", func(call goja.FunctionCall) goja.Value {
+		a := call.Argument(0).ToInteger()
+		b := call.Argument(1).ToInteger()
+		if b < a {
+			a, b = b, a
+		}
+		return rt.ToValue(a + mrand.Int63n(b-a+1))
+	})
+	_ = rt.Set("random", func(goja.FunctionCall) goja.Value { return rt.ToValue(mrand.Float64()) })
+	_ = rt.Set("timestamp", func(goja.FunctionCall) goja.Value { return rt.ToValue(time.Now().UnixMilli()) })
+	_ = rt.Set("now", func(goja.FunctionCall) goja.Value { return rt.ToValue(time.Now().Format(time.RFC3339)) })
+	_ = rt.Set("counter", func(goja.FunctionCall) goja.Value {
+		ctr++
+		return rt.ToValue(ctr)
+	})
+	_ = rt.Set("randomItem", func(call goja.FunctionCall) goja.Value {
+		arr := call.Argument(0).Export()
+		if s, ok := arr.([]any); ok && len(s) > 0 {
+			return rt.ToValue(s[mrand.Intn(len(s))])
+		}
+		return goja.Undefined()
+	})
+}
+
+// bindEmit exposes __emit__(result) used by the compiled scenario harness to
+// record one labeled step (or transaction) result per call.
+func bindEmit(rt *goja.Runtime, em *emitter) {
+	_ = rt.Set("__emit__", func(call goja.FunctionCall) goja.Value {
+		o := call.Argument(0).ToObject(rt)
+		if o == nil {
+			return goja.Undefined()
+		}
+		get := func(k string) goja.Value { return o.Get(k) }
+		str := func(k string) string {
+			if v := get(k); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				return v.String()
+			}
+			return ""
+		}
+		i64 := func(k string) int64 {
+			if v := get(k); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				return v.ToInteger()
+			}
+			return 0
+		}
+		boolv := func(k string) bool {
+			if v := get(k); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				return v.ToBoolean()
+			}
+			return false
+		}
+		body := str("resp_body")
+		if len(body) > protocols.RespBodyCap {
+			body = body[:protocols.RespBodyCap]
+		}
+		em.results = append(em.results, protocols.Result{
+			Group:     str("group"),
+			Method:    str("method"),
+			URL:       str("url"),
+			Status:    int32(i64("status")),
+			OK:        boolv("ok"),
+			ErrorKind: str("error_kind"),
+			LatencyUs: i64("latency_us"),
+			TTFBUs:    i64("ttfb_us"),
+			SentBytes: i64("sent_bytes"),
+			RecvBytes: i64("recv_bytes"),
+			RespBody:  body,
+		})
+		return goja.Undefined()
+	})
+}
+
+// newUUID builds a random v4 UUID string without external dependencies.
+func newUUID() string {
+	var b [16]byte
+	_, _ = crand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return hex.EncodeToString(b[0:4]) + "-" + hex.EncodeToString(b[4:6]) + "-" +
+		hex.EncodeToString(b[6:8]) + "-" + hex.EncodeToString(b[8:10]) + "-" +
+		hex.EncodeToString(b[10:16])
 }

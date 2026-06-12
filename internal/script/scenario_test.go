@@ -13,8 +13,8 @@ import (
 )
 
 // runScenario compiles a scenario, builds the script driver and runs one
-// iteration against a real test server, returning the Result.
-func runScenario(t *testing.T, sc *plan.ScenarioConfig) protocols.Result {
+// iteration against a real test server, returning every emitted result.
+func runScenario(t *testing.T, sc *plan.ScenarioConfig) []protocols.Result {
 	t.Helper()
 	js, err := CompileScenario(sc)
 	if err != nil {
@@ -24,11 +24,12 @@ func runScenario(t *testing.T, sc *plan.ScenarioConfig) protocols.Result {
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
+	md := d.(protocols.MultiDriver)
 	if err := d.Prepare(t.Context()); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
 	defer d.Teardown(t.Context())
-	return d.Exec(t.Context(), &protocols.VU{ID: 1})
+	return md.ExecMulti(t.Context(), &protocols.VU{ID: 1})
 }
 
 func TestScenarioSequenceChaining(t *testing.T) {
@@ -61,12 +62,47 @@ func TestScenarioSequenceChaining(t *testing.T) {
 			},
 		},
 	}
-	res := runScenario(t, sc)
-	if !res.OK {
-		t.Fatalf("scenario failed: %+v", res)
+	results := runScenario(t, sc)
+	// Two steps + one transaction total.
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3 (2 steps + txn): %+v", len(results), results)
+	}
+	for _, r := range results {
+		if !r.OK {
+			t.Errorf("result %s not ok: %+v", r.Group, r)
+		}
+	}
+	if results[0].Group != "login" || results[1].Group != "me" {
+		t.Errorf("step groups = %q,%q want login,me", results[0].Group, results[1].Group)
+	}
+	if results[2].Group != "txn:scenario" {
+		t.Errorf("txn group = %q, want txn:scenario", results[2].Group)
+	}
+	// Transaction latency is the sum of the steps (end-to-end).
+	if results[2].LatencyUs < results[0].LatencyUs {
+		t.Errorf("txn latency %d should be >= first step %d", results[2].LatencyUs, results[0].LatencyUs)
 	}
 	if got := sawToken.Load(); got != "Bearer abc123" {
 		t.Errorf("chained header = %v, want Bearer abc123", got)
+	}
+}
+
+func TestScenarioTemplateFunctions(t *testing.T) {
+	var gotPath atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath.Store(r.URL.Path)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	sc := &plan.ScenarioConfig{
+		Mode:  "sequence",
+		Steps: []plan.ScenarioStep{{Method: "GET", URL: srv.URL + "/u/{{uuid}}"}},
+	}
+	runScenario(t, sc)
+	p, _ := gotPath.Load().(string)
+	// {{uuid}} should have been replaced by a 36-char UUID, not left literal.
+	if strings.Contains(p, "{{") || len(p) < len("/u/")+30 {
+		t.Errorf("template function not interpolated: %q", p)
 	}
 }
 

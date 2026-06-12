@@ -124,9 +124,17 @@ func (e *ArrivalExecutor) worker(ctx context.Context, jobs <-chan struct{}, wg *
 				return
 			}
 			e.busy.Add(1)
-			res := e.driver.Exec(ctx, vu)
-			if ctx.Err() == nil {
-				e.sampler.Record(res)
+			if md, ok := e.driver.(protocols.MultiDriver); ok {
+				for _, res := range md.ExecMulti(ctx, vu) {
+					if ctx.Err() == nil {
+						e.sampler.Record(res)
+					}
+				}
+			} else {
+				res := e.driver.Exec(ctx, vu)
+				if ctx.Err() == nil {
+					e.sampler.Record(res)
+				}
 			}
 			vu.Iteration++
 			e.busy.Add(-1)

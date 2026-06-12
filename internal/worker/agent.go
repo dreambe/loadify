@@ -197,11 +197,13 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 		})
 	} else {
 		exec = executor.New(executor.Config{
-			Driver:    drv,
-			Ramp:      ramp,
-			Sampler:   smp,
-			ThinkTime: p.ThinkTime(),
-			Logger:    log,
+			Driver:     drv,
+			Ramp:       ramp,
+			Sampler:    smp,
+			ThinkTime:  p.ThinkTime(),
+			ThinkCfg:   p.ThinkTimeCfg,
+			Rendezvous: p.Rendezvous,
+			Logger:     log,
 		})
 	}
 

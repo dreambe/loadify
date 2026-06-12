@@ -37,12 +37,78 @@ type Plan struct {
 	WS       *WSConfig   `json:"websocket,omitempty"`
 	SSE      *SSEConfig  `json:"sse,omitempty"`
 	Scenario *ScenarioConfig `json:"scenario,omitempty"`
-	// ThinkTimeMs is the per-iteration pause applied after each request.
+	// ThinkTimeMs is the per-iteration pause applied after each request (fixed).
 	ThinkTimeMs int64 `json:"think_time_ms,omitempty"`
+	// ThinkTimeCfg, when set, overrides ThinkTimeMs with a randomized distribution.
+	ThinkTimeCfg *ThinkTimeConfig `json:"think_time,omitempty"`
+	// Rendezvous, when set, holds VUs at a barrier until N are ready, then
+	// releases them together (a sync point / 集合点) to model burst concurrency.
+	Rendezvous *RendezvousConfig `json:"rendezvous,omitempty"`
+	// AutoStop is the safety circuit breaker; nil means "enabled with defaults".
+	AutoStop *AutoStopConfig `json:"auto_stop,omitempty"`
 	// MaxVUs caps the worker pool for the open (arrival-rate) model. 0 lets the
 	// worker derive a safe bound from the peak target rate.
 	MaxVUs int `json:"max_vus,omitempty"`
 }
+
+// ThinkTimeConfig describes a randomized per-iteration pause.
+//
+//	distribution: fixed | uniform | gaussian | poisson
+//	fixed     → MinMs
+//	uniform   → [MinMs, MaxMs]
+//	gaussian  → mean MeanMs, std-dev StddevMs (clamped ≥ 0)
+//	poisson   → mean MeanMs (exponential inter-arrival)
+type ThinkTimeConfig struct {
+	Distribution string `json:"distribution"`
+	MinMs        int64  `json:"min_ms,omitempty"`
+	MaxMs        int64  `json:"max_ms,omitempty"`
+	MeanMs       int64  `json:"mean_ms,omitempty"`
+	StddevMs     int64  `json:"stddev_ms,omitempty"`
+}
+
+// RendezvousConfig is a per-worker sync point: each iteration waits until VUs
+// VUs are gathered (or TimeoutMs elapses) before firing, modeling bursts.
+type RendezvousConfig struct {
+	VUs       int   `json:"vus"`
+	TimeoutMs int64 `json:"timeout_ms,omitempty"`
+}
+
+// AutoStopConfig is the safety circuit breaker. It aborts a run when, over a
+// trailing window, the error rate exceeds a threshold — preventing a runaway
+// test from hammering an already-failing target. Enabled by default.
+type AutoStopConfig struct {
+	Enabled      *bool   `json:"enabled,omitempty"`
+	ErrorRatePct float64 `json:"error_rate_pct,omitempty"`
+	WindowSec    int     `json:"window_sec,omitempty"`
+	MinRequests  int     `json:"min_requests,omitempty"`
+}
+
+// AutoStopOrDefault returns the effective auto-stop config: a nil plan field
+// means enabled with safe defaults (abort at >50% errors over 10s once at
+// least 20 requests have been seen).
+func (p *Plan) AutoStopOrDefault() AutoStopConfig {
+	c := AutoStopConfig{ErrorRatePct: 50, WindowSec: 10, MinRequests: 20}
+	if p.AutoStop != nil {
+		if p.AutoStop.Enabled != nil && !*p.AutoStop.Enabled {
+			return AutoStopConfig{Enabled: p.AutoStop.Enabled}
+		}
+		if p.AutoStop.ErrorRatePct > 0 {
+			c.ErrorRatePct = p.AutoStop.ErrorRatePct
+		}
+		if p.AutoStop.WindowSec > 0 {
+			c.WindowSec = p.AutoStop.WindowSec
+		}
+		if p.AutoStop.MinRequests > 0 {
+			c.MinRequests = p.AutoStop.MinRequests
+		}
+	}
+	on := true
+	c.Enabled = &on
+	return c
+}
+
+// AutoStopEnabled reports whether the breaker is on (default true).
+func (c AutoStopConfig) AutoStopEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
 // HTTPConfig describes a single HTTP/HTTPS request template.
 type HTTPConfig struct {

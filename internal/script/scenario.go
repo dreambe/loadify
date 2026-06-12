@@ -40,11 +40,31 @@ function _get(o, path) {
   }
   return o;
 }
+function _tmplFunc(token) {
+  // Built-in generators usable directly in {{...}}: uuid, timestamp, now,
+  // random, randomInt(a,b). Returns undefined when token is not a function.
+  var m = token.match(/^(\w+)\s*\(([^)]*)\)$/);
+  var name = m ? m[1] : token;
+  var args = m && m[2].trim() ? m[2].split(",").map(function (x) { return parseFloat(x); }) : [];
+  switch (name) {
+    case "uuid": return uuid();
+    case "timestamp": return timestamp();
+    case "now": return now();
+    case "random": return random();
+    case "randomInt": return randomInt(args[0] || 0, args[1] || 0);
+  }
+  return undefined;
+}
 function _interp(s, vars) {
   if (s === undefined || s === null) return s;
-  return String(s).replace(/\{\{\s*([\w.]+)\s*\}\}/g, function (m, k) {
+  return String(s).replace(/\{\{\s*([\w.]+(?:\([^)]*\))?)\s*\}\}/g, function (m, k) {
     var v = vars[k];
-    return v === undefined || v === null ? "" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+    if (v === undefined || v === null) {
+      var f = _tmplFunc(k);
+      if (f !== undefined) return String(f);
+      return "";
+    }
+    return typeof v === "object" ? JSON.stringify(v) : String(v);
   });
 }
 function _looseEq(actual, want) {
@@ -76,21 +96,31 @@ function _assertOne(a, r) {
   }
   return false;
 }
-function _runStep(step, vars) {
+function _runStep(step, vars, idx) {
   var headers = {};
   if (step.headers) for (var k in step.headers) headers[k] = _interp(step.headers[k], vars);
   var url = _interp(step.url, vars);
   var body = step.body ? _interp(step.body, vars) : "";
   var r = http.request(step.method || "GET", url, body, { headers: headers });
-  var label = step.name || ((step.method || "GET") + " " + url);
+  var label = step.name || ("step" + (idx + 1));
+  var ok = true, reason = "";
   if (step.asserts && step.asserts.length) {
     for (var i = 0; i < step.asserts.length; i++) {
       var a = step.asserts[i];
-      check(label + " · " + a.source + " " + a.op + " " + (a.value || ""), _assertOne(a, r));
+      var pass = _assertOne(a, r);
+      if (!pass && ok) { ok = false; reason = "assert " + a.source + " " + a.op + " " + (a.value || ""); }
     }
   } else {
-    check(label, r.status < 400);
+    ok = r.status < 400 && !r.error;
+    if (!ok) reason = r.error ? r.error : "status " + r.status;
   }
+  // Emit this step as its own labeled result (per-interface metrics + drill-down).
+  __emit__({
+    group: label, method: step.method || "GET", url: url,
+    status: r.status, ok: ok, error_kind: ok ? "" : reason,
+    latency_us: Math.round((r.duration_ms || 0) * 1000), ttfb_us: Math.round((r.duration_ms || 0) * 1000),
+    recv_bytes: (r.body || "").length, resp_body: r.body || ""
+  });
   if (step.extracts && step.extracts.length && r.body) {
     var parsed = null;
     try { parsed = JSON.parse(r.body); } catch (e) {}
@@ -99,7 +129,7 @@ function _runStep(step, vars) {
       vars[ex["var"]] = parsed !== null ? _get(parsed, ex.path) : undefined;
     }
   }
-  return r;
+  return { r: r, ok: ok, ms: r.duration_ms || 0 };
 }
 function iteration() {
   var vars = {};
@@ -111,14 +141,27 @@ function iteration() {
   if (__SCENARIO__.mode === "weighted") {
     var total = 0;
     for (var i = 0; i < steps.length; i++) total += steps[i].weight || 1;
-    var pick = Math.random() * total, acc = 0, chosen = steps[0];
+    var pick = Math.random() * total, acc = 0, chosen = 0;
     for (var i = 0; i < steps.length; i++) {
       acc += steps[i].weight || 1;
-      if (pick <= acc) { chosen = steps[i]; break; }
+      if (pick <= acc) { chosen = i; break; }
     }
-    _runStep(chosen, vars);
+    _runStep(steps[chosen], vars, chosen);
   } else {
-    for (var i = 0; i < steps.length; i++) _runStep(steps[i], vars);
+    // Sequence: run all steps, then emit a transaction total (end-to-end).
+    var txnMs = 0, txnOK = true;
+    for (var i = 0; i < steps.length; i++) {
+      var out = _runStep(steps[i], vars, i);
+      txnMs += out.ms;
+      if (!out.ok) txnOK = false;
+    }
+    if (steps.length > 1) {
+      __emit__({
+        group: "txn:" + (__SCENARIO__.name || "scenario"),
+        ok: txnOK, error_kind: txnOK ? "" : "step_failed",
+        latency_us: Math.round(txnMs * 1000), ttfb_us: Math.round(txnMs * 1000)
+      });
+    }
   }
 }
 `

@@ -48,6 +48,15 @@ type Driver interface {
 	Teardown(ctx context.Context) error
 }
 
+// MultiDriver is an optional Driver extension that emits several results per
+// iteration — one per labeled step plus a transaction total — so a scenario's
+// per-interface metrics and end-to-end transaction timing are captured. The
+// executor uses ExecMulti when available and records every result.
+type MultiDriver interface {
+	Driver
+	ExecMulti(ctx context.Context, vu *VU) []Result
+}
+
 // Factory builds a Driver from a parsed plan.
 type Factory func(p *plan.Plan) (Driver, error)
 

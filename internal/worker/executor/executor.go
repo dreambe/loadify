@@ -5,9 +5,11 @@ package executor
 import (
 	"context"
 	"log/slog"
+	"math/rand"
 	"sync"
 	"time"
 
+	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/worker/protocols"
 	"github.com/dreambe/loadify/internal/worker/sampler"
 )
@@ -17,11 +19,12 @@ const controlInterval = 200 * time.Millisecond
 
 // Executor scales a VU pool to follow a Ramp and drives a Driver.
 type Executor struct {
-	driver    protocols.Driver
-	ramp      *Ramp
-	sampler   *sampler.Sampler
-	thinkTime time.Duration
-	log       *slog.Logger
+	driver  protocols.Driver
+	ramp    *Ramp
+	sampler *sampler.Sampler
+	thinker *thinker
+	barrier *barrier
+	log     *slog.Logger
 
 	mu      sync.Mutex
 	vus     []*vuHandle
@@ -36,11 +39,13 @@ type vuHandle struct {
 
 // Config configures an Executor.
 type Config struct {
-	Driver    protocols.Driver
-	Ramp      *Ramp
-	Sampler   *sampler.Sampler
-	ThinkTime time.Duration
-	Logger    *slog.Logger
+	Driver     protocols.Driver
+	Ramp       *Ramp
+	Sampler    *sampler.Sampler
+	ThinkTime  time.Duration
+	ThinkCfg   *plan.ThinkTimeConfig
+	Rendezvous *plan.RendezvousConfig
+	Logger     *slog.Logger
 }
 
 // New creates an Executor.
@@ -49,7 +54,21 @@ func New(c Config) *Executor {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Executor{driver: c.Driver, ramp: c.Ramp, sampler: c.Sampler, thinkTime: c.ThinkTime, log: log}
+	e := &Executor{
+		driver:  c.Driver,
+		ramp:    c.Ramp,
+		sampler: c.Sampler,
+		thinker: newThinker(c.ThinkTime, c.ThinkCfg),
+		log:     log,
+	}
+	if c.Rendezvous != nil && c.Rendezvous.VUs > 1 {
+		to := time.Duration(c.Rendezvous.TimeoutMs) * time.Millisecond
+		if to <= 0 {
+			to = 10 * time.Second
+		}
+		e.barrier = newBarrier(c.Rendezvous.VUs, to)
+	}
+	return e
 }
 
 // Run prepares the driver, follows the ramp until it elapses or ctx is
@@ -118,24 +137,42 @@ func (e *Executor) spawnLocked(parent context.Context) {
 func (e *Executor) runVU(ctx context.Context, id int, h *vuHandle) {
 	defer close(h.done)
 	vu := &protocols.VU{ID: id}
+	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
+	md, multi := e.driver.(protocols.MultiDriver)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		res := e.driver.Exec(ctx, vu)
-		// A cancelled context produces a spurious transport error; drop it.
-		if ctx.Err() != nil {
-			return
+		// Sync point: gather VUs before firing to model burst concurrency.
+		if e.barrier != nil {
+			e.barrier.wait(ctx)
 		}
-		e.sampler.Record(res)
-		vu.Iteration++
-		if e.thinkTime > 0 {
-			select {
-			case <-ctx.Done():
+		if multi {
+			for _, res := range md.ExecMulti(ctx, vu) {
+				if ctx.Err() != nil {
+					return
+				}
+				e.sampler.Record(res)
+			}
+		} else {
+			res := e.driver.Exec(ctx, vu)
+			// A cancelled context produces a spurious transport error; drop it.
+			if ctx.Err() != nil {
 				return
-			case <-time.After(e.thinkTime):
+			}
+			e.sampler.Record(res)
+		}
+		vu.Iteration++
+		if e.thinker.any() {
+			d := e.thinker.next(rng)
+			if d > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(d):
+				}
 			}
 		}
 	}
