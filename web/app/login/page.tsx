@@ -62,13 +62,20 @@ function LoginInner() {
         </p>
         <form className="panel" onSubmit={submit}>
           <label>{t("login.email")}</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            required
+            style={{ width: "100%" }}
+          />
           <label>{t("login.password")}</label>
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             required
+            style={{ width: "100%" }}
           />
           {err && <div className="error">{err}</div>}
           <div style={{ marginTop: 16 }}>
