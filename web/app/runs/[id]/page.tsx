@@ -49,6 +49,18 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h1>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
           <div className="row" style={{ alignItems: "center" }}>
+            {terminal && run && canStop && (
+              <button
+                className="secondary"
+                onClick={() =>
+                  api
+                    .startRun(run.test_def_id, Math.max(1, run.desired_workers), "")
+                    .then((res) => (window.location.href = `/runs/${res.run_id}`))
+                }
+              >
+                ↻ {t("runs.rerun")}
+              </button>
+            )}
             {terminal && (
               <a className="badge" href={exportCSVURL(runId)} download>
                 ⬇ {t("run.exportCsv")}

@@ -52,6 +52,18 @@ export interface LoginResponse {
   user: User;
 }
 
+// DebugResponse is one ad-hoc request fired from the test builder.
+export interface DebugResponse {
+  status: number;
+  status_text: string;
+  latency_ms: number;
+  headers: Record<string, string>;
+  body: string;
+  body_truncated: boolean;
+  recv_bytes: number;
+  error?: string;
+}
+
 export const api = {
   login: (email: string, password: string) =>
     req<LoginResponse>("/api/v1/auth/login", {
@@ -72,6 +84,26 @@ export const api = {
     thresholds?: unknown;
     dataset?: unknown;
   }) => req<{ id: string }>("/api/v1/tests", { method: "POST", body: JSON.stringify(body) }),
+  updateTest: (
+    id: string,
+    body: {
+      name: string;
+      protocol: string;
+      plan: unknown;
+      ramp: unknown;
+      script?: string;
+      thresholds?: unknown;
+      dataset?: unknown;
+    }
+  ) => req<void>(`/api/v1/tests/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteTest: (id: string) => req<void>(`/api/v1/tests/${id}`, { method: "DELETE" }),
+  debugRequest: (body: {
+    method: string;
+    url: string;
+    headers?: Record<string, string>;
+    body?: string;
+    insecure_skip_verify?: boolean;
+  }) => req<DebugResponse>("/api/v1/tests/debug", { method: "POST", body: JSON.stringify(body) }),
 
   listRuns: () => reqList<Run>("/api/v1/runs"),
   getRun: (id: string) => req<Run>(`/api/v1/runs/${id}`),

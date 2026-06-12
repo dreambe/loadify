@@ -71,10 +71,14 @@ export default function LineChart({
           Math.round((i / (xTickCount - 1)) * (maxLen - 1))
         );
 
-  // Map a mouse position to the nearest data index.
+  // Map a mouse position to the nearest data index. The SVG preserves its
+  // aspect ratio ("meet"), so the drawing is scaled uniformly and centered —
+  // account for that letterboxing or clicks land on shifted indexes.
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    const px = ((e.clientX - rect.left) / rect.width) * width;
+    const scale = Math.min(rect.width / width, rect.height / height);
+    const offsetX = (rect.width - width * scale) / 2;
+    const px = (e.clientX - rect.left - offsetX) / scale;
     if (maxLen <= 1) {
       setHover(0);
       return;
@@ -99,6 +103,7 @@ export default function LineChart({
         role="img"
         aria-label="time series chart"
         onMouseMove={onMove}
+        onClick={onMove}
         onMouseLeave={() => setHover(null)}
       >
         {areaSeries && (

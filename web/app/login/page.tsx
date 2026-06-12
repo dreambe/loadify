@@ -55,7 +55,7 @@ function LoginInner() {
         </div>
         <div className="login-mark">
           <PulseMark size={28} />
-          loadify
+          Loadify
         </div>
         <p className="muted" style={{ textAlign: "center", marginTop: -12, marginBottom: 20 }}>
           {t("login.tagline")}

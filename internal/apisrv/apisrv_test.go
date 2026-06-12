@@ -35,6 +35,10 @@ func newFakeMeta() *fakeMeta {
 func (f *fakeMeta) CreateTestDefinition(_ context.Context, _ *postgres.TestDefinition) (string, error) {
 	return "test-1", nil
 }
+func (f *fakeMeta) UpdateTestDefinition(_ context.Context, _ *postgres.TestDefinition) error {
+	return nil
+}
+func (f *fakeMeta) ArchiveTestDefinition(_ context.Context, _ string) error { return nil }
 func (f *fakeMeta) GetTestDefinition(_ context.Context, id string) (*postgres.TestDefinition, error) {
 	return &postgres.TestDefinition{ID: id, Protocol: "http", PlanJSON: json.RawMessage(`{"protocol":"http","http":{"url":"http://x"}}`)}, nil
 }
@@ -330,5 +334,41 @@ func TestUserManagementGuards(t *testing.T) {
 	}
 	if c := do("POST", "/api/v1/auth/password", token(t, auth.RoleViewer), `{"new_password":"short"}`); c != http.StatusBadRequest {
 		t.Errorf("short password: got %d want 400", c)
+	}
+}
+
+// TestDebugRequest exercises the test-builder debug endpoint against a real
+// local HTTP server: the response status/body must round-trip to the caller.
+func TestDebugRequest(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte(`{"hello":"world"}`))
+	}))
+	defer target.Close()
+
+	srv := newTestServer(newFakeMeta(), &fakeCoord{})
+	body := `{"method":"GET","url":"` + target.URL + `"}`
+	req := httptest.NewRequest("POST", "/api/v1/tests/debug", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token(t, auth.RoleOperator))
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("debug: got %d want 200 (%s)", rr.Code, rr.Body.String())
+	}
+	var resp debugResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Status != http.StatusTeapot || !strings.Contains(resp.Body, "world") || resp.Error != "" {
+		t.Errorf("debug response = %+v", resp)
+	}
+	// Viewers cannot debug-fire requests.
+	req2 := httptest.NewRequest("POST", "/api/v1/tests/debug", strings.NewReader(body))
+	req2.Header.Set("Authorization", "Bearer "+token(t, auth.RoleViewer))
+	rr2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusForbidden {
+		t.Errorf("viewer debug: got %d want 403", rr2.Code)
 	}
 }

@@ -39,11 +39,10 @@ export default function Nav() {
     <nav className="nav">
       <Link className="brand" href="/runs">
         <PulseMark />
-        loadify
+        Loadify
       </Link>
       {item("/runs", t("nav.runs"))}
       {item("/tests", t("nav.tests"))}
-      {item("/schedules", t("nav.schedules"))}
       {item("/compare", t("nav.compare"))}
       {item("/workers", t("nav.workers"))}
       {item("/users", user?.role === "admin" ? t("nav.users") : t("nav.account"))}

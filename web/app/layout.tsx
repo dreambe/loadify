@@ -18,7 +18,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "loadify",
+  title: "Loadify",
   description: "Distributed load-testing platform",
 };
 

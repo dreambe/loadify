@@ -1,29 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import Help from "@/components/Help";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
 import HttpRequestBuilder, {
   emptyHttpRequest,
   httpRequestToPlan,
+  planToHttpRequest,
   type HttpRequest,
 } from "@/components/HttpRequestBuilder";
 import ThresholdsEditor from "@/components/ThresholdsEditor";
-import SSEBuilder, { emptySSE, sseToPlan, type SSEConfig } from "@/components/SSEBuilder";
-import type { Schedule, TestDefinition, Threshold } from "@/lib/types";
+import SSEBuilder, { emptySSE, planToSSE, sseToPlan, type SSEConfig } from "@/components/SSEBuilder";
+import type { TestDefinition, Threshold } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
   "protocol": "grpc",
   "grpc": { "target": "echo:8089", "full_method": "/grpc.health.v1.Health/Check", "plaintext": true }
 }`;
 
+// rampToSpec rebuilds the ramp builder state from a stored ramp (edit / copy).
+function rampToSpec(ramp: any, plan: any): RampSpec {
+  const stages: { duration_ms?: number; target_vus?: number; target_rps?: number }[] =
+    Array.isArray(ramp) ? ramp : [];
+  if (stages.length === 0) return defaultRamp;
+  const isRPS = stages.some((s) => (s.target_rps ?? 0) > 0);
+  return {
+    mode: isRPS ? "rps" : "vu",
+    maxVus: (plan && typeof plan === "object" && (plan as any).max_vus) || 0,
+    stages: stages.map((s) => ({
+      target: (isRPS ? s.target_rps : s.target_vus) ?? 0,
+      duration_s: Math.max(1, Math.round((s.duration_ms ?? 0) / 1000)),
+    })),
+  };
+}
+
 export default function TestsPage() {
   const { t } = useI18n();
   const { user, ready } = useAuth();
   const [tests, setTests] = useState<TestDefinition[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [protocol, setProtocol] = useState("http");
   const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest, url: "http://echo:8088/" });
@@ -35,38 +54,64 @@ export default function TestsPage() {
   const [dataset, setDataset] = useState("");
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isHTTP = protocol === "http" || protocol === "https";
 
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [schedTestId, setSchedTestId] = useState("");
-  const [schedInterval, setSchedInterval] = useState(60);
-
   function refresh() {
     api.listTests().then(setTests).catch((e) => setErr(e.message));
-    api.listSchedules().then(setSchedules).catch(() => {});
   }
   useEffect(() => {
     if (ready) refresh();
   }, [ready]);
 
-  async function createSchedule() {
-    if (!schedTestId || schedInterval <= 0) return;
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setProtocol("http");
+    setHttp({ ...emptyHttpRequest, url: "http://echo:8088/" });
+    setSse(emptySSE);
+    setPlan(SAMPLE_PLAN);
+    setRamp(defaultRamp);
+    setThresholds([{ metric: "p95_ms", op: "<", value: 200 }]);
+    setScript("");
+    setDataset("");
+  }
+
+  // loadIntoForm fills the builder from an existing test (edit keeps the id,
+  // copy clears it so submitting creates a new test).
+  function loadIntoForm(td: TestDefinition, mode: "edit" | "copy") {
+    setEditingId(mode === "edit" ? td.id : null);
+    setName(mode === "copy" ? `${td.name} ${t("tests.copySuffix")}` : td.name);
+    setProtocol(td.protocol);
+    if (td.protocol === "http" || td.protocol === "https") {
+      setHttp(planToHttpRequest(td.plan));
+    } else if (td.protocol === "sse") {
+      setSse(planToSSE(td.plan));
+    } else {
+      setPlan(JSON.stringify(td.plan, null, 2));
+    }
+    setRamp(rampToSpec(td.ramp, td.plan));
+    setThresholds(td.thresholds && td.thresholds.length ? td.thresholds : []);
+    setScript(td.script || "");
+    setDataset(td.dataset ? JSON.stringify(td.dataset, null, 2) : "");
+    setErr("");
+    setOk("");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function remove(td: TestDefinition) {
+    if (!window.confirm(t("tests.deleteConfirm").replace("{name}", td.name))) return;
     try {
-      await api.createSchedule(schedTestId, schedInterval, 0);
+      await api.deleteTest(td.id);
+      if (editingId === td.id) resetForm();
       refresh();
     } catch (e: any) {
       setErr(e.message);
     }
   }
-  async function toggleSchedule(id: string, enabled: boolean) {
-    await api.setScheduleEnabled(id, enabled).catch(() => {});
-    refresh();
-  }
 
-  const testName = (id: string) => tests.find((t) => t.id === id)?.name || id.slice(0, 8);
-
-  async function create(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
     setOk("");
@@ -103,18 +148,24 @@ export default function TestsPage() {
         return;
       }
     }
+    const body = {
+      name,
+      protocol,
+      plan: planObj,
+      ramp: rampObj,
+      script: script || undefined,
+      thresholds,
+      dataset: datasetObj,
+    };
     try {
-      await api.createTest({
-        name,
-        protocol,
-        plan: planObj,
-        ramp: rampObj,
-        script: script || undefined,
-        thresholds,
-        dataset: datasetObj,
-      });
-      setOk(t("tests.created"));
-      setName("");
+      if (editingId) {
+        await api.updateTest(editingId, body);
+        setOk(t("tests.updated"));
+      } else {
+        await api.createTest(body);
+        setOk(t("tests.created"));
+      }
+      resetForm();
       refresh();
     } catch (e: any) {
       setErr(e.message);
@@ -131,8 +182,8 @@ export default function TestsPage() {
         <h1>{t("tests.title")}</h1>
 
         {canCreate && (
-          <form className="panel" onSubmit={create}>
-            <h2>{t("tests.new")}</h2>
+          <form className="panel" onSubmit={submit} ref={formRef}>
+            <h2>{editingId ? t("tests.editTitle") : t("tests.new")}</h2>
             <div className="row">
               <div style={{ flex: 1 }}>
                 <label>{t("tests.name")}</label>
@@ -149,7 +200,10 @@ export default function TestsPage() {
             </div>
             {isHTTP && (
               <>
-                <label>{t("tests.request")}</label>
+                <label>
+                  {t("tests.request")}
+                  <Help tip={t("tests.requestHelp")} />
+                </label>
                 <HttpRequestBuilder value={http} onChange={setHttp} />
               </>
             )}
@@ -165,9 +219,15 @@ export default function TestsPage() {
                 <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
               </>
             )}
-            <label>{t("tests.ramp")}</label>
+            <label>
+              {t("tests.ramp")}
+              <Help tip={t("tests.rampHelp")} />
+            </label>
             <RampBuilder value={ramp} onChange={setRamp} />
-            <label>{t("tests.thresholds")}</label>
+            <label>
+              {t("tests.thresholds")}
+              <Help tip={t("tests.thresholdsHelp")} />
+            </label>
             <ThresholdsEditor value={thresholds} onChange={setThresholds} />
             {protocol === "script" && (
               <>
@@ -183,7 +243,10 @@ export default function TestsPage() {
   // extract & chain: var data = JSON.parse(r.body); http.post(url, JSON.stringify(data));
 }`}
                 />
-                <label>{t("tests.dataset")}</label>
+                <label>
+                  {t("tests.dataset")}
+                  <Help tip={t("tests.datasetHelp")} />
+                </label>
                 <textarea
                   rows={3}
                   value={dataset}
@@ -194,68 +257,15 @@ export default function TestsPage() {
             )}
             {err && <div className="error">{err}</div>}
             {ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
-            <div style={{ marginTop: 12 }}>
-              <button type="submit">{t("tests.create")}</button>
+            <div className="row" style={{ marginTop: 12 }}>
+              <button type="submit">{editingId ? t("tests.save") : t("tests.create")}</button>
+              {editingId && (
+                <button type="button" className="secondary" onClick={resetForm}>
+                  {t("tests.cancelEdit")}
+                </button>
+              )}
             </div>
           </form>
-        )}
-
-        {canCreate && (
-          <div className="panel">
-            <h2>{t("sched.title")}</h2>
-            <div className="row">
-              <div>
-                <label>{t("runs.test")}</label>
-                <select value={schedTestId} onChange={(e) => setSchedTestId(e.target.value)}>
-                  <option value="">{t("runs.selectTest")}</option>
-                  {tests.map((td) => (
-                    <option key={td.id} value={td.id}>
-                      {td.name} ({td.protocol})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label>{t("sched.every")}</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={schedInterval}
-                  onChange={(e) => setSchedInterval(parseInt(e.target.value || "1", 10))}
-                  style={{ width: 100 }}
-                />
-              </div>
-              <button onClick={createSchedule} disabled={!schedTestId}>
-                {t("sched.create")}
-              </button>
-            </div>
-            {schedules.length > 0 && (
-              <table style={{ marginTop: 12 }}>
-                <thead>
-                  <tr>
-                    <th>{t("sched.colTest")}</th>
-                    <th>{t("sched.colInterval")}</th>
-                    <th>{t("sched.colNext")}</th>
-                    <th>{t("sched.colState")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedules.map((sc) => (
-                    <tr key={sc.id}>
-                      <td>{testName(sc.test_def_id)}</td>
-                      <td>{sc.interval_minutes} min</td>
-                      <td className="muted">{new Date(sc.next_run_at).toLocaleString()}</td>
-                      <td>
-                        <button className="secondary" onClick={() => toggleSchedule(sc.id, !sc.enabled)}>
-                          {sc.enabled ? t("sched.disable") : t("sched.enable")}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
         )}
 
         <div className="panel">
@@ -266,6 +276,7 @@ export default function TestsPage() {
                 <th>{t("tests.colProtocol")}</th>
                 <th>{t("tests.colCreator")}</th>
                 <th>{t("tests.colCreated")}</th>
+                {canCreate && <th>{t("tests.colActions")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -275,11 +286,26 @@ export default function TestsPage() {
                   <td>{td.protocol}</td>
                   <td className="muted">{td.creator_name || "–"}</td>
                   <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
+                  {canCreate && (
+                    <td>
+                      <div className="row" style={{ gap: 8 }}>
+                        <button className="secondary" onClick={() => loadIntoForm(td, "edit")}>
+                          {t("tests.edit")}
+                        </button>
+                        <button className="secondary" onClick={() => loadIntoForm(td, "copy")}>
+                          {t("tests.copy")}
+                        </button>
+                        <button className="secondary" onClick={() => remove(td)}>
+                          {t("tests.delete")}
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {tests.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={canCreate ? 5 : 4} className="muted">
                     {t("tests.empty")}
                   </td>
                 </tr>

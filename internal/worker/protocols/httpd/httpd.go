@@ -21,6 +21,10 @@ func init() {
 	protocols.Register(loadifyv1.Protocol_PROTOCOL_HTTPS, factory)
 }
 
+// assertBodyCap bounds how much of the response body is buffered when a
+// body-contains assertion is configured.
+const assertBodyCap = 256 << 10
+
 func factory(p *plan.Plan) (protocols.Driver, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -107,12 +111,21 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 		return res
 	}
 	defer resp.Body.Close()
-	// Keep a small head of the body for the live response log, drain the rest.
-	head := make([]byte, protocols.RespBodyCap)
+	// Keep a head of the body for the live response log and assertions, drain
+	// the rest. Body assertions need more context than the log snippet.
+	capN := protocols.RespBodyCap
+	if d.cfg.BodyContains != "" {
+		capN = assertBodyCap
+	}
+	head := make([]byte, capN)
 	hn, _ := io.ReadFull(resp.Body, head)
 	rest, _ := io.Copy(io.Discard, resp.Body)
 	n := int64(hn) + rest
-	res.RespBody = string(head[:hn])
+	snip := hn
+	if snip > protocols.RespBodyCap {
+		snip = protocols.RespBodyCap
+	}
+	res.RespBody = string(head[:snip])
 	res.LatencyUs = sinceUs(start)
 	dnsUs, connectUs, tlsUs, firstByte := ph.snapshot()
 	res.DNSUs, res.ConnectUs, res.TLSUs = dnsUs, connectUs, tlsUs
@@ -127,6 +140,10 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 		if !res.OK {
 			res.ErrorKind = "unexpected_status"
 		}
+	}
+	if res.OK && d.cfg.BodyContains != "" && !strings.Contains(string(head[:hn]), d.cfg.BodyContains) {
+		res.OK = false
+		res.ErrorKind = "assert_body"
 	}
 	return res
 }

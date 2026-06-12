@@ -92,6 +92,48 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
+// handleUpdateTest rewrites an existing test definition in place.
+func (s *Server) handleUpdateTest(w http.ResponseWriter, r *http.Request) {
+	var req createTestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if _, err := plan.Parse(req.Plan); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	err := s.pg.UpdateTestDefinition(ctx, &postgres.TestDefinition{
+		ID:         chi.URLParam(r, "id"),
+		Name:       req.Name,
+		Protocol:   req.Protocol,
+		PlanJSON:   req.Plan,
+		RampJSON:   req.Ramp,
+		ScriptJS:   req.Script,
+		Thresholds: req.Thresholds,
+		DataJSON:   req.Dataset,
+	})
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteTest archives a test definition: it disappears from lists and
+// can no longer be run, but historical runs keep their reference.
+func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if err := s.pg.ArchiveTestDefinition(ctx, chi.URLParam(r, "id")); err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
@@ -158,6 +200,9 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	td, err := s.pg.GetTestDefinition(ctx, testID)
 	if err != nil {
 		return "", "", errNotFound("test not found")
+	}
+	if td.Archived {
+		return "", "", errBadRequest("test has been deleted")
 	}
 	p, err := plan.Parse(td.PlanJSON)
 	if err != nil {

@@ -12,6 +12,17 @@ export interface SSEConfig {
 
 export const emptySSE: SSEConfig = { url: "", maxEvents: 5, timeoutMs: 30000, insecureSkipVerify: false };
 
+// planToSSE rebuilds the form state from a stored plan (edit / copy).
+export function planToSSE(plan: any): SSEConfig {
+  const s = plan?.sse ?? {};
+  return {
+    url: s.url || "",
+    maxEvents: s.max_events || 5,
+    timeoutMs: s.timeout_ms || 30000,
+    insecureSkipVerify: !!s.insecure_skip_verify,
+  };
+}
+
 // sseToPlan converts the form into the backend plan object.
 export function sseToPlan(c: SSEConfig): unknown {
   return {

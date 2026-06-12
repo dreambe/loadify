@@ -50,7 +50,10 @@ type HTTPConfig struct {
 	// InsecureSkipVerify disables TLS certificate verification (default: verify).
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
 	// ExpectStatus, when set, marks any other status as a failure.
-	ExpectStatus int    `json:"expect_status,omitempty"`
+	ExpectStatus int `json:"expect_status,omitempty"`
+	// BodyContains, when set, fails the iteration unless the response body
+	// contains this substring (checked against the first 256 KiB).
+	BodyContains string `json:"body_contains,omitempty"`
 	Group        string `json:"group,omitempty"`
 }
 

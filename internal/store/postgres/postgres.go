@@ -60,6 +60,7 @@ type TestDefinition struct {
 	DataJSON    json.RawMessage `json:"dataset,omitempty"`
 	CreatedBy   *string         `json:"created_by,omitempty"`
 	CreatorName string          `json:"creator_name,omitempty"`
+	Archived    bool            `json:"archived,omitempty"`
 	CreatedAt   time.Time       `json:"created_at"`
 }
 
@@ -81,28 +82,64 @@ func (s *Store) CreateTestDefinition(ctx context.Context, td *TestDefinition) (s
 	return id, err
 }
 
+// UpdateTestDefinition rewrites an existing test definition's editable fields.
+func (s *Store) UpdateTestDefinition(ctx context.Context, td *TestDefinition) error {
+	thresholds := td.Thresholds
+	if len(thresholds) == 0 {
+		thresholds = json.RawMessage("[]")
+	}
+	var dataset any
+	if len(td.DataJSON) > 0 {
+		dataset = td.DataJSON
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE test_definitions
+		SET name=$2, protocol=$3, plan_json=$4, ramp_json=$5, script_js=$6, thresholds_json=$7, data_json=$8
+		WHERE id=$1 AND NOT archived`,
+		td.ID, td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset)
+	if err == nil && tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return err
+}
+
+// ArchiveTestDefinition soft-deletes a test definition (runs keep their
+// reference) and disables any schedules that point at it.
+func (s *Store) ArchiveTestDefinition(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE test_definitions SET archived=true WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE schedules SET enabled=false WHERE test_def_id=$1`, id)
+	return err
+}
+
 // GetTestDefinition fetches a test definition by id.
 func (s *Store) GetTestDefinition(ctx context.Context, id string) (*TestDefinition, error) {
 	td := &TestDefinition{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.created_at
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.created_at
 		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
 		WHERE t.id = $1`, id).
-		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.CreatedAt)
+		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return td, nil
 }
 
-// ListTestDefinitions returns recent test definitions.
+// ListTestDefinitions returns recent, non-archived test definitions.
 func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefinition, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.created_at
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.created_at
 		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
+		WHERE NOT t.archived
 		ORDER BY t.created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -111,7 +148,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 	out := []TestDefinition{}
 	for rows.Next() {
 		var td TestDefinition
-		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.CreatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, td)

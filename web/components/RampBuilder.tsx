@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import Help from "./Help";
 
 // Stage is one segment of the load profile: a target (VUs or req/s depending on
 // the mode) reached over a duration, linearly interpolated from the previous.
@@ -67,7 +68,10 @@ export default function RampBuilder({
     <div>
       {/* Model toggle */}
       <div className="row" style={{ alignItems: "center", marginBottom: 10 }}>
-        <span className="muted">{t("ramp.model")}:</span>
+        <span className="muted">
+          {t("ramp.model")}
+          <Help tip={t("ramp.modelHelp")} />:
+        </span>
         <button
           type="button"
           className={value.mode === "vu" ? "" : "secondary"}
@@ -75,6 +79,7 @@ export default function RampBuilder({
         >
           {t("ramp.modeVu")}
         </button>
+        <Help tip={t("ramp.vuHelp")} />
         <button
           type="button"
           className={value.mode === "rps" ? "" : "secondary"}
@@ -82,9 +87,13 @@ export default function RampBuilder({
         >
           {t("ramp.modeRps")}
         </button>
+        <Help tip={t("ramp.rpsHelp")} />
         {isRPS && (
           <div>
-            <label style={{ margin: 0 }}>{t("ramp.maxVus")}</label>
+            <label style={{ margin: 0 }}>
+              {t("ramp.maxVus")}
+              <Help tip={t("ramp.maxVusHelp")} />
+            </label>
             <input
               type="number"
               min={0}

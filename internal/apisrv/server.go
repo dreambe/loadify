@@ -113,6 +113,9 @@ func (s *Server) routes() {
 
 		// Mutations require an operator (or higher).
 		r.With(operator).Post("/tests", s.handleCreateTest)
+		r.With(operator).Put("/tests/{id}", s.handleUpdateTest)
+		r.With(operator).Delete("/tests/{id}", s.handleDeleteTest)
+		r.With(operator).Post("/tests/debug", s.handleDebugRequest)
 		r.With(operator).Post("/runs", s.handleStartRun)
 		r.With(operator).Post("/runs/{id}/stop", s.handleStopRun)
 

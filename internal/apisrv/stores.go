@@ -14,6 +14,8 @@ import (
 // handlers and the run reaper be unit-tested without a database.
 type metaStore interface {
 	CreateTestDefinition(ctx context.Context, td *postgres.TestDefinition) (string, error)
+	UpdateTestDefinition(ctx context.Context, td *postgres.TestDefinition) error
+	ArchiveTestDefinition(ctx context.Context, id string) error
 	GetTestDefinition(ctx context.Context, id string) (*postgres.TestDefinition, error)
 	ListTestDefinitions(ctx context.Context, limit int) ([]postgres.TestDefinition, error)
 
