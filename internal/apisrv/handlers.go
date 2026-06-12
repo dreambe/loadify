@@ -12,6 +12,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/auth"
+	"github.com/dreambe/loadify/internal/importer"
 	"github.com/dreambe/loadify/internal/plan"
 	scriptpkg "github.com/dreambe/loadify/internal/script"
 	"github.com/dreambe/loadify/internal/sla"
@@ -133,6 +134,26 @@ func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleImport converts an external request format (curl/HAR/Postman/OpenAPI)
+// into a test draft the builder prefills. It does NOT persist — the user
+// reviews and saves via the normal create flow.
+func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Format  string `json:"format"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	draft, err := importer.Parse(req.Format, req.Content)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, draft)
 }
 
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {

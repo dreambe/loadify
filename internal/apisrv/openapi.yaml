@@ -176,6 +176,37 @@ paths:
       responses:
         "204": { description: archived }
         "404": { description: not found }
+  /api/v1/tests/import:
+    post:
+      tags: [tests]
+      summary: Convert curl/HAR/Postman/OpenAPI into a test draft (role operator+)
+      description: >
+        Parses an external request format into a test draft for the builder to
+        prefill. Does NOT persist — the user reviews and saves via POST /tests.
+        A single request becomes an http test; several become a sequence
+        scenario (one step per request).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [format, content]
+              properties:
+                format: { type: string, enum: [curl, har, postman, openapi] }
+                content: { type: string, description: raw file/text content }
+      responses:
+        "200":
+          description: a test draft
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  protocol: { type: string }
+                  plan: { $ref: "#/components/schemas/Plan" }
+        "400": { description: unknown format or unparsable content }
   /api/v1/tests/debug:
     post:
       tags: [tests]
@@ -286,6 +317,39 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: token, in: query, schema: { type: string } }
       responses: { "200": { description: text/csv } }
+  /api/v1/runs/{id}/samples:
+    get:
+      tags: [runs]
+      summary: Sampled request detail for error drill-down (role viewer+)
+      description: >
+        Returns the persisted sampled request detail (method, url, status,
+        latency, error kind, response snippet), newest first, optionally
+        filtered. NOTE the detail is sampled (bounded, error-prioritized), not
+        every request — the response sets sampled=true.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: group, in: query, schema: { type: string } }
+        - { name: status_class, in: query, schema: { type: string, enum: ["2xx", "4xx", "5xx", err] } }
+        - { name: error_kind, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 200 } }
+      responses:
+        "200":
+          description: sampled detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sampled: { type: boolean }
+                  samples: { type: array, items: { type: object } }
+  /api/v1/runs/{id}/report.html:
+    get:
+      tags: [runs]
+      summary: Self-contained HTML report (print to PDF in the browser)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, schema: { type: string } }
+      responses: { "200": { description: text/html } }
   /api/v1/schedules:
     get:
       tags: [schedules]
