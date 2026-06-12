@@ -92,6 +92,11 @@ func main() {
 		AppSecret:   cfg.FeishuAppSecret,
 		RedirectURL: cfg.FeishuRedirectURL,
 	}
+	if feishu.Enabled() && feishu.RedirectURL != "" {
+		log.Info("feishu login enabled", "redirect", cfg.FeishuRedirectURL)
+	} else {
+		log.Info("feishu login disabled — set LOADIFY_FEISHU_APP_ID / LOADIFY_FEISHU_APP_SECRET / LOADIFY_FEISHU_REDIRECT_URL to enable")
+	}
 	srv := apisrv.New(apisrv.Config{
 		Postgres:    pg,
 		ClickHouse:  ch,

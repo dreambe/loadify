@@ -12,6 +12,16 @@ function LoginInner() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // null = unknown (probing the server); the Feishu entry only renders when
+  // the server reports it configured, so users never hit a dead link.
+  const [feishuEnabled, setFeishuEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api
+      .authConfig()
+      .then((c) => setFeishuEnabled(c.feishu_enabled))
+      .catch(() => setFeishuEnabled(false));
+  }, []);
 
   // Feishu callback redirects back with the token in the URL fragment.
   useEffect(() => {
@@ -85,7 +95,10 @@ function LoginInner() {
           </div>
         </form>
         <p className="muted" style={{ textAlign: "center" }}>
-          <a href={api.feishuLoginURL()}>{t("login.feishu")}</a>
+          {feishuEnabled === true && <a href={api.feishuLoginURL()}>{t("login.feishu")}</a>}
+          {feishuEnabled === false && (
+            <span style={{ fontSize: 12.5 }}>{t("login.feishuDisabled")}</span>
+          )}
         </p>
       </div>
     </div>

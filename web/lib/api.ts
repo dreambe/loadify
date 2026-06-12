@@ -71,6 +71,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => req<User>("/api/v1/auth/me"),
+  authConfig: () => req<{ feishu_enabled: boolean }>("/api/v1/auth/config"),
   feishuLoginURL: () => `${API_BASE}/api/v1/auth/feishu/login`,
 
   listTests: () => reqList<TestDefinition>("/api/v1/tests"),

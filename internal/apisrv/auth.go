@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
@@ -65,10 +66,32 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	_ = s.pg.TouchLogin(ctx, u.ID)
 }
 
+// feishuMissing lists the env vars still needed before Feishu login works —
+// surfaced verbatim in errors so a misconfigured deployment is self-explaining.
+func (s *Server) feishuMissing() []string {
+	var missing []string
+	if s.feishu == nil || s.feishu.AppID == "" {
+		missing = append(missing, "LOADIFY_FEISHU_APP_ID")
+	}
+	if s.feishu == nil || s.feishu.AppSecret == "" {
+		missing = append(missing, "LOADIFY_FEISHU_APP_SECRET")
+	}
+	if s.feishu == nil || s.feishu.RedirectURL == "" {
+		missing = append(missing, "LOADIFY_FEISHU_REDIRECT_URL")
+	}
+	return missing
+}
+
+// handleAuthConfig tells the frontend which login methods are available.
+func (s *Server) handleAuthConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"feishu_enabled": len(s.feishuMissing()) == 0})
+}
+
 // handleFeishuLogin redirects the browser to Feishu's authorization page.
 func (s *Server) handleFeishuLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.feishu.Enabled() {
-		writeErr(w, http.StatusNotImplemented, "feishu login not configured")
+	if missing := s.feishuMissing(); len(missing) > 0 {
+		writeErr(w, http.StatusNotImplemented,
+			"feishu login not configured on apisrv — set "+strings.Join(missing, ", ")+" and restart")
 		return
 	}
 	state := r.URL.Query().Get("state")
@@ -78,8 +101,9 @@ func (s *Server) handleFeishuLogin(w http.ResponseWriter, r *http.Request) {
 // handleFeishuCallback exchanges the code, upserts the user and redirects back
 // to the frontend with a freshly issued token.
 func (s *Server) handleFeishuCallback(w http.ResponseWriter, r *http.Request) {
-	if !s.feishu.Enabled() {
-		writeErr(w, http.StatusNotImplemented, "feishu login not configured")
+	if missing := s.feishuMissing(); len(missing) > 0 {
+		writeErr(w, http.StatusNotImplemented,
+			"feishu login not configured on apisrv — set "+strings.Join(missing, ", ")+" and restart")
 		return
 	}
 	code := r.URL.Query().Get("code")

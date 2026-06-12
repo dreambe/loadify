@@ -95,6 +95,7 @@ func (s *Server) routes() {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public auth endpoints.
+		r.Get("/auth/config", s.handleAuthConfig)
 		r.Post("/auth/login", s.handleLogin)
 		r.Get("/auth/feishu/login", s.handleFeishuLogin)
 		r.Get("/auth/feishu/callback", s.handleFeishuCallback)
