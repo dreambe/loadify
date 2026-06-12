@@ -1,23 +1,52 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { clearSession, getUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
+// PulseMark is the brand glyph: a load-curve heartbeat.
+export function PulseMark({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polyline points="1.5,13 6.5,13 9.5,4.5 14.5,19.5 17.5,13 22.5,13" />
+    </svg>
+  );
+}
+
 export default function Nav() {
   const user = getUser();
+  const pathname = usePathname();
   const { t, lang, setLang } = useI18n();
+
+  const item = (href: string, label: string) => (
+    <Link href={href} className={pathname?.startsWith(href) ? "active" : undefined}>
+      {label}
+    </Link>
+  );
+
   return (
     <nav className="nav">
       <Link className="brand" href="/runs">
+        <PulseMark />
         loadify
       </Link>
-      <Link href="/runs">{t("nav.runs")}</Link>
-      <Link href="/tests">{t("nav.tests")}</Link>
-      <Link href="/schedules">{t("nav.schedules")}</Link>
-      <Link href="/compare">{t("nav.compare")}</Link>
-      <Link href="/workers">{t("nav.workers")}</Link>
-      <Link href="/users">{user?.role === "admin" ? t("nav.users") : t("nav.account")}</Link>
+      {item("/runs", t("nav.runs"))}
+      {item("/tests", t("nav.tests"))}
+      {item("/schedules", t("nav.schedules"))}
+      {item("/compare", t("nav.compare"))}
+      {item("/workers", t("nav.workers"))}
+      {item("/users", user?.role === "admin" ? t("nav.users") : t("nav.account"))}
       <span className="spacer" />
       <button
         className="secondary"

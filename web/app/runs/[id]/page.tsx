@@ -82,7 +82,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             <div className="panel">
               <h2>{t("run.throughput")}</h2>
               <LineChart
-                series={[{ label: "qps", color: "#2f81f7", data: series.map((p) => p.rps) }]}
+                series={[{ label: "qps", color: "#36d6e7", data: series.map((p) => p.rps) }]}
                 xLabels={xLabels}
                 hoverIndex={hover}
                 onHover={setHover}
@@ -93,9 +93,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <LineChart
                 unit="ms"
                 series={[
-                  { label: "p50", color: "#3fb950", data: series.map((p) => p.p50_ms) },
-                  { label: "p95", color: "#d29922", data: series.map((p) => p.p95_ms) },
-                  { label: "p99", color: "#f85149", data: series.map((p) => p.p99_ms) },
+                  { label: "p50", color: "#3ddc97", data: series.map((p) => p.p50_ms) },
+                  { label: "p95", color: "#ffc857", data: series.map((p) => p.p95_ms) },
+                  { label: "p99", color: "#ff5d73", data: series.map((p) => p.p99_ms) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}
@@ -108,7 +108,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 series={[
                   {
                     label: "errors",
-                    color: "#f85149",
+                    color: "#ff5d73",
                     data: series.map((p) => p.error_rate * 100),
                   },
                 ]}

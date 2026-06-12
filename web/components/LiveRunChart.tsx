@@ -76,7 +76,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
       <div className="panel" style={{ marginTop: 16 }}>
         <h2>{t("run.throughput")}</h2>
         <LineChart
-          series={[{ label: "qps", color: "#2f81f7", data: ticks.map((tk) => tk.rps) }]}
+          series={[{ label: "qps", color: "#36d6e7", data: ticks.map((tk) => tk.rps) }]}
           xLabels={xLabels}
           hoverIndex={hover}
           onHover={setHover}
@@ -88,9 +88,9 @@ export default function LiveRunChart({ runId }: { runId: string }) {
         <LineChart
           unit="ms"
           series={[
-            { label: "p50", color: "#3fb950", data: ticks.map((tk) => tk.p50_ms) },
-            { label: "p95", color: "#d29922", data: ticks.map((tk) => tk.p95_ms) },
-            { label: "p99", color: "#f85149", data: ticks.map((tk) => tk.p99_ms) },
+            { label: "p50", color: "#3ddc97", data: ticks.map((tk) => tk.p50_ms) },
+            { label: "p95", color: "#ffc857", data: ticks.map((tk) => tk.p95_ms) },
+            { label: "p99", color: "#ff5d73", data: ticks.map((tk) => tk.p99_ms) },
           ]}
           xLabels={xLabels}
           hoverIndex={hover}
@@ -102,7 +102,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
         <h2>{t("run.errorRate")}</h2>
         <LineChart
           series={[
-            { label: "errors", color: "#f85149", data: ticks.map((tk) => tk.error_rate * 100) },
+            { label: "errors", color: "#ff5d73", data: ticks.map((tk) => tk.error_rate * 100) },
           ]}
           xLabels={xLabels}
           hoverIndex={hover}

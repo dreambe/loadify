@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 // LineChart is a dependency-free SVG line chart for one or more series sharing
 // the same x-axis. `xLabels` gives each point an x-axis label (e.g. elapsed
@@ -33,6 +33,7 @@ export default function LineChart({
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
+  const gradientId = useId();
   // Uncontrolled fallback; when onHover is provided the parent owns the state.
   const [localHover, setLocalHover] = useState<number | null>(null);
   const hover = hoverIndex !== undefined ? hoverIndex : localHover;
@@ -49,6 +50,14 @@ export default function LineChart({
 
   const path = (data: number[]) =>
     data.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+
+  // Single-series charts get a soft gradient area fill under the line.
+  const areaSeries = series.length === 1 && series[0].data.length > 1 ? series[0] : null;
+  const areaPath = areaSeries
+    ? `${path(areaSeries.data)} L${x(areaSeries.data.length - 1).toFixed(1)},${(
+        pad.top + innerH
+      ).toFixed(1)} L${x(0).toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`
+    : "";
 
   const ticks = 4;
   const gridVals = Array.from({ length: ticks + 1 }, (_, i) => (maxVal / ticks) * i);
@@ -92,6 +101,14 @@ export default function LineChart({
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
+        {areaSeries && (
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={areaSeries.color} stopOpacity={0.22} />
+              <stop offset="100%" stopColor={areaSeries.color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+        )}
         {gridVals.map((v, i) => (
           <g key={i}>
             <line
@@ -99,10 +116,16 @@ export default function LineChart({
               x2={width - pad.right}
               y1={y(v)}
               y2={y(v)}
-              stroke="#30363d"
+              stroke="rgba(126,141,166,0.14)"
               strokeWidth={1}
             />
-            <text x={4} y={y(v) + 4} fill="#8b949e" fontSize={10}>
+            <text
+              x={4}
+              y={y(v) + 4}
+              fill="var(--muted)"
+              fontSize={10}
+              fontFamily="var(--font-mono)"
+            >
               {formatTick(v)}
               {unit}
             </text>
@@ -115,15 +138,25 @@ export default function LineChart({
               key={i}
               x={x(i)}
               y={height - 6}
-              fill="#8b949e"
+              fill="var(--muted)"
               fontSize={10}
+              fontFamily="var(--font-mono)"
               textAnchor="middle"
             >
               {xLabels[i] ?? ""}
             </text>
           ))}
+        {areaSeries && <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />}
         {series.map((s) => (
-          <path key={s.label} d={path(s.data)} fill="none" stroke={s.color} strokeWidth={2} />
+          <path
+            key={s.label}
+            d={path(s.data)}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={2}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
         ))}
 
         {validHover !== null && (
@@ -133,13 +166,22 @@ export default function LineChart({
               x2={hoverX}
               y1={pad.top}
               y2={pad.top + innerH}
-              stroke="#8b949e"
+              stroke="var(--accent)"
+              strokeOpacity={0.65}
               strokeWidth={1}
               strokeDasharray="3 3"
             />
             {series.map((s) =>
               s.data[validHover] !== undefined ? (
-                <circle key={s.label} cx={hoverX} cy={y(s.data[validHover])} r={3} fill={s.color} />
+                <circle
+                  key={s.label}
+                  cx={hoverX}
+                  cy={y(s.data[validHover])}
+                  r={3.5}
+                  fill={s.color}
+                  stroke="var(--bg)"
+                  strokeWidth={1.5}
+                />
               ) : null
             )}
           </g>
@@ -152,12 +194,17 @@ export default function LineChart({
             position: "absolute",
             top: 8,
             [tooltipRight ? "left" : "right"]: 16,
-            background: "#0d1117",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            padding: "6px 10px",
+            background: "rgba(10, 16, 27, 0.85)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: 8,
+            padding: "7px 11px",
             fontSize: 12,
+            fontFamily: "var(--font-mono)",
+            fontVariantNumeric: "tabular-nums",
             pointerEvents: "none",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
           }}
         >
           <div style={{ color: "var(--muted)", marginBottom: 2 }}>{hoverLabel}</div>

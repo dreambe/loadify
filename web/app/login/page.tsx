@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { setSession, setToken } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { PulseMark } from "@/components/Nav";
 
 function LoginInner() {
   const { t, lang, setLang } = useI18n();
@@ -45,33 +46,41 @@ function LoginInner() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 380 }}>
-      <div style={{ textAlign: "right" }}>
-        <button className="secondary" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
-          {lang === "zh" ? "EN" : "中文"}
-        </button>
-      </div>
-      <h1>{t("login.title")}</h1>
-      <form className="panel" onSubmit={submit}>
-        <label>{t("login.email")}</label>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
-        <label>{t("login.password")}</label>
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          type="password"
-          required
-        />
-        {err && <div className="error">{err}</div>}
-        <div style={{ marginTop: 16 }}>
-          <button type="submit" disabled={busy}>
-            {busy ? t("login.signingin") : t("login.signin")}
+    <div className="login-shell">
+      <div className="login-card">
+        <div style={{ textAlign: "right", marginBottom: 8 }}>
+          <button className="secondary" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
+            {lang === "zh" ? "EN" : "中文"}
           </button>
         </div>
-      </form>
-      <p className="muted" style={{ textAlign: "center" }}>
-        <a href={api.feishuLoginURL()}>{t("login.feishu")}</a>
-      </p>
+        <div className="login-mark">
+          <PulseMark size={28} />
+          loadify
+        </div>
+        <p className="muted" style={{ textAlign: "center", marginTop: -12, marginBottom: 20 }}>
+          {t("login.tagline")}
+        </p>
+        <form className="panel" onSubmit={submit}>
+          <label>{t("login.email")}</label>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
+          <label>{t("login.password")}</label>
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            required
+          />
+          {err && <div className="error">{err}</div>}
+          <div style={{ marginTop: 16 }}>
+            <button type="submit" disabled={busy} style={{ width: "100%" }}>
+              {busy ? t("login.signingin") : t("login.signin")}
+            </button>
+          </div>
+        </form>
+        <p className="muted" style={{ textAlign: "center" }}>
+          <a href={api.feishuLoginURL()}>{t("login.feishu")}</a>
+        </p>
+      </div>
     </div>
   );
 }

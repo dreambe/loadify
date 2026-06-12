@@ -139,8 +139,8 @@ function CompareInner() {
               <LineChart
                 unit="ms"
                 series={[
-                  { label: "A", color: "#2f81f7", data: a.series.map((p) => p.p95_ms) },
-                  { label: "B", color: "#d29922", data: b.series.map((p) => p.p95_ms) },
+                  { label: "A", color: "#36d6e7", data: a.series.map((p) => p.p95_ms) },
+                  { label: "B", color: "#ffc857", data: b.series.map((p) => p.p95_ms) },
                 ]}
               />
             </div>
@@ -148,8 +148,8 @@ function CompareInner() {
               <h2>QPS</h2>
               <LineChart
                 series={[
-                  { label: "A", color: "#2f81f7", data: a.series.map((p) => p.rps) },
-                  { label: "B", color: "#d29922", data: b.series.map((p) => p.rps) },
+                  { label: "A", color: "#36d6e7", data: a.series.map((p) => p.rps) },
+                  { label: "B", color: "#ffc857", data: b.series.map((p) => p.rps) },
                 ]}
               />
             </div>
