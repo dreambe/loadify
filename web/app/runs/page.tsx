@@ -279,9 +279,11 @@ export default function RunsPage() {
                   </td>
                   {canRun && (
                     <td>
-                      <button className="secondary" onClick={() => rerun(r)}>
-                        ↻ {t("runs.rerun")}
-                      </button>
+                      <div className="actions">
+                        <button className="ghost sm" onClick={() => rerun(r)}>
+                          ↻ {t("runs.rerun")}
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
