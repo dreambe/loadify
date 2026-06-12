@@ -346,6 +346,63 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleGetWebhooks returns the caller's configured notification webhooks.
+func (s *Server) handleGetWebhooks(w http.ResponseWriter, r *http.Request) {
+	c, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	u, err := s.pg.GetUserByID(ctx, c.Subject)
+	if err != nil {
+		writeErr(w, statusForUserErr(err), err.Error())
+		return
+	}
+	urls := u.WebhookURLs
+	if urls == nil {
+		urls = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"webhook_urls": urls})
+}
+
+// handleSetWebhooks replaces the caller's notification webhooks. The first URL
+// is used by default when one of the caller's runs finishes.
+func (s *Server) handleSetWebhooks(w http.ResponseWriter, r *http.Request) {
+	c, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var req struct {
+		WebhookURLs []string `json:"webhook_urls"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	cleaned := make([]string, 0, len(req.WebhookURLs))
+	for _, u := range req.WebhookURLs {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			writeErr(w, http.StatusBadRequest, "webhook URLs must start with http(s)://")
+			return
+		}
+		cleaned = append(cleaned, u)
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if err := s.pg.SetUserWebhooks(ctx, c.Subject, cleaned); err != nil {
+		writeErr(w, statusForUserErr(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"webhook_urls": cleaned})
+}
+
 func statusForUserErr(err error) int {
 	if errors.Is(err, postgres.ErrUserNotFound) {
 		return http.StatusNotFound

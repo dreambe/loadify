@@ -133,6 +133,38 @@ paths:
         "204": { description: password changed }
         "400": { description: password too short }
         "403": { description: current password incorrect }
+  /api/v1/auth/webhooks:
+    get:
+      tags: [auth]
+      summary: List my notification webhook URLs (role viewer+)
+      responses:
+        "200":
+          description: webhook URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook_urls: { type: array, items: { type: string } }
+    put:
+      tags: [auth]
+      summary: Replace my notification webhook URLs (role viewer+)
+      description: >
+        When one of my runs finishes (or auto-stops), Loadify posts a
+        notification to the first URL here — a Feishu/Lark bot URL receives a
+        formatted card; any other receiver gets a generic JSON event. Falls
+        back to the instance-wide webhook when none is set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                webhook_urls: { type: array, items: { type: string } }
+      responses:
+        "200": { description: saved URLs }
+        "400": { description: a URL is not http(s) }
   /api/v1/tests:
     get:
       tags: [tests]

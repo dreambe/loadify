@@ -36,6 +36,7 @@ type metaStore interface {
 	UpdateUserRole(ctx context.Context, id, role string) error
 	SetUserPassword(ctx context.Context, id, passwordHash string) error
 	SetUserDisabled(ctx context.Context, id string, disabled bool) error
+	SetUserWebhooks(ctx context.Context, id string, urls []string) error
 	DeleteUser(ctx context.Context, id string) error
 
 	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)

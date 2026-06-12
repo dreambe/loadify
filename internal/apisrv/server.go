@@ -101,6 +101,8 @@ func (s *Server) routes() {
 		r.Get("/auth/feishu/callback", s.handleFeishuCallback)
 		r.With(viewer).Get("/auth/me", s.handleMe)
 		r.With(viewer).Post("/auth/password", s.handleChangePassword)
+		r.With(viewer).Get("/auth/webhooks", s.handleGetWebhooks)
+		r.With(viewer).Put("/auth/webhooks", s.handleSetWebhooks)
 
 		// Reads require a viewer (or higher).
 		r.With(viewer).Get("/tests", s.handleListTests)

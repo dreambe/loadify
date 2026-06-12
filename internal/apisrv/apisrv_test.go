@@ -79,6 +79,7 @@ func (f *fakeMeta) UpdateUserRole(_ context.Context, _, _ string) error       { 
 func (f *fakeMeta) SetUserPassword(_ context.Context, _, _ string) error      { return nil }
 func (f *fakeMeta) SetUserDisabled(_ context.Context, _ string, _ bool) error { return nil }
 func (f *fakeMeta) DeleteUser(_ context.Context, _ string) error              { return nil }
+func (f *fakeMeta) SetUserWebhooks(_ context.Context, _ string, _ []string) error { return nil }
 func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error) { return nil, nil }
 func (f *fakeMeta) CreateUser(_ context.Context, email, name, role, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "new", Email: email, Name: name, Role: role}, nil

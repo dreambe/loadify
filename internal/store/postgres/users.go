@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -17,6 +18,7 @@ type User struct {
 	PasswordHash string     `json:"-"`
 	FeishuOpenID string     `json:"feishu_open_id,omitempty"`
 	AvatarURL    string     `json:"avatar_url,omitempty"`
+	WebhookURLs  []string   `json:"webhook_urls,omitempty"`
 	Disabled     bool       `json:"disabled"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
@@ -25,17 +27,34 @@ type User struct {
 // ErrUserNotFound is returned when a lookup matches no row.
 var ErrUserNotFound = errors.New("postgres: user not found")
 
-const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), disabled, created_at, last_login_at`
+const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), coalesce(webhook_urls,'[]'), disabled, created_at, last_login_at`
 
 func scanUser(row pgx.Row) (*User, error) {
 	u := &User{}
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &u.Disabled, &u.CreatedAt, &u.LastLoginAt); err != nil {
+	var webhooks []byte
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &webhooks, &u.Disabled, &u.CreatedAt, &u.LastLoginAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
 		return nil, err
 	}
+	if len(webhooks) > 0 {
+		_ = json.Unmarshal(webhooks, &u.WebhookURLs)
+	}
 	return u, nil
+}
+
+// SetUserWebhooks replaces a user's notification webhook URLs.
+func (s *Store) SetUserWebhooks(ctx context.Context, id string, urls []string) error {
+	if urls == nil {
+		urls = []string{}
+	}
+	b, _ := json.Marshal(urls)
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET webhook_urls=$2 WHERE id=$1`, id, b)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return err
 }
 
 // CreateUser inserts a user with a (possibly empty) password hash.
