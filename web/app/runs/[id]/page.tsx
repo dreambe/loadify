@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
-import { api, exportCSVURL } from "@/lib/api";
+import { api, exportCSVURL, reportURL } from "@/lib/api";
+import ErrorDrilldown from "@/components/ErrorDrilldown";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import type { Run, SeriesPoint } from "@/lib/types";
@@ -76,6 +77,11 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               </button>
             )}
             {terminal && (
+              <a className="badge" href={reportURL(runId)} target="_blank" rel="noreferrer">
+                📄 {t("run.report")}
+              </a>
+            )}
+            {terminal && (
               <a className="badge" href={exportCSVURL(runId)} download>
                 ⬇ {t("run.exportCsv")}
               </a>
@@ -88,6 +94,20 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             {t("run.creator")}: {run.creator_name || t("run.creatorSystem")}
             {" · "}
             {t("runs.colStarted")}: {run.started_at ? new Date(run.started_at).toLocaleString() : "–"}
+          </div>
+        )}
+        {run?.summary?.auto_stopped && (
+          <div
+            className="error"
+            style={{
+              background: "rgba(255,93,115,.12)",
+              border: "1px solid var(--red)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: 12,
+            }}
+          >
+            🛑 {t("run.autoStopped")}: {run.summary.reason}
           </div>
         )}
 
@@ -172,6 +192,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               </div>
             )}
             {run?.summary != null && <SummaryReport run={run} t={t} />}
+            <ErrorDrilldown runId={runId} series={series} />
           </div>
         )}
 

@@ -7,6 +7,7 @@ import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Help from "@/components/Help";
 import { Pager, usePager } from "@/components/Pager";
+import { parseCSV } from "@/lib/csv";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
 import HttpRequestBuilder, {
   emptyHttpRequest,
@@ -81,6 +82,9 @@ export default function TestsPage() {
   const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
   const [script, setScript] = useState("");
   const [dataset, setDataset] = useState("");
+  const [autoStop, setAutoStop] = useState(true);
+  const [autoStopPct, setAutoStopPct] = useState(50);
+  const [importing, setImporting] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
@@ -111,6 +115,8 @@ export default function TestsPage() {
     setThresholds([{ metric: "p95_ms", op: "<", value: 200 }]);
     setScript("");
     setDataset("");
+    setAutoStop(true);
+    setAutoStopPct(50);
   }
 
   // loadIntoForm fills the builder from an existing test (edit keeps the id,
@@ -134,6 +140,9 @@ export default function TestsPage() {
     setThresholds(td.thresholds && td.thresholds.length ? td.thresholds : []);
     setScript(td.script || "");
     setDataset(td.dataset ? JSON.stringify(td.dataset, null, 2) : "");
+    const as = (td.plan as any)?.auto_stop;
+    setAutoStop(!as || as.enabled !== false);
+    setAutoStopPct(as?.error_rate_pct || 50);
     setErr("");
     setOk("");
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -151,6 +160,21 @@ export default function TestsPage() {
     } catch (e: any) {
       setErr(e.message);
     }
+  }
+
+  // applyImport prefills the builder from an imported draft (http or scenario).
+  function applyImport(draft: { name: string; protocol: string; plan: any }) {
+    resetForm();
+    setSavedId(null);
+    setEditingId(null);
+    setShowForm(true);
+    setName(draft.name || "imported");
+    const proto = draft.protocol === "https" ? "http" : draft.protocol;
+    setProtocol(proto);
+    if (proto === "http") setHttp(planToHttpRequest(draft.plan));
+    else if (proto === "scenario") setScenario(planToScenario(draft.plan));
+    else setPlan(JSON.stringify(draft.plan, null, 2));
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
   async function quickRun() {
@@ -217,6 +241,12 @@ export default function TestsPage() {
     if (ramp.mode === "rps" && ramp.maxVus > 0 && planObj && typeof planObj === "object") {
       planObj.max_vus = ramp.maxVus;
     }
+    // Auto-stop circuit breaker (plan-level; default on). Disabled is explicit.
+    if (planObj && typeof planObj === "object") {
+      planObj.auto_stop = autoStop
+        ? { enabled: true, error_rate_pct: autoStopPct }
+        : { enabled: false };
+    }
     let datasetObj: unknown;
     if (dataset.trim()) {
       try {
@@ -261,21 +291,36 @@ export default function TestsPage() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <h1 style={{ margin: 0 }}>{t("tests.title")}</h1>
           {canCreate && (
-            <button
-              onClick={() => {
-                if (showForm) {
-                  setShowForm(false);
-                } else {
-                  resetForm();
-                  setSavedId(null);
-                  setShowForm(true);
-                }
-              }}
-            >
-              {showForm ? t("tests.closeForm") : `+ ${t("tests.new")}`}
-            </button>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="secondary" onClick={() => setImporting(true)}>
+                ⬇ {t("tests.import")}
+              </button>
+              <button
+                onClick={() => {
+                  if (showForm) {
+                    setShowForm(false);
+                  } else {
+                    resetForm();
+                    setSavedId(null);
+                    setShowForm(true);
+                  }
+                }}
+              >
+                {showForm ? t("tests.closeForm") : `+ ${t("tests.new")}`}
+              </button>
+            </div>
           )}
         </div>
+
+        {importing && (
+          <ImportModal
+            onClose={() => setImporting(false)}
+            onImported={(draft) => {
+              setImporting(false);
+              applyImport(draft);
+            }}
+          />
+        )}
         <div style={{ height: 16 }} />
 
         {canCreate && showForm && (
@@ -338,6 +383,26 @@ export default function TestsPage() {
               <Help tip={t("tests.thresholdsHelp")} />
             </label>
             <ThresholdsEditor value={thresholds} onChange={setThresholds} />
+            <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+              <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
+                <input type="checkbox" checked={autoStop} onChange={(e) => setAutoStop(e.target.checked)} />
+                {t("tests.autoStop")}
+                <Help tip={t("tests.autoStopHelp")} />
+              </label>
+              {autoStop && (
+                <div>
+                  <label style={{ margin: 0 }}>{t("tests.autoStopPct")}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={autoStopPct}
+                    onChange={(e) => setAutoStopPct(parseInt(e.target.value || "50", 10))}
+                    style={{ width: 90 }}
+                  />
+                </div>
+              )}
+            </div>
             {protocol === "script" && (
               <>
                 <label className="req">
@@ -354,6 +419,28 @@ export default function TestsPage() {
                   {t("tests.dataset")}
                   <Help tip={t("tests.datasetHelp")} />
                 </label>
+                <div className="row" style={{ marginBottom: 6 }}>
+                  <label className="secondary" style={{ margin: 0, cursor: "pointer", padding: "8px 11px", border: "1px solid var(--border-strong)", borderRadius: 8 }}>
+                    ⬆ {t("tests.dataUpload")}
+                    <input
+                      type="file"
+                      accept=".csv,.json"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        f.text().then((text) => {
+                          if (f.name.toLowerCase().endsWith(".csv")) {
+                            setDataset(JSON.stringify(parseCSV(text), null, 2));
+                          } else {
+                            setDataset(text);
+                          }
+                        });
+                      }}
+                    />
+                  </label>
+                  <Help tip={t("tests.dataUploadHelp")} />
+                </div>
                 <textarea
                   rows={3}
                   value={dataset}
@@ -458,5 +545,95 @@ export default function TestsPage() {
         )}
       </div>
     </>
+  );
+}
+
+// ImportModal converts curl / HAR / Postman / OpenAPI into a draft the builder
+// prefills. Paste text or upload a file; nothing is saved until the user
+// reviews and submits the form.
+function ImportModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: (draft: { name: string; protocol: string; plan: any }) => void;
+}) {
+  const { t } = useI18n();
+  const [format, setFormat] = useState("curl");
+  const [content, setContent] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!content.trim()) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const draft = await api.importTest(format, content);
+      onImported(draft as any);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,.5)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 50,
+      }}
+    >
+      <div className="panel" onClick={(e) => e.stopPropagation()} style={{ width: 640, maxWidth: "92vw" }}>
+        <h2>{t("import.title")}</h2>
+        <div className="row">
+          <div>
+            <label>{t("import.format")}</label>
+            <select value={format} onChange={(e) => setFormat(e.target.value)}>
+              <option value="curl">curl</option>
+              <option value="har">HAR</option>
+              <option value="postman">Postman</option>
+              <option value="openapi">OpenAPI / Swagger</option>
+            </select>
+          </div>
+          <div>
+            <label>{t("import.upload")}</label>
+            <input
+              type="file"
+              accept=".json,.har,.txt,.yaml,.yml"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) f.text().then(setContent);
+              }}
+            />
+          </div>
+        </div>
+        <label>{t("import.content")}</label>
+        <textarea
+          rows={8}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder={format === "curl" ? t("import.curlPh") : ""}
+        />
+        <p className="muted" style={{ fontSize: 12.5 }}>
+          {t("import.hint")}
+        </p>
+        {err && <div className="error">{err}</div>}
+        <div className="row" style={{ marginTop: 8 }}>
+          <button onClick={submit} disabled={busy || !content.trim()}>
+            {t("import.submit")}
+          </button>
+          <button className="secondary" onClick={onClose}>
+            {t("tests.cancelEdit")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -51,6 +51,8 @@ export interface RunSummary {
   };
   passed?: boolean;
   checks?: ThresholdCheck[];
+  auto_stopped?: boolean;
+  reason?: string;
 }
 
 export interface Threshold {
@@ -121,6 +123,22 @@ export interface GroupTick {
   p90_ms: number;
   p95_ms: number;
   p99_ms: number;
+}
+
+// DrillSample is one persisted sampled request for post-run error drill-down.
+export interface DrillSample {
+  ts: string;
+  group: string;
+  protocol: string;
+  status_class: string;
+  status: number;
+  ok: boolean;
+  error_kind: string;
+  method: string;
+  url: string;
+  latency_us: number;
+  recv_bytes: number;
+  resp_body: string;
 }
 
 export interface SeriesPoint {

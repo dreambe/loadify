@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { Run, Schedule, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
+import type { DrillSample, Run, Schedule, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
@@ -105,6 +105,11 @@ export const api = {
     body?: string;
     insecure_skip_verify?: boolean;
   }) => req<DebugResponse>("/api/v1/tests/debug", { method: "POST", body: JSON.stringify(body) }),
+  importTest: (format: string, content: string) =>
+    req<{ name: string; protocol: string; plan: unknown }>("/api/v1/tests/import", {
+      method: "POST",
+      body: JSON.stringify({ format, content }),
+    }),
 
   listRuns: () => reqList<Run>("/api/v1/runs"),
   getRun: (id: string) => req<Run>(`/api/v1/runs/${id}`),
@@ -117,6 +122,14 @@ export const api = {
     req<{ run_id: string; status: string }>(`/api/v1/runs/${id}/stop`, { method: "POST" }),
   runSeries: (id: string, group = "*", res = 1) =>
     reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
+  runSamples: (id: string, filter: { status_class?: string; error_kind?: string; group?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (filter.status_class) q.set("status_class", filter.status_class);
+    if (filter.error_kind) q.set("error_kind", filter.error_kind);
+    if (filter.group) q.set("group", filter.group);
+    if (filter.limit) q.set("limit", String(filter.limit));
+    return req<{ sampled: boolean; samples: DrillSample[] }>(`/api/v1/runs/${id}/samples?${q.toString()}`);
+  },
 
   listWorkers: () => reqList<WorkerInfo>("/api/v1/workers"),
 
@@ -140,7 +153,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
     }),
+  getWebhooks: () => req<{ webhook_urls: string[] }>("/api/v1/auth/webhooks"),
+  setWebhooks: (urls: string[]) =>
+    req<{ webhook_urls: string[] }>("/api/v1/auth/webhooks", {
+      method: "PUT",
+      body: JSON.stringify({ webhook_urls: urls }),
+    }),
 };
+
+// reportURL builds the HTML report link (token via query param for a plain
+// link / new tab).
+export function reportURL(runId: string): string {
+  const token = getToken() || "";
+  return `${API_BASE}/api/v1/runs/${runId}/report.html?token=${encodeURIComponent(token)}`;
+}
 
 // liveSocketURL builds the WebSocket URL for a run's live stream, carrying the
 // JWT as a query param (browsers cannot set headers on the WS handshake).

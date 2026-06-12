@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import Help from "@/components/Help";
 import type { User } from "@/lib/types";
 
 export default function UsersPage() {
@@ -98,6 +99,8 @@ export default function UsersPage() {
         <ProfileCard />
 
         <ChangePasswordPanel onError={setErr} onDone={() => flash(t("users.pwChanged"))} />
+
+        <WebhooksPanel onError={setErr} onDone={() => flash(t("users.webhooksSaved"))} />
 
         {!isAdmin && err && <div className="error">{err}</div>}
         {!isAdmin && ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
@@ -252,6 +255,71 @@ function ProfileCard() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// WebhooksPanel lets the signed-in user manage their notification webhooks.
+// When one of their runs finishes/auto-stops, the first URL is notified
+// (Feishu/Lark bot URLs get a formatted card).
+function WebhooksPanel({ onError, onDone }: { onError: (m: string) => void; onDone: () => void }) {
+  const { t } = useI18n();
+  const [urls, setUrls] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api
+      .getWebhooks()
+      .then((r) => setUrls(r.webhook_urls.length ? r.webhook_urls : [""]))
+      .catch(() => setUrls([""]))
+      .finally(() => setLoaded(true));
+  }, []);
+  if (!loaded) return null;
+
+  async function save() {
+    onError("");
+    try {
+      const cleaned = await api.setWebhooks(urls.map((u) => u.trim()).filter(Boolean));
+      setUrls(cleaned.webhook_urls.length ? cleaned.webhook_urls : [""]);
+      onDone();
+    } catch (e: any) {
+      onError(e.message);
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>
+        {t("users.webhooks")}
+        <Help tip={t("users.webhooksHelp")} />
+      </h2>
+      {urls.map((u, i) => (
+        <div className="row" key={i} style={{ marginBottom: 6 }}>
+          <input
+            value={u}
+            placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"
+            onChange={(e) => setUrls(urls.map((x, idx) => (idx === i ? e.target.value : x)))}
+            style={{ flex: 1, fontFamily: "var(--font-mono)" }}
+          />
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setUrls(urls.filter((_, idx) => idx !== i).length ? urls.filter((_, idx) => idx !== i) : [""])}
+          >
+            {t("ramp.remove")}
+          </button>
+        </div>
+      ))}
+      <div className="row" style={{ marginTop: 8 }}>
+        <button type="button" className="secondary" onClick={() => setUrls([...urls, ""])}>
+          + {t("users.webhookAdd")}
+        </button>
+        <button type="button" onClick={save}>
+          {t("users.webhookSave")}
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5 }}>
+        {t("users.webhookDefault")}
+      </p>
     </div>
   );
 }
