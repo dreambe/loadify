@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { clearSession, getUser } from "@/lib/auth";
+import { api } from "@/lib/api";
+import { clearSession, getToken, getUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import type { User } from "@/lib/types";
 
 const THEME_KEY = "loadify_theme";
 
@@ -49,10 +51,24 @@ export function PulseMark({ size = 20 }: { size?: number }) {
 }
 
 export default function Nav() {
-  const user = getUser();
   const pathname = usePathname();
   const { t, lang, setLang } = useI18n();
   const [theme, toggleTheme] = useTheme();
+  // Start from the cached session, then refresh once so the avatar appears
+  // for sessions created before avatars existed.
+  const [user, setUser] = useState<User | null>(null);
+  useEffect(() => {
+    setUser(getUser());
+    if (getToken()) {
+      api
+        .me()
+        .then((u) => {
+          setUser(u);
+          window.localStorage.setItem("loadify_user", JSON.stringify(u));
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   const item = (href: string, label: string) => (
     <Link href={href} className={pathname?.startsWith(href) ? "active" : undefined}>
@@ -70,7 +86,7 @@ export default function Nav() {
       {item("/tests", t("nav.tests"))}
       {item("/compare", t("nav.compare"))}
       {item("/workers", t("nav.workers"))}
-      {item("/users", user?.role === "admin" ? t("nav.users") : t("nav.account"))}
+      {user?.role === "admin" && item("/users", t("nav.users"))}
       <span className="spacer" />
       <button
         className="secondary"
@@ -87,9 +103,20 @@ export default function Nav() {
         {lang === "zh" ? "EN" : "中文"}
       </button>
       {user && (
-        <span className="me">
-          {user.name || user.email} · {user.role}
-        </span>
+        <Link
+          href="/users"
+          className="nav-avatar"
+          title={`${user.name || user.email} · ${user.role}`}
+        >
+          {user.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="avatar sm" src={user.avatar_url} alt={user.name || user.email} />
+          ) : (
+            <span className="avatar sm fallback">
+              {(user.name || user.email || "?").trim().charAt(0).toUpperCase()}
+            </span>
+          )}
+        </Link>
       )}
       <button
         className="secondary"

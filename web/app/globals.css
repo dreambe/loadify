@@ -562,6 +562,20 @@ label.req::after {
   font-weight: 700;
   font-size: 18px;
 }
+.avatar.sm {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+.nav-avatar {
+  display: inline-flex;
+  border-radius: 50%;
+  transition: box-shadow 0.15s ease;
+}
+.nav-avatar:hover {
+  text-decoration: none;
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 10px rgba(54, 214, 231, 0.35);
+}
 
 /* --- footer ------------------------------------------------------------------ */
 
