@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/lib/i18n";
+import { API_BASE } from "@/lib/api";
 import { PulseMark } from "./Nav";
 
 export default function Footer() {
@@ -17,7 +18,7 @@ export default function Footer() {
         <a href="https://github.com/dreambe/loadify" target="_blank" rel="noreferrer">
           GitHub
         </a>
-        <a href="/openapi.yaml" target="_blank" rel="noreferrer">
+        <a href={`${API_BASE}/openapi.yaml`} target="_blank" rel="noreferrer">
           OpenAPI
         </a>
         <span>© {new Date().getFullYear()} Loadify</span>

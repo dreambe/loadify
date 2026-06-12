@@ -16,6 +16,12 @@ import HttpRequestBuilder, {
 } from "@/components/HttpRequestBuilder";
 import ThresholdsEditor from "@/components/ThresholdsEditor";
 import SSEBuilder, { emptySSE, planToSSE, sseToPlan, type SSEConfig } from "@/components/SSEBuilder";
+import ScenarioBuilder, {
+  emptyScenario,
+  planToScenario,
+  scenarioToPlan,
+  type ScenarioSpec,
+} from "@/components/ScenarioBuilder";
 import type { TestDefinition, Threshold } from "@/lib/types";
 
 const SAMPLE_PLAN = `{
@@ -69,6 +75,7 @@ export default function TestsPage() {
   const [protocol, setProtocol] = useState("http");
   const [http, setHttp] = useState<HttpRequest>({ ...emptyHttpRequest });
   const [sse, setSse] = useState<SSEConfig>(emptySSE);
+  const [scenario, setScenario] = useState<ScenarioSpec>(emptyScenario);
   const [plan, setPlan] = useState(SAMPLE_PLAN);
   const [ramp, setRamp] = useState<RampSpec>(defaultRamp);
   const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
@@ -98,6 +105,7 @@ export default function TestsPage() {
     setProtocol("http");
     setHttp({ ...emptyHttpRequest });
     setSse(emptySSE);
+    setScenario(emptyScenario);
     setPlan(SAMPLE_PLAN);
     setRamp(defaultRamp);
     setThresholds([{ metric: "p95_ms", op: "<", value: 200 }]);
@@ -117,6 +125,8 @@ export default function TestsPage() {
       setHttp(planToHttpRequest(td.plan));
     } else if (td.protocol === "sse") {
       setSse(planToSSE(td.plan));
+    } else if (td.protocol === "scenario") {
+      setScenario(planToScenario(td.plan));
     } else {
       setPlan(JSON.stringify(td.plan, null, 2));
     }
@@ -175,6 +185,10 @@ export default function TestsPage() {
       setErr(t("tests.errScript"));
       return;
     }
+    if (protocol === "scenario" && !scenario.steps.some((s) => s.url.trim())) {
+      setErr(t("tests.errUrl"));
+      return;
+    }
     // https is not a separate choice — it is derived from the URL scheme.
     const effProtocol = isHTTP && http.url.trim().toLowerCase().startsWith("https") ? "https" : protocol;
     let planObj: any;
@@ -184,6 +198,8 @@ export default function TestsPage() {
       planObj = httpRequestToPlan(effProtocol, http);
     } else if (protocol === "sse") {
       planObj = sseToPlan(sse);
+    } else if (protocol === "scenario") {
+      planObj = scenarioToPlan(scenario);
     } else {
       try {
         planObj = JSON.parse(plan);
@@ -274,6 +290,7 @@ export default function TestsPage() {
                 <label>{t("tests.protocol")}</label>
                 <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
                   <option value="http">HTTP / HTTPS</option>
+                  <option value="scenario">{t("tests.protoScenario")}</option>
                   <option value="grpc">gRPC</option>
                   <option value="websocket">WebSocket</option>
                   <option value="sse">SSE</option>
@@ -290,13 +307,22 @@ export default function TestsPage() {
                 <HttpRequestBuilder value={http} onChange={setHttp} />
               </>
             )}
+            {protocol === "scenario" && (
+              <>
+                <label>
+                  {t("tests.scenario")}
+                  <Help tip={t("tests.scenarioBuilderHelp")} />
+                </label>
+                <ScenarioBuilder value={scenario} onChange={setScenario} />
+              </>
+            )}
             {protocol === "sse" && (
               <>
                 <label>{t("tests.sse")}</label>
                 <SSEBuilder value={sse} onChange={setSse} />
               </>
             )}
-            {!isHTTP && protocol !== "script" && protocol !== "sse" && (
+            {!isHTTP && protocol !== "script" && protocol !== "sse" && protocol !== "scenario" && (
               <>
                 <label>{t("tests.plan")}</label>
                 <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
@@ -361,6 +387,9 @@ export default function TestsPage() {
           </form>
         )}
 
+        {/* List is hidden while the create/edit form is open, so the page is
+            either "browse tests" or "edit a test" — never a crowded mix. */}
+        {!showForm && (
         <div className="panel">
           <div className="row" style={{ marginBottom: 4 }}>
             <input
@@ -426,6 +455,7 @@ export default function TestsPage() {
           </table>
           <Pager page={pager.page} pages={pager.pages} total={pager.total} onPage={pager.setPage} />
         </div>
+        )}
       </div>
     </>
   );

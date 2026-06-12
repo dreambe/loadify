@@ -21,6 +21,11 @@ const (
 	// (see ScriptBundle); the script issues its own requests, so the plan needs
 	// no protocol-specific target config.
 	Script Protocol = "script"
+	// Scenario is a no-code multi-step HTTP plan: a list of steps run either in
+	// sequence (with variable extraction/chaining) or chosen by weight (traffic
+	// mix). It is compiled to a script bundle at launch and runs on the script
+	// driver, so the worker needs no separate scenario driver.
+	Scenario Protocol = "scenario"
 )
 
 // Plan is the top-level test definition.
@@ -31,6 +36,7 @@ type Plan struct {
 	GRPC     *GRPCConfig `json:"grpc,omitempty"`
 	WS       *WSConfig   `json:"websocket,omitempty"`
 	SSE      *SSEConfig  `json:"sse,omitempty"`
+	Scenario *ScenarioConfig `json:"scenario,omitempty"`
 	// ThinkTimeMs is the per-iteration pause applied after each request.
 	ThinkTimeMs int64 `json:"think_time_ms,omitempty"`
 	// MaxVUs caps the worker pool for the open (arrival-rate) model. 0 lets the
@@ -136,6 +142,68 @@ type SSEConfig struct {
 	Group              string            `json:"group,omitempty"`
 }
 
+// ScenarioConfig is a multi-step HTTP plan.
+//
+//   - mode "sequence": every step runs in order; later steps can reference
+//     variables extracted from earlier responses via {{var}} interpolation.
+//   - mode "weighted": one step is chosen per iteration with probability
+//     proportional to its weight, modeling a realistic traffic mix.
+type ScenarioConfig struct {
+	Mode  string         `json:"mode"`
+	Steps []ScenarioStep `json:"steps"`
+}
+
+// ScenarioStep is one HTTP call in a scenario.
+type ScenarioStep struct {
+	Name     string            `json:"name,omitempty"`
+	Weight   int               `json:"weight,omitempty"`
+	Method   string            `json:"method"`
+	URL      string            `json:"url"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Body     string            `json:"body,omitempty"`
+	Extracts []ScenarioExtract `json:"extracts,omitempty"`
+	Asserts  []HTTPAssert      `json:"asserts,omitempty"`
+}
+
+// ScenarioExtract saves a JSON field from a step's response into a variable
+// usable as {{Var}} in later steps (sequence mode).
+type ScenarioExtract struct {
+	Var  string `json:"var"`
+	Path string `json:"path"`
+}
+
+func (c *ScenarioConfig) validate() error {
+	if c == nil || len(c.Steps) == 0 {
+		return fmt.Errorf("plan: scenario requires at least one step")
+	}
+	if c.Mode != "sequence" && c.Mode != "weighted" {
+		return fmt.Errorf("plan: scenario mode must be sequence or weighted, got %q", c.Mode)
+	}
+	for i := range c.Steps {
+		st := &c.Steps[i]
+		if st.URL == "" {
+			return fmt.Errorf("plan: scenario step %d requires a url", i+1)
+		}
+		if st.Method == "" {
+			st.Method = "GET"
+		}
+		if c.Mode == "weighted" && st.Weight <= 0 {
+			st.Weight = 1
+		}
+		for j := range st.Asserts {
+			if err := st.Asserts[j].Validate(); err != nil {
+				return err
+			}
+		}
+		for j := range st.Extracts {
+			if st.Extracts[j].Var == "" || st.Extracts[j].Path == "" {
+				return fmt.Errorf("plan: scenario step %d extract needs var and path", i+1)
+			}
+		}
+	}
+	return nil
+}
+
 // Parse decodes and validates a plan from JSON.
 func Parse(data []byte) (*Plan, error) {
 	var p Plan
@@ -180,6 +248,10 @@ func (p *Plan) Validate() error {
 		}
 	case Script:
 		// A script plan carries no protocol target; the script generates traffic.
+	case Scenario:
+		if err := p.Scenario.validate(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("plan: unknown protocol %q", p.Protocol)
 	}

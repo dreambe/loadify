@@ -168,16 +168,21 @@ type Run struct {
 	Summary        json.RawMessage `json:"summary,omitempty"`
 	CreatedBy      *string         `json:"created_by,omitempty"`
 	CreatorName    string          `json:"creator_name,omitempty"`
+	Snapshot       json.RawMessage `json:"test_snapshot,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
 // CreateRun inserts a pending run. createdBy may be nil for system-launched
 // runs (e.g. the scheduler).
-func (s *Store) CreateRun(ctx context.Context, testDefID string, desiredWorkers int, name string, createdBy *string) (string, error) {
+func (s *Store) CreateRun(ctx context.Context, testDefID string, desiredWorkers int, name string, createdBy *string, snapshot json.RawMessage) (string, error) {
 	var id string
+	var snap any
+	if len(snapshot) > 0 {
+		snap = snapshot
+	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO runs (test_def_id, status, desired_workers, name, created_by)
-		VALUES ($1, 'pending', $2, $3, $4) RETURNING id`, testDefID, desiredWorkers, name, createdBy).Scan(&id)
+		INSERT INTO runs (test_def_id, status, desired_workers, name, created_by, test_snapshot)
+		VALUES ($1, 'pending', $2, $3, $4, $5) RETURNING id`, testDefID, desiredWorkers, name, createdBy, snap).Scan(&id)
 	return id, err
 }
 
@@ -213,7 +218,7 @@ func (s *Store) FinishRun(ctx context.Context, id, status string, summary json.R
 // so a reaper can reconcile orphans left by an apisrv restart.
 func (s *Store) ListActiveRuns(ctx context.Context) ([]Run, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), r.created_at
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), coalesce(r.test_snapshot,'null'), r.created_at
 		FROM runs r LEFT JOIN users u ON u.id = r.created_by
 		WHERE r.status IN ('pending','queued','running') ORDER BY r.created_at ASC LIMIT 500`)
 	if err != nil {
@@ -227,10 +232,10 @@ func (s *Store) ListActiveRuns(ctx context.Context) ([]Run, error) {
 func (s *Store) GetRun(ctx context.Context, id string) (*Run, error) {
 	r := &Run{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), r.created_at
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), coalesce(r.test_snapshot,'null'), r.created_at
 		FROM runs r LEFT JOIN users u ON u.id = r.created_by
 		WHERE r.id=$1`, id).
-		Scan(&r.ID, &r.TestDefID, &r.Name, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedBy, &r.CreatorName, &r.CreatedAt)
+		Scan(&r.ID, &r.TestDefID, &r.Name, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedBy, &r.CreatorName, &r.Snapshot, &r.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +248,7 @@ func (s *Store) ListRuns(ctx context.Context, limit int) ([]Run, error) {
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), r.created_at
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), coalesce(r.test_snapshot,'null'), r.created_at
 		FROM runs r LEFT JOIN users u ON u.id = r.created_by
 		ORDER BY r.created_at DESC LIMIT $1`, limit)
 	if err != nil {
@@ -257,7 +262,7 @@ func scanRuns(rows pgx.Rows) ([]Run, error) {
 	out := []Run{}
 	for rows.Next() {
 		var r Run
-		if err := rows.Scan(&r.ID, &r.TestDefID, &r.Name, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedBy, &r.CreatorName, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.TestDefID, &r.Name, &r.Status, &r.DesiredWorkers, &r.StartedAt, &r.EndedAt, &r.Summary, &r.CreatedBy, &r.CreatorName, &r.Snapshot, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
@@ -16,13 +16,29 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [hover, setHover] = useState<number | null>(null);
   const runId = params.id;
+  const stopped = useRef(false);
 
   useEffect(() => {
     if (!ready) return;
-    const load = () => api.getRun(runId).then(setRun).catch(() => {});
+    stopped.current = false;
+    const load = () =>
+      api
+        .getRun(runId)
+        .then((r) => {
+          setRun(r);
+          // Stop polling once terminal — otherwise the 4s refresh keeps
+          // replacing state and the finished view flickers.
+          if (r.status !== "running" && r.status !== "pending" && r.status !== "queued") {
+            stopped.current = true;
+            clearInterval(timer);
+          }
+        })
+        .catch(() => {});
     load();
-    const t = setInterval(load, 4000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => {
+      if (!stopped.current) load();
+    }, 4000);
+    return () => clearInterval(timer);
   }, [ready, runId]);
 
   const terminal = run && run.status !== "running" && run.status !== "pending";
@@ -38,45 +54,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
 
   // X-axis: elapsed test time from the first series point.
   const seriesBase = series.length > 0 ? new Date(series[0].ts).getTime() : 0;
-  const xLabels = series.map((p) =>
-    formatElapsed((new Date(p.ts).getTime() - seriesBase) / 1000)
-  );
-
-  // SummaryReport renders the finished run as a readable report instead of a
-  // raw JSON dump: duration, totals, throughput and the latency profile.
-  function SummaryReport({ run }: { run: Run }) {
-    const s = run.summary?.summary;
-    const total = run.summary?.total_requests ?? 0;
-    const durationS =
-      run.started_at && run.ended_at
-        ? Math.max(1, (new Date(run.ended_at).getTime() - new Date(run.started_at).getTime()) / 1000)
-        : 0;
-    const avgQps = durationS > 0 ? total / durationS : 0;
-    const cell = (label: string, value: string) => (
-      <div className="metric">
-        <div className="label">{label}</div>
-        <div className="value">{value}</div>
-      </div>
-    );
-    return (
-      <div className="panel">
-        <h2>{t("run.summary")}</h2>
-        <div className="metrics-grid">
-          {cell(t("report.total"), total.toLocaleString())}
-          {cell(t("report.duration"), durationS ? formatElapsed(durationS) : "–")}
-          {cell(t("report.avgQps"), avgQps ? avgQps.toFixed(1) : "–")}
-          {cell(
-            t("report.errorRate"),
-            s?.error_rate !== undefined ? (s.error_rate * 100).toFixed(2) + "%" : "–"
-          )}
-          {cell("p50", s?.p50_ms !== undefined ? s.p50_ms.toFixed(1) + " ms" : "–")}
-          {cell("p90", s?.p90_ms !== undefined ? s.p90_ms.toFixed(1) + " ms" : "–")}
-          {cell("p95", s?.p95_ms !== undefined ? s.p95_ms.toFixed(1) + " ms" : "–")}
-          {cell("p99", s?.p99_ms !== undefined ? s.p99_ms.toFixed(1) + " ms" : "–")}
-        </div>
-      </div>
-    );
-  }
+  const xLabels = series.map((p) => formatElapsed((new Date(p.ts).getTime() - seriesBase) / 1000));
 
   return (
     <>
@@ -109,8 +87,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <div className="muted" style={{ marginBottom: 12 }}>
             {t("run.creator")}: {run.creator_name || t("run.creatorSystem")}
             {" · "}
-            {t("runs.colStarted")}:{" "}
-            {run.started_at ? new Date(run.started_at).toLocaleString() : "–"}
+            {t("runs.colStarted")}: {run.started_at ? new Date(run.started_at).toLocaleString() : "–"}
           </div>
         )}
 
@@ -155,11 +132,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <h2>{t("run.errorRate")}</h2>
               <LineChart
                 series={[
-                  {
-                    label: "errors",
-                    color: "#ff5d73",
-                    data: series.map((p) => p.error_rate * 100),
-                  },
+                  { label: "errors", color: "#ff5d73", data: series.map((p) => p.error_rate * 100) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}
@@ -198,10 +171,73 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 </table>
               </div>
             )}
-            {run?.summary != null && <SummaryReport run={run} />}
+            {run?.summary != null && <SummaryReport run={run} t={t} />}
           </div>
         )}
+
+        {run?.test_snapshot != null && <SnapshotPanel snapshot={run.test_snapshot} t={t} />}
       </div>
     </>
+  );
+}
+
+// SummaryReport renders a finished run as a readable report (not a JSON dump).
+function SummaryReport({ run, t }: { run: Run; t: (k: string) => string }) {
+  const s = run.summary?.summary;
+  const total = run.summary?.total_requests ?? 0;
+  const durationS =
+    run.started_at && run.ended_at
+      ? Math.max(1, (new Date(run.ended_at).getTime() - new Date(run.started_at).getTime()) / 1000)
+      : 0;
+  const avgQps = durationS > 0 ? total / durationS : 0;
+  const cell = (label: string, value: string) => (
+    <div className="metric">
+      <div className="label">{label}</div>
+      <div className="value">{value}</div>
+    </div>
+  );
+  return (
+    <div className="panel">
+      <h2>{t("run.summary")}</h2>
+      <div className="metrics-grid">
+        {cell(t("report.total"), total.toLocaleString())}
+        {cell(t("report.duration"), durationS ? formatElapsed(durationS) : "–")}
+        {cell(t("report.avgQps"), avgQps ? avgQps.toFixed(1) : "–")}
+        {cell(t("report.errorRate"), s?.error_rate !== undefined ? (s.error_rate * 100).toFixed(2) + "%" : "–")}
+        {cell("p50", s?.p50_ms !== undefined ? s.p50_ms.toFixed(1) + " ms" : "–")}
+        {cell("p90", s?.p90_ms !== undefined ? s.p90_ms.toFixed(1) + " ms" : "–")}
+        {cell("p95", s?.p95_ms !== undefined ? s.p95_ms.toFixed(1) + " ms" : "–")}
+        {cell("p99", s?.p99_ms !== undefined ? s.p99_ms.toFixed(1) + " ms" : "–")}
+      </div>
+    </div>
+  );
+}
+
+// SnapshotPanel shows the test definition as it was when the run started, so a
+// run stays self-describing even after the test is edited or deleted.
+function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const plan = snapshot?.plan ?? {};
+  const http = plan?.http;
+  const scenario = plan?.scenario;
+  return (
+    <div className="panel">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>{t("run.snapshot")}</h2>
+        <button className="secondary" onClick={() => setOpen((v) => !v)}>
+          {open ? t("run.snapshotHide") : t("run.snapshotShow")}
+        </button>
+      </div>
+      <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
+        {snapshot?.name} · {snapshot?.protocol}
+        {http ? ` · ${http.method} ${http.url}` : ""}
+        {scenario ? ` · ${scenario.mode} · ${scenario.steps?.length ?? 0} ${t("run.steps")}` : ""}
+      </div>
+      {open && (
+        <pre style={{ marginTop: 10, maxHeight: 360, overflow: "auto", fontSize: 12 }}>
+          {JSON.stringify(snapshot, null, 2)}
+        </pre>
+      )}
+    </div>
   );
 }

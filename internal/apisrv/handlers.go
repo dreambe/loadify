@@ -13,6 +13,7 @@ import (
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/auth"
 	"github.com/dreambe/loadify/internal/plan"
+	scriptpkg "github.com/dreambe/loadify/internal/script"
 	"github.com/dreambe/loadify/internal/sla"
 	"github.com/dreambe/loadify/internal/store"
 	"github.com/dreambe/loadify/internal/store/postgres"
@@ -217,14 +218,26 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	if name == "" {
 		name = td.Name + " @ " + time.Now().Format("01-02 15:04")
 	}
-	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy)
+	// Snapshot the test definition into the run so the run page and history
+	// stay accurate even after the test is later edited or deleted.
+	snapshot, _ := json.Marshal(td)
+	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy, snapshot)
 	if err != nil {
 		return "", "", err
 	}
 
 	var script *loadifyv1.ScriptBundle
-	if td.ScriptJS != "" {
-		script = &loadifyv1.ScriptBundle{MainJs: td.ScriptJS}
+	mainJS := td.ScriptJS
+	if p.Protocol == plan.Scenario {
+		// Scenarios compile to a script and run on the script driver.
+		js, cerr := scriptpkg.CompileScenario(p.Scenario)
+		if cerr != nil {
+			return "", "", errBadRequest(cerr.Error())
+		}
+		mainJS = js
+	}
+	if mainJS != "" {
+		script = &loadifyv1.ScriptBundle{MainJs: mainJS}
 		if len(td.DataJSON) > 0 {
 			script.Modules = map[string]string{"__data__": string(td.DataJSON)}
 		}
@@ -537,9 +550,10 @@ func protoEnum(p plan.Protocol) loadifyv1.Protocol {
 		return loadifyv1.Protocol_PROTOCOL_WEBSOCKET
 	case plan.SSE:
 		return loadifyv1.Protocol_PROTOCOL_SSE
-	case plan.Script:
-		// Script runs are protocol-agnostic; UNSPECIFIED lets the scheduler use
-		// any healthy worker and the worker selects the script driver.
+	case plan.Script, plan.Scenario:
+		// Script and scenario runs are protocol-agnostic; UNSPECIFIED lets the
+		// scheduler use any healthy worker and the worker selects the script
+		// driver (scenarios are compiled to a script at launch).
 		return loadifyv1.Protocol_PROTOCOL_UNSPECIFIED
 	default:
 		return loadifyv1.Protocol_PROTOCOL_UNSPECIFIED

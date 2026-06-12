@@ -181,8 +181,8 @@ export default function RampBuilder({
 function RampPreview({ stages, unit }: { stages: Stage[]; unit: string }) {
   const { t } = useI18n();
   const width = 720;
-  const height = 120;
-  const pad = { top: 12, right: 12, bottom: 18, left: 40 };
+  const height = 130;
+  const pad = { top: 18, right: 40, bottom: 22, left: 44 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
@@ -218,17 +218,21 @@ function RampPreview({ stages, unit }: { stages: Stage[]; unit: string }) {
         <line x1={pad.left} x2={width - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="var(--border-strong)" strokeWidth={1} />
         <path d={area} fill="url(#ramp-fill)" stroke="none" />
         <path d={path} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" />
-        {pts.slice(1).map(([s, v], i) => (
-          <g key={i}>
-            <circle cx={x(s)} cy={y(v)} r={3} fill="var(--accent)" stroke="var(--bg)" strokeWidth={1.5} />
-            <text x={x(s)} y={y(v) - 7} fill="var(--muted)" fontSize={10} textAnchor="middle" fontFamily="var(--font-mono)">
-              {v}
-            </text>
-            <text x={x(s)} y={height - 4} fill="var(--muted)" fontSize={10} textAnchor="middle" fontFamily="var(--font-mono)">
-              {s}s
-            </text>
-          </g>
-        ))}
+        {pts.slice(1).map(([s, v], i, arr) => {
+          // Anchor labels so the first/last points don't clip at the edges.
+          const anchor = i === arr.length - 1 ? "end" : i === 0 ? "start" : "middle";
+          return (
+            <g key={i}>
+              <circle cx={x(s)} cy={y(v)} r={3} fill="var(--accent)" stroke="var(--bg)" strokeWidth={1.5} />
+              <text x={x(s)} y={y(v) - 7} fill="var(--muted)" fontSize={10} textAnchor={anchor} fontFamily="var(--font-mono)">
+                {v}
+              </text>
+              <text x={x(s)} y={height - 5} fill="var(--muted)" fontSize={10} textAnchor={anchor} fontFamily="var(--font-mono)">
+                {s}s
+              </text>
+            </g>
+          );
+        })}
         <text x={4} y={pad.top + 4} fill="var(--muted)" fontSize={10} fontFamily="var(--font-mono)">
           {peak} {unit}
         </text>

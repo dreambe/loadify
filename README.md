@@ -1,9 +1,13 @@
-# Loadify — 分布式压测平台 / Distributed Load-Testing Platform
+# Loadify — Distributed Load-Testing Platform
+
+**English** · [中文](README.zh.md)
 
 `loadify` is a distributed load-testing platform supporting **HTTP/HTTPS, gRPC,
-WebSocket and SSE**, with a declarative test builder plus embedded **JavaScript
-(goja) scripting**, real-time + historical dashboards, **JWT/RBAC + Feishu
-OAuth**, and Docker Compose / Kubernetes (Helm) deployment.
+WebSocket and SSE**, with a declarative test builder, a no-code **multi-step
+scenario** builder (weighted traffic mix + chained requests), structured
+**response assertions** (status / body / JSON-path), embedded **JavaScript
+(goja) scripting**, real-time + historical dashboards, light/dark themes,
+**JWT/RBAC + Feishu OAuth**, and Docker Compose / Kubernetes (Helm) deployment.
 
 ## Components
 
@@ -25,6 +29,14 @@ OAuth**, and Docker Compose / Kubernetes (Helm) deployment.
 - **Protocols** — HTTP/HTTPS (httptrace phase timings), gRPC (dynamic unary
   invocation from a descriptor set or the global registry), WebSocket
   (persistent per-VU sessions), SSE (event streaming).
+- **Scenarios (no-code)** — chain multiple HTTP steps in **sequence**, extracting
+  JSON fields from one response into `{{variables}}` consumed by later steps
+  (e.g. login → use the returned token), or mix interfaces by **weight** to model
+  realistic traffic ratios. Compiled to a script at launch, so it reuses the
+  script engine.
+- **Assertions** — per-request checks on status code, raw body, or an extracted
+  JSON path with `eq/ne/gt/lt/gte/lte/contains/exists`; failures are counted as
+  errors and the reason (which check, what value) shows in the live log.
 - **Scripting** — write a goja JS `iteration()` function using an injected
   `http` API; runs as a load scenario with per-iteration metrics.
 - **Distribution** — coordinator shards the ramp across workers, merges

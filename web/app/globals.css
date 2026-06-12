@@ -618,7 +618,9 @@ label.req::after {
 /* --- login ------------------------------------------------------------------ */
 
 .login-shell {
-  min-height: 100vh;
+  /* Leave room for the footer so it shows without scrolling, while staying
+     centered and never crushing the card on short screens. */
+  min-height: calc(100vh - 78px);
   display: grid;
   place-items: center;
   padding: 24px;

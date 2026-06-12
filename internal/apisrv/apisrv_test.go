@@ -45,7 +45,7 @@ func (f *fakeMeta) GetTestDefinition(_ context.Context, id string) (*postgres.Te
 func (f *fakeMeta) ListTestDefinitions(_ context.Context, _ int) ([]postgres.TestDefinition, error) {
 	return nil, nil
 }
-func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, _ *string) (string, error) {
+func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, _ *string, _ json.RawMessage) (string, error) {
 	return "run-1", nil
 }
 func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error              { return nil }
