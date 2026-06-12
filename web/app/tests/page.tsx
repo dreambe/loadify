@@ -7,6 +7,9 @@ import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Help from "@/components/Help";
 import { Pager, usePager } from "@/components/Pager";
+import EmptyState from "@/components/EmptyState";
+import { useToast } from "@/components/Toast";
+import { useConfirm } from "@/components/Confirm";
 import { parseCSV } from "@/lib/csv";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
 import HttpRequestBuilder, {
@@ -67,6 +70,8 @@ function rampToSpec(ramp: any, plan: any): RampSpec {
 export default function TestsPage() {
   const { t } = useI18n();
   const { user, ready } = useAuth();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [tests, setTests] = useState<TestDefinition[]>([]);
   const [filter, setFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -149,16 +154,23 @@ export default function TestsPage() {
   }
 
   async function remove(td: TestDefinition) {
-    if (!window.confirm(t("tests.deleteConfirm").replace("{name}", td.name))) return;
+    const okToDelete = await confirm({
+      title: t("tests.delete") + " · " + td.name,
+      body: t("tests.deleteConfirm").replace("{name}", td.name),
+      confirmLabel: t("tests.delete"),
+      danger: true,
+    });
+    if (!okToDelete) return;
     try {
       await api.deleteTest(td.id);
       if (editingId === td.id) {
         resetForm();
         setShowForm(false);
       }
+      toast.success(t("tests.deleted"));
       refresh();
     } catch (e: any) {
-      setErr(e.message);
+      toast.error(e.message);
     }
   }
 
@@ -326,12 +338,12 @@ export default function TestsPage() {
         {canCreate && showForm && (
           <form className="panel" onSubmit={submit} ref={formRef}>
             <h2>{editingId ? t("tests.editTitle") : t("tests.new")}</h2>
-            <div className="row">
-              <div style={{ flex: 1 }}>
+            <div className="form-grid">
+              <div className="field span-2">
                 <label className="req">{t("tests.name")}</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} required style={{ width: "100%" }} />
+                <input value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
-              <div>
+              <div className="field">
                 <label>{t("tests.protocol")}</label>
                 <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
                   <option value="http">HTTP / HTTPS</option>
@@ -486,60 +498,62 @@ export default function TestsPage() {
               style={{ width: 280 }}
             />
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>{t("tests.colName")}</th>
-                <th>{t("tests.colProtocol")}</th>
-                <th>{t("tests.colCreator")}</th>
-                <th>{t("tests.colCreated")}</th>
-                {canCreate && <th>{t("tests.colActions")}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {pager.slice.map((td) => (
-                <tr key={td.id}>
-                  <td>{td.name}</td>
-                  <td className="muted">{td.protocol}</td>
-                  <td className="muted">{td.creator_name || "–"}</td>
-                  <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
-                  {canCreate && (
-                    <td>
-                      <div className="row" style={{ gap: 8 }}>
-                        <button
-                          className="secondary"
-                          onClick={() =>
-                            api
-                              .startRun(td.id, 1, "")
-                              .then((res) => (window.location.href = `/runs/${res.run_id}`))
-                              .catch((e) => setErr(e.message))
-                          }
-                        >
-                          ▶ {t("tests.run")}
-                        </button>
-                        <button className="secondary" onClick={() => loadIntoForm(td, "edit")}>
-                          {t("tests.edit")}
-                        </button>
-                        <button className="secondary" onClick={() => loadIntoForm(td, "copy")}>
-                          {t("tests.copy")}
-                        </button>
-                        <button className="secondary" onClick={() => remove(td)}>
-                          {t("tests.delete")}
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={canCreate ? 5 : 4} className="muted">
-                    {t("tests.empty")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {filtered.length === 0 ? (
+            <EmptyState
+              title={t("tests.empty")}
+              hint={canCreate ? t("tests.emptyHint") : undefined}
+            />
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t("tests.colName")}</th>
+                    <th>{t("tests.colProtocol")}</th>
+                    <th>{t("tests.colCreator")}</th>
+                    <th>{t("tests.colCreated")}</th>
+                    {canCreate && <th className="num">{t("tests.colActions")}</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pager.slice.map((td) => (
+                    <tr key={td.id}>
+                      <td>{td.name}</td>
+                      <td className="muted">{td.protocol}</td>
+                      <td className="muted">{td.creator_name || "–"}</td>
+                      <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
+                      {canCreate && (
+                        <td>
+                          <div className="actions">
+                            <button
+                              className="ghost sm"
+                              onClick={() =>
+                                api
+                                  .startRun(td.id, 1, "")
+                                  .then((res) => (window.location.href = `/runs/${res.run_id}`))
+                                  .catch((e) => toast.error(e.message))
+                              }
+                            >
+                              ▶ {t("tests.run")}
+                            </button>
+                            <button className="ghost sm" onClick={() => loadIntoForm(td, "edit")}>
+                              {t("tests.edit")}
+                            </button>
+                            <button className="ghost sm" onClick={() => loadIntoForm(td, "copy")}>
+                              {t("tests.copy")}
+                            </button>
+                            <button className="danger sm" onClick={() => remove(td)}>
+                              {t("tests.delete")}
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <Pager page={pager.page} pages={pager.pages} total={pager.total} onPage={pager.setPage} />
         </div>
         )}

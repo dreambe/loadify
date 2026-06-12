@@ -6,46 +6,45 @@ import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import Help from "@/components/Help";
+import { useToast } from "@/components/Toast";
+import { useConfirm } from "@/components/Confirm";
 import type { User } from "@/lib/types";
 
 export default function UsersPage() {
   const { t } = useI18n();
   const { user, ready } = useAuth();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<User[]>([]);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("viewer");
   const [password, setPassword] = useState("");
-  const [err, setErr] = useState("");
-  const [ok, setOk] = useState("");
 
   const isAdmin = roleAtLeast(user?.role, "admin");
 
   function refresh() {
-    api.listUsers().then(setUsers).catch((e) => setErr(e.message));
+    api.listUsers().then(setUsers).catch((e) => toast.error(e.message));
   }
   useEffect(() => {
     if (ready && isAdmin) refresh();
   }, [ready, isAdmin]);
 
   function flash(msg: string) {
-    setErr("");
-    setOk(msg);
-    setTimeout(() => setOk(""), 3000);
+    toast.success(msg);
   }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    setErr("");
     try {
       await api.createUser({ email, name, role, password });
       setEmail("");
       setName("");
       setPassword("");
-      flash(t("users.created"));
+      toast.success(t("users.created"));
       refresh();
     } catch (e: any) {
-      setErr(e.message);
+      toast.error(e.message);
     }
   }
 
@@ -54,7 +53,7 @@ export default function UsersPage() {
       await api.updateUser(u.id, { role: newRole });
       refresh();
     } catch (e: any) {
-      setErr(e.message);
+      toast.error(e.message);
     }
   }
 
@@ -63,9 +62,9 @@ export default function UsersPage() {
     if (!pw) return;
     try {
       await api.updateUser(u.id, { password: pw });
-      flash(t("users.resetDone"));
+      toast.success(t("users.resetDone"));
     } catch (e: any) {
-      setErr(e.message);
+      toast.error(e.message);
     }
   }
 
@@ -74,17 +73,24 @@ export default function UsersPage() {
       await api.updateUser(u.id, { disabled: !u.disabled });
       refresh();
     } catch (e: any) {
-      setErr(e.message);
+      toast.error(e.message);
     }
   }
 
   async function remove(u: User) {
-    if (!window.confirm(t("users.deleteConfirm").replace("{email}", u.email))) return;
+    const okToDelete = await confirm({
+      title: t("users.delete") + " · " + u.email,
+      body: t("users.deleteConfirm").replace("{email}", u.email),
+      confirmLabel: t("users.delete"),
+      danger: true,
+    });
+    if (!okToDelete) return;
     try {
       await api.deleteUser(u.id);
+      toast.success(t("users.deleted"));
       refresh();
     } catch (e: any) {
-      setErr(e.message);
+      toast.error(e.message);
     }
   }
 
@@ -98,12 +104,9 @@ export default function UsersPage() {
 
         <ProfileCard />
 
-        <ChangePasswordPanel onError={setErr} onDone={() => flash(t("users.pwChanged"))} />
+        <ChangePasswordPanel onError={toast.error} onDone={() => flash(t("users.pwChanged"))} />
 
-        <WebhooksPanel onError={setErr} onDone={() => flash(t("users.webhooksSaved"))} />
-
-        {!isAdmin && err && <div className="error">{err}</div>}
-        {!isAdmin && ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
+        <WebhooksPanel onError={toast.error} onDone={() => flash(t("users.webhooksSaved"))} />
 
         {isAdmin && (
           <>
@@ -138,8 +141,6 @@ export default function UsersPage() {
                 </div>
                 <button type="submit">{t("users.create")}</button>
               </div>
-              {err && <div className="error">{err}</div>}
-              {ok && <div style={{ color: "var(--green)" }}>{ok}</div>}
             </form>
 
             <div className="panel">
@@ -186,14 +187,14 @@ export default function UsersPage() {
                           {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "–"}
                         </td>
                         <td>
-                          <div className="row" style={{ gap: 8 }}>
-                            <button className="secondary" onClick={() => resetPassword(u)}>
+                          <div className="actions">
+                            <button className="ghost sm" onClick={() => resetPassword(u)}>
                               {t("users.resetPw")}
                             </button>
-                            <button className="secondary" disabled={self} onClick={() => toggleDisabled(u)}>
+                            <button className="ghost sm" disabled={self} onClick={() => toggleDisabled(u)}>
                               {u.disabled ? t("users.enable") : t("users.disable")}
                             </button>
-                            <button className="secondary" disabled={self} onClick={() => remove(u)}>
+                            <button className="danger sm" disabled={self} onClick={() => remove(u)}>
                               {t("users.delete")}
                             </button>
                           </div>

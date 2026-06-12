@@ -8,6 +8,8 @@ export type Lang = "zh" | "en";
 // fallback when a key is missing in the active locale.
 const messages: Record<Lang, Record<string, string>> = {
   zh: {
+    "common.cancel": "取消",
+    "common.confirm": "确定",
     "nav.runs": "压测任务",
     "nav.tests": "测试用例",
     "nav.compare": "结果对比",
@@ -266,6 +268,8 @@ const messages: Record<Lang, Record<string, string>> = {
     "tests.colCreator": "创建人",
     "tests.colCreated": "创建时间",
     "tests.empty": "尚未定义任何用例。",
+    "tests.emptyHint": "点右上角「新建用例」或「导入」来创建第一个用例。",
+    "tests.deleted": "用例已删除",
     "workers.title": "工作节点",
     "workers.nodes": "健康节点",
     "workers.activeVus": "活跃 VU 总数",
@@ -303,6 +307,7 @@ const messages: Record<Lang, Record<string, string>> = {
     "users.resetPw": "重置密码",
     "users.resetPrompt": "输入 {email} 的新密码(至少 8 位):",
     "users.resetDone": "密码已重置",
+    "users.deleted": "用户已删除",
     "users.empty": "暂无用户。",
     "users.webhooks": "通知 Webhook",
     "users.webhooksHelp": "你的压测任务结束或被自动停止时,会向第一个地址推送通知。飞书/Lark 机器人地址会收到美观的卡片消息,其他地址收到通用 JSON。",
@@ -317,6 +322,8 @@ const messages: Record<Lang, Record<string, string>> = {
     "users.pwChanged": "密码已修改",
   },
   en: {
+    "common.cancel": "Cancel",
+    "common.confirm": "Confirm",
     "nav.runs": "Runs",
     "nav.tests": "Tests",
     "nav.compare": "Compare",
@@ -575,6 +582,8 @@ const messages: Record<Lang, Record<string, string>> = {
     "tests.colCreator": "Creator",
     "tests.colCreated": "Created",
     "tests.empty": "No tests defined.",
+    "tests.emptyHint": "Use “New test” or “Import” in the top-right to create your first test.",
+    "tests.deleted": "Test deleted",
     "workers.title": "Workers",
     "workers.nodes": "Healthy nodes",
     "workers.activeVus": "Total active VUs",
@@ -612,6 +621,7 @@ const messages: Record<Lang, Record<string, string>> = {
     "users.resetPw": "Reset password",
     "users.resetPrompt": "New password for {email} (min 8 chars):",
     "users.resetDone": "Password reset",
+    "users.deleted": "User deleted",
     "users.empty": "No users.",
     "users.webhooks": "Notification webhooks",
     "users.webhooksHelp": "When your runs finish or auto-stop, the first URL is notified. Feishu/Lark bot URLs get a formatted card; others get a generic JSON event.",
