@@ -512,6 +512,30 @@ func (s *Server) handleRunExport(w http.ResponseWriter, r *http.Request) {
 	cw.Flush()
 }
 
+// handleRunSamples returns sampled request detail for post-run error
+// drill-down, optionally filtered by group / status_class / error_kind. The
+// detail is sampled (bounded, error-prioritized), not every request.
+func (s *Server) handleRunSamples(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	rows, err := s.ch.QuerySamples(ctx, runID, store.SampleFilter{
+		Group:       r.URL.Query().Get("group"),
+		StatusClass: r.URL.Query().Get("status_class"),
+		ErrorKind:   r.URL.Query().Get("error_kind"),
+		Limit:       limit,
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []store.Sample{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sampled": true, "samples": rows})
+}
+
 func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()

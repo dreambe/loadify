@@ -43,6 +43,26 @@ type Aggregator struct {
 
 type secStat struct{ count, errors int64 }
 
+// sampleToStore converts a wire Sample into a persisted store.Sample, deriving
+// the coarse status_class the drill-down filters on.
+func sampleToStore(runID string, s *loadifyv1.Sample) store.Sample {
+	return store.Sample{
+		RunID:       runID,
+		TS:          time.UnixMilli(s.TsUnixMs),
+		Group:       s.Group,
+		Protocol:    s.Protocol.String(),
+		StatusClass: metrics.StatusClass(s.Status, s.Ok, s.ErrorKind),
+		Status:      s.Status,
+		OK:          s.Ok,
+		ErrorKind:   s.ErrorKind,
+		Method:      s.Method,
+		URL:         s.Url,
+		LatencyUs:   s.LatencyUs,
+		RecvBytes:   s.RecvBytes,
+		RespBody:    s.RespBody,
+	}
+}
+
 // SetAutoStop arms the circuit breaker with a config and a stop callback. The
 // callback is invoked at most once, off the aggregator lock.
 func (a *Aggregator) SetAutoStop(cfg plan.AutoStopConfig, onStop func(runID, reason string)) {
@@ -147,6 +167,7 @@ func (a *Aggregator) finalize(now time.Time) {
 	}
 	var rows []store.Rollup
 	var ticks []*loadifyv1.LiveTick
+	var sampleRows []store.Sample
 	activeVUs := int64(0)
 	for _, v := range a.workerVUs {
 		activeVUs += v
@@ -162,6 +183,9 @@ func (a *Aggregator) finalize(now time.Time) {
 		a.lastEmitted = sec
 		ts := time.Unix(sec, 0)
 		rows, ticks = a.collect(sec, ts, bk, activeVUs, secSamples, rows, ticks)
+		for _, sm := range secSamples {
+			sampleRows = append(sampleRows, sampleToStore(a.runID, sm))
+		}
 	}
 	listeners := append([]chan *loadifyv1.LiveTick(nil), a.listeners...)
 	writer := a.writer
@@ -170,6 +194,13 @@ func (a *Aggregator) finalize(now time.Time) {
 	if writer != nil && len(rows) > 0 {
 		if err := writer.WriteRollups(context.Background(), rows); err != nil {
 			a.log.Warn("write rollups failed", "err", err, "run", a.runID)
+		}
+	}
+	// Persist the bounded sampled detail for post-run error drill-down (only
+	// the sampled set, never every request).
+	if sw, ok := writer.(store.SampleStore); ok && len(sampleRows) > 0 {
+		if err := sw.WriteSamples(context.Background(), sampleRows); err != nil {
+			a.log.Warn("write samples failed", "err", err, "run", a.runID)
 		}
 	}
 	for _, tick := range ticks {

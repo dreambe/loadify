@@ -108,6 +108,7 @@ func (s *Server) routes() {
 		r.With(viewer).Get("/runs", s.handleListRuns)
 		r.With(viewer).Get("/runs/{id}", s.handleGetRun)
 		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)
+		r.With(viewer).Get("/runs/{id}/samples", s.handleRunSamples)
 		r.With(viewer).Get("/runs/{id}/export.csv", s.handleRunExport) // token via ?token= works too
 		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
 		r.With(viewer).Get("/workers", s.handleListWorkers)

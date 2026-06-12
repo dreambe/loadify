@@ -49,4 +49,5 @@ type metaStore interface {
 type metricsStore interface {
 	Summary(ctx context.Context, runID string) (store.SeriesPoint, int64, error)
 	QuerySeries(ctx context.Context, runID, group string, from, to time.Time, resSeconds int) ([]store.SeriesPoint, error)
+	QuerySamples(ctx context.Context, runID string, f store.SampleFilter) ([]store.Sample, error)
 }

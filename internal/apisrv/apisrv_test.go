@@ -109,6 +109,9 @@ func (fakeMetrics) Summary(_ context.Context, _ string) (store.SeriesPoint, int6
 func (fakeMetrics) QuerySeries(_ context.Context, _, _ string, _, _ time.Time, _ int) ([]store.SeriesPoint, error) {
 	return nil, nil
 }
+func (fakeMetrics) QuerySamples(_ context.Context, _ string, _ store.SampleFilter) ([]store.Sample, error) {
+	return nil, nil
+}
 
 // fakeCoord implements loadifyv1.CoordinatorServiceClient; only the methods used
 // by the tests do anything.

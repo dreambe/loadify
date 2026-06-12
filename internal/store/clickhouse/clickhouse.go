@@ -78,6 +78,76 @@ func (s *Store) WriteRollups(ctx context.Context, rows []store.Rollup) error {
 	return batch.Send()
 }
 
+// WriteSamples batch-inserts the bounded, sampled request detail used for
+// post-run error drill-down. Rows expire via the table TTL.
+func (s *Store) WriteSamples(ctx context.Context, rows []store.Sample) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := s.conn.PrepareBatch(ctx, "INSERT INTO samples "+
+		"(run_id, ts, `group`, protocol, status_class, status, ok, error_kind, method, url, latency_us, recv_bytes, resp_body)")
+	if err != nil {
+		return fmt.Errorf("clickhouse: prepare samples: %w", err)
+	}
+	for _, r := range rows {
+		var ok uint8
+		if r.OK {
+			ok = 1
+		}
+		if err := batch.Append(
+			r.RunID, r.TS, r.Group, r.Protocol, r.StatusClass, r.Status, ok,
+			r.ErrorKind, r.Method, r.URL, r.LatencyUs, r.RecvBytes, r.RespBody,
+		); err != nil {
+			return fmt.Errorf("clickhouse: append sample: %w", err)
+		}
+	}
+	return batch.Send()
+}
+
+// QuerySamples returns sampled request detail for a run, optionally filtered by
+// group / status_class / error_kind, newest first.
+func (s *Store) QuerySamples(ctx context.Context, runID string, f store.SampleFilter) ([]store.Sample, error) {
+	limit := f.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	q := "SELECT ts, `group`, protocol, status_class, status, ok, error_kind, method, url, latency_us, recv_bytes, resp_body " +
+		"FROM samples WHERE run_id = ?"
+	args := []any{runID}
+	if f.Group != "" && f.Group != "*" {
+		q += " AND `group` = ?"
+		args = append(args, f.Group)
+	}
+	if f.StatusClass != "" {
+		q += " AND status_class = ?"
+		args = append(args, f.StatusClass)
+	}
+	if f.ErrorKind != "" {
+		q += " AND error_kind = ?"
+		args = append(args, f.ErrorKind)
+	}
+	q += " ORDER BY ts DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.conn.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: query samples: %w", err)
+	}
+	defer rows.Close()
+	out := []store.Sample{}
+	for rows.Next() {
+		var r store.Sample
+		var ok uint8
+		if err := rows.Scan(&r.TS, &r.Group, &r.Protocol, &r.StatusClass, &r.Status, &ok,
+			&r.ErrorKind, &r.Method, &r.URL, &r.LatencyUs, &r.RecvBytes, &r.RespBody); err != nil {
+			return nil, err
+		}
+		r.OK = ok == 1
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // QuerySeries returns a time-bucketed series for a run. group "" or "*" means
 // all groups combined. resSeconds is the bucket width.
 func (s *Store) QuerySeries(ctx context.Context, runID, group string, from, to time.Time, resSeconds int) ([]store.SeriesPoint, error) {
