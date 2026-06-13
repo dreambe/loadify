@@ -14,6 +14,7 @@ import (
 	"github.com/dreambe/loadify/internal/coordinator/aggregator"
 	"github.com/dreambe/loadify/internal/coordinator/registry"
 	"github.com/dreambe/loadify/internal/coordinator/scheduler"
+	"github.com/dreambe/loadify/internal/obs"
 	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/store"
 	"google.golang.org/grpc/codes"
@@ -52,6 +53,24 @@ func New(writer store.RollupWriter, log *slog.Logger) *Service {
 		runs:    make(map[string]*runState),
 		maxRuns: 64, // effectively unlimited until SetLimits tightens it
 	}
+}
+
+// RegisterMetrics exposes live coordinator state on the Prometheus endpoint:
+// active runs, queue depth and connected workers. Call once at startup.
+func (s *Service) RegisterMetrics() {
+	obs.RegisterGauge("loadify_active_runs", "Currently running load runs.", func() float64 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return float64(len(s.runs))
+	})
+	obs.RegisterGauge("loadify_queue_depth", "Runs waiting for admission.", func() float64 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return float64(len(s.queue))
+	})
+	obs.RegisterGauge("loadify_workers_connected", "Connected workers.", func() float64 {
+		return float64(len(s.reg.List()))
+	})
 }
 
 // SetLimits configures admission control: at most maxConcurrent runs dispatch

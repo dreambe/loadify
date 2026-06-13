@@ -11,6 +11,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/metrics"
+	"github.com/dreambe/loadify/internal/obs"
 	"github.com/dreambe/loadify/internal/plan"
 	"github.com/dreambe/loadify/internal/store"
 )
@@ -194,6 +195,7 @@ func (a *Aggregator) finalize(now time.Time) {
 	if writer != nil && len(rows) > 0 {
 		if err := writer.WriteRollups(context.Background(), rows); err != nil {
 			a.log.Warn("write rollups failed", "err", err, "run", a.runID)
+			obs.ClickHouseWriteErrors.Inc()
 		}
 	}
 	// Persist the bounded sampled detail for post-run error drill-down (only
@@ -201,6 +203,7 @@ func (a *Aggregator) finalize(now time.Time) {
 	if sw, ok := writer.(store.SampleStore); ok && len(sampleRows) > 0 {
 		if err := sw.WriteSamples(context.Background(), sampleRows); err != nil {
 			a.log.Warn("write samples failed", "err", err, "run", a.runID)
+			obs.ClickHouseWriteErrors.Inc()
 		}
 	}
 	for _, tick := range ticks {

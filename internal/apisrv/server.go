@@ -13,6 +13,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/auth"
+	"github.com/dreambe/loadify/internal/obs"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -89,6 +90,7 @@ func (s *Server) routes() {
 	r.Use(middleware.Recoverer)
 	r.Use(securityHeaders)
 	r.Use(corsMiddleware)
+	r.Use(metricsMiddleware)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
@@ -172,6 +174,46 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// metricsMiddleware records request count and latency by chi route pattern, so
+// /metrics carries real API observability instead of only Go runtime stats.
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		route := chi.RouteContext(r.Context()).RoutePattern()
+		if route == "" {
+			route = "unmatched"
+		}
+		obs.HTTPRequests.WithLabelValues(route, r.Method, statusClass(rec.status)).Inc()
+		obs.HTTPDuration.WithLabelValues(route, r.Method).Observe(time.Since(start).Seconds())
+	})
+}
+
+// statusRecorder captures the response status for metrics.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func statusClass(code int) string {
+	switch {
+	case code >= 500:
+		return "5xx"
+	case code >= 400:
+		return "4xx"
+	case code >= 300:
+		return "3xx"
+	default:
+		return "2xx"
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
