@@ -42,53 +42,88 @@ export default function LineChart({
     else setLocalHover(i);
   };
 
-  const maxLen = Math.max(1, ...series.map((s) => s.data.length));
-  const maxVal = Math.max(1, ...series.flatMap((s) => s.data));
+  // Click a legend entry to hide/show that series.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Drag across the plot to zoom into an x-index window; double-click resets.
+  const [zoom, setZoom] = useState<{ lo: number; hi: number } | null>(null);
+  const [drag, setDrag] = useState<{ start: number; cur: number } | null>(null);
 
-  const x = (i: number) => pad.left + (maxLen <= 1 ? 0 : (i / (maxLen - 1)) * innerW);
+  const maxLen = Math.max(1, ...series.map((s) => s.data.length));
+  const lo = zoom ? zoom.lo : 0;
+  const hi = zoom ? zoom.hi : maxLen - 1;
+  const span = Math.max(1, hi - lo);
+  const visible = series.filter((s) => !hidden.has(s.label));
+  // Scale the y-axis to the visible series within the current x-window.
+  const maxVal = Math.max(
+    1,
+    ...visible.flatMap((s) => s.data.slice(lo, hi + 1))
+  );
+
+  const x = (i: number) => pad.left + ((i - lo) / span) * innerW;
   const y = (v: number) => pad.top + innerH - (v / maxVal) * innerH;
 
-  const path = (data: number[]) =>
-    data.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  // Path over the visible x-window only.
+  const path = (data: number[]) => {
+    let d = "";
+    for (let i = lo; i <= hi && i < data.length; i++) {
+      d += `${i === lo ? "M" : "L"}${x(i).toFixed(1)},${y(data[i]).toFixed(1)}`;
+    }
+    return d;
+  };
 
-  // Single-series charts get a soft gradient area fill under the line.
-  const areaSeries = series.length === 1 && series[0].data.length > 1 ? series[0] : null;
+  // Single visible series gets a soft gradient area fill under the line.
+  const areaSeries = visible.length === 1 && visible[0].data.length > 1 ? visible[0] : null;
   const areaPath = areaSeries
-    ? `${path(areaSeries.data)} L${x(areaSeries.data.length - 1).toFixed(1)},${(
+    ? `${path(areaSeries.data)} L${x(hi).toFixed(1)},${(pad.top + innerH).toFixed(1)} L${x(lo).toFixed(1)},${(
         pad.top + innerH
-      ).toFixed(1)} L${x(0).toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`
+      ).toFixed(1)} Z`
     : "";
 
   const ticks = 4;
   const gridVals = Array.from({ length: ticks + 1 }, (_, i) => (maxVal / ticks) * i);
 
-  // Pick a handful of evenly spaced x-axis tick indices.
-  const xTickCount = Math.min(6, maxLen);
+  // Pick a handful of evenly spaced x-axis tick indices within the window.
+  const xTickCount = Math.min(6, span + 1);
   const xTickIdx =
-    maxLen <= 1
-      ? [0]
-      : Array.from({ length: xTickCount }, (_, i) =>
-          Math.round((i / (xTickCount - 1)) * (maxLen - 1))
-        );
+    span < 1
+      ? [lo]
+      : Array.from({ length: xTickCount }, (_, i) => Math.round(lo + (i / (xTickCount - 1)) * span));
 
-  // Map a mouse position to the nearest data index. The SVG preserves its
-  // aspect ratio ("meet"), so the drawing is scaled uniformly and centered —
-  // account for that letterboxing or clicks land on shifted indexes.
-  function onMove(e: React.MouseEvent<SVGSVGElement>) {
+  // Map a mouse event to the nearest data index within the window. The SVG
+  // preserves aspect ratio ("meet") so account for centered letterboxing.
+  function idxAt(e: React.MouseEvent<SVGSVGElement>): number {
     const rect = e.currentTarget.getBoundingClientRect();
     const scale = Math.min(rect.width / width, rect.height / height);
     const offsetX = (rect.width - width * scale) / 2;
     const px = (e.clientX - rect.left - offsetX) / scale;
+    const frac = (px - pad.left) / innerW;
+    return Math.max(lo, Math.min(hi, Math.round(lo + frac * span)));
+  }
+
+  function onMove(e: React.MouseEvent<SVGSVGElement>) {
     if (maxLen <= 1) {
       setHover(0);
       return;
     }
-    const frac = (px - pad.left) / innerW;
-    const idx = Math.round(frac * (maxLen - 1));
-    setHover(Math.max(0, Math.min(maxLen - 1, idx)));
+    const idx = idxAt(e);
+    setHover(idx);
+    if (drag) setDrag({ ...drag, cur: idx });
+  }
+  function onDown(e: React.MouseEvent<SVGSVGElement>) {
+    if (maxLen <= 1) return;
+    const idx = idxAt(e);
+    setDrag({ start: idx, cur: idx });
+  }
+  function onUp() {
+    if (drag) {
+      const a = Math.min(drag.start, drag.cur);
+      const b = Math.max(drag.start, drag.cur);
+      if (b - a >= 2) setZoom({ lo: a, hi: b });
+      setDrag(null);
+    }
   }
 
-  const validHover = hover !== null && hover >= 0 && hover < maxLen ? hover : null;
+  const validHover = hover !== null && hover >= lo && hover <= hi ? hover : null;
   const hoverX = validHover !== null ? x(validHover) : 0;
   const tooltipRight = hoverX > pad.left + innerW * 0.6;
   const hoverLabel =
@@ -102,9 +137,15 @@ export default function LineChart({
         height={height}
         role="img"
         aria-label="time series chart"
+        style={{ cursor: drag ? "ew-resize" : "crosshair" }}
         onMouseMove={onMove}
-        onClick={onMove}
-        onMouseLeave={() => setHover(null)}
+        onMouseDown={onDown}
+        onMouseUp={onUp}
+        onMouseLeave={() => {
+          setHover(null);
+          setDrag(null);
+        }}
+        onDoubleClick={() => setZoom(null)}
       >
         {areaSeries && (
           <defs>
@@ -152,7 +193,7 @@ export default function LineChart({
             </text>
           ))}
         {areaSeries && <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />}
-        {series.map((s) => (
+        {visible.map((s) => (
           <path
             key={s.label}
             d={path(s.data)}
@@ -163,6 +204,20 @@ export default function LineChart({
             strokeLinecap="round"
           />
         ))}
+
+        {/* Drag-to-zoom selection band. */}
+        {drag && drag.start !== drag.cur && (
+          <rect
+            x={Math.min(x(drag.start), x(drag.cur))}
+            y={pad.top}
+            width={Math.abs(x(drag.cur) - x(drag.start))}
+            height={innerH}
+            fill="var(--accent)"
+            fillOpacity={0.12}
+            stroke="var(--accent)"
+            strokeOpacity={0.4}
+          />
+        )}
 
         {validHover !== null && (
           <g>
@@ -213,7 +268,7 @@ export default function LineChart({
           }}
         >
           <div style={{ color: "var(--muted)", marginBottom: 2 }}>{hoverLabel}</div>
-          {series.map((s) =>
+          {visible.map((s) =>
             s.data[validHover] !== undefined ? (
               <div key={s.label} style={{ color: s.color }}>
                 {s.label}: <b>{formatVal(s.data[validHover])}</b>
@@ -224,12 +279,48 @@ export default function LineChart({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
-        {series.map((s) => (
-          <span key={s.label} style={{ color: s.color, fontSize: 12 }}>
-            ● {s.label}
-          </span>
-        ))}
+      <div style={{ display: "flex", gap: 14, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
+        {series.map((s) => {
+          const off = hidden.has(s.label);
+          return (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() =>
+                setHidden((cur) => {
+                  const n = new Set(cur);
+                  n.has(s.label) ? n.delete(s.label) : n.add(s.label);
+                  return n;
+                })
+              }
+              title={off ? "显示 / show" : "隐藏 / hide"}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                fontSize: 12,
+                color: off ? "var(--muted)" : s.color,
+                opacity: off ? 0.5 : 1,
+                textDecoration: off ? "line-through" : "none",
+                transform: "none",
+                fontWeight: 500,
+              }}
+            >
+              ● {s.label}
+            </button>
+          );
+        })}
+        {zoom && (
+          <button
+            type="button"
+            className="ghost sm"
+            onClick={() => setZoom(null)}
+            style={{ marginLeft: "auto" }}
+          >
+            ⤢ 复位 / reset zoom
+          </button>
+        )}
       </div>
     </div>
   );
