@@ -7,8 +7,9 @@
   --panel-2: #0a101b;
   --border: #1d293d;
   --border-strong: #2d3f5e;
-  --text: #e9eff8;
-  --muted: #7e8da6;
+  --text: #eef3fa;
+  --text-2: #aebbd0;
+  --muted: #6f7d96;
   --accent: #36d6e7;
   --accent-soft: rgba(54, 214, 231, 0.14);
   --accent-2: #7c8cf8;
@@ -32,8 +33,8 @@
   --s5: 24px;
   --s6: 32px;
   --s7: 48px;
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 8px;
+  --radius-sm: 6px;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -41,13 +42,14 @@
 /* Light theme: same instrument language on paper-white surfaces. The accent
    darkens for contrast; status hues deepen similarly. */
 html[data-theme="light"] {
-  --bg: #f2f5f9;
+  --bg: #eef2f7;
   --panel: #ffffff;
-  --panel-2: #f6f8fb;
-  --border: #dbe2ec;
-  --border-strong: #bcc8d8;
-  --text: #16202e;
-  --muted: #5e6c82;
+  --panel-2: #f5f8fc;
+  --border: #dde4ee;
+  --border-strong: #c2cddc;
+  --text: #131c28;
+  --text-2: #41506a;
+  --muted: #6b7890;
   --accent: #0d96a8;
   --accent-soft: rgba(13, 150, 168, 0.16);
   --accent-2: #5667e0;
@@ -152,7 +154,6 @@ a:hover {
 }
 .nav .brand svg {
   color: var(--accent);
-  filter: drop-shadow(0 0 6px rgba(54, 214, 231, 0.55));
 }
 .nav a:not(.brand) {
   position: relative;
@@ -190,14 +191,14 @@ a:hover {
 
 .panel {
   position: relative;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 38%), var(--panel);
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 18px;
-  margin-bottom: 18px;
+  border-radius: var(--radius);
+  padding: var(--s5);
+  margin-bottom: var(--s4);
   box-shadow: var(--shadow-panel);
   transition: border-color 0.2s ease;
-  animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rise 0.4s var(--ease) both;
 }
 .panel:hover {
   border-color: var(--border-strong);
@@ -229,27 +230,18 @@ a:hover {
 }
 
 h1 {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  margin: 0 0 18px;
+  letter-spacing: -0.03em;
+  margin: 0 0 var(--s5);
 }
 h2 {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  margin: 0 0 12px;
-  color: var(--text);
-}
-h2::before {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 8px;
-  border-radius: 2px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  transform: rotate(45deg) translateY(-1px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 var(--s4);
+  color: var(--text-2);
 }
 
 /* --- tables ------------------------------------------------------------ */
@@ -317,8 +309,8 @@ button {
   font: inherit;
   color: var(--text);
   background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   padding: 8px 11px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -337,9 +329,9 @@ textarea {
 }
 label {
   display: block;
-  color: var(--muted);
+  color: var(--text-2);
   font-size: 12.5px;
-  margin: 10px 0 5px;
+  margin: var(--s3) 0 var(--s1);
 }
 
 button {
@@ -353,7 +345,7 @@ button {
 }
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(54, 214, 231, 0.35);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
 }
 button:active:not(:disabled) {
   transform: translateY(0);
@@ -478,10 +470,10 @@ button.sm {
   animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .metric {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 45%), var(--panel-2);
+  background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 13px 14px;
+  border-radius: var(--radius-sm);
+  padding: var(--s3) var(--s4);
   transition: border-color 0.2s ease;
 }
 .metric:hover {
@@ -642,7 +634,7 @@ label.req::after {
 }
 .nav-avatar:hover {
   text-decoration: none;
-  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 10px rgba(54, 214, 231, 0.35);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 /* --- footer ------------------------------------------------------------------ */
@@ -899,8 +891,7 @@ label.req::after {
 }
 .login-mark svg {
   color: var(--accent);
-  filter: drop-shadow(0 0 12px rgba(54, 214, 231, 0.6));
 }
 .login-card .panel {
-  box-shadow: var(--shadow-panel), 0 0 64px rgba(54, 214, 231, 0.06);
+  box-shadow: var(--shadow-panel);
 }
