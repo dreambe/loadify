@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { clearSession, getToken, getUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
@@ -53,8 +53,7 @@ export function PulseMark({ size = 20 }: { size?: number }) {
 
 export default function Nav() {
   const pathname = usePathname();
-  const { t, lang, setLang } = useI18n();
-  const [theme, toggleTheme] = useTheme();
+  const { t } = useI18n();
   // Start from the cached session, then refresh once so the avatar appears
   // for sessions created before avatars existed.
   const [user, setUser] = useState<User | null>(null);
@@ -83,54 +82,119 @@ export default function Nav() {
         <PulseMark />
         Loadify
       </Link>
+      <span className="nav-sep" aria-hidden />
+      {/* Primary loop: run → author → analyze. */}
       {item("/runs", t("nav.runs"))}
       {item("/tests", t("nav.tests"))}
+      {item("/compare", t("nav.compare"))}
+      <span className="nav-sep" aria-hidden />
+      {/* Configuration & automation. */}
       {item("/environments", t("nav.environments"))}
       {item("/schedules", t("nav.schedules"))}
-      {item("/compare", t("nav.compare"))}
+      <span className="nav-sep" aria-hidden />
+      {/* Ops. */}
       {item("/workers", t("nav.workers"))}
-      {user?.role === "admin" && item("/users", t("nav.users"))}
       <span className="spacer" />
-      <button
-        className="secondary"
-        onClick={toggleTheme}
-        title={theme === "dark" ? t("nav.themeLight") : t("nav.themeDark")}
-        aria-label={theme === "dark" ? t("nav.themeLight") : t("nav.themeDark")}
-      >
-        <Icon name={theme === "dark" ? "sun" : "moon"} />
-      </button>
-      <button
-        className="secondary"
-        onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-        title="切换语言 / Switch language"
-      >
-        {lang === "zh" ? "EN" : "中文"}
-      </button>
-      {user && (
-        <Link
-          href="/users"
-          className="nav-avatar"
-          title={`${user.name || user.email} · ${user.role}`}
-        >
-          {user.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className="avatar sm" src={user.avatar_url} alt={user.name || user.email} />
-          ) : (
-            <span className="avatar sm fallback">
-              {(user.name || user.email || "?").trim().charAt(0).toUpperCase()}
-            </span>
-          )}
-        </Link>
-      )}
-      <button
-        className="secondary"
-        onClick={() => {
-          clearSession();
-          window.location.href = "/login";
-        }}
-      >
-        {t("nav.signout")}
-      </button>
+      <AccountMenu user={user} />
     </nav>
+  );
+}
+
+// AccountMenu collapses identity, preferences (theme/language) and sign-out into
+// the avatar — the canonical "account menu" pattern. Navigation and sign-out
+// close the menu; preference toggles keep it open so the change is visible.
+function AccountMenu({ user }: { user: User | null }) {
+  const { t, lang, setLang } = useI18n();
+  const [theme, toggleTheme] = useTheme();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!user) return null;
+  const initial = (user.name || user.email || "?").trim().charAt(0).toUpperCase();
+  const avatar = (cls: string) =>
+    user.avatar_url ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img className={`avatar ${cls}`} src={user.avatar_url} alt={user.name || user.email} />
+    ) : (
+      <span className={`avatar ${cls} fallback`}>{initial}</span>
+    );
+
+  return (
+    <div className="user-menu" ref={ref}>
+      <button
+        className="user-menu-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={user.name || user.email}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {avatar("sm")}
+        <Icon name="chevron" size={13} className={"nav-caret" + (open ? " up" : "")} />
+      </button>
+      {open && (
+        <div className="menu" role="menu">
+          <div className="menu-head">
+            {avatar("")}
+            <div style={{ minWidth: 0 }}>
+              <div className="menu-name">{user.name || user.email}</div>
+              {user.name && <div className="menu-mail">{user.email}</div>}
+              <span className="badge completed" style={{ marginTop: 4 }}>
+                {user.role}
+              </span>
+            </div>
+          </div>
+
+          {user.role === "admin" && (
+            <>
+              <div className="menu-sep" />
+              <Link role="menuitem" className="menu-item" href="/users" onClick={() => setOpen(false)}>
+                {t("nav.users")}
+              </Link>
+            </>
+          )}
+
+          <div className="menu-sep" />
+          <button role="menuitem" className="menu-item" onClick={toggleTheme}>
+            <span>{t("nav.theme")}</span>
+            <span className="menu-val">
+              <Icon name={theme === "dark" ? "moon" : "sun"} size={14} />
+              {theme === "dark" ? t("nav.themeDarkName") : t("nav.themeLightName")}
+            </span>
+          </button>
+          <button role="menuitem" className="menu-item" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
+            <span>{t("nav.language")}</span>
+            <span className="menu-val">{lang === "zh" ? "中文" : "English"}</span>
+          </button>
+
+          <div className="menu-sep" />
+          <button
+            role="menuitem"
+            className="menu-item danger"
+            onClick={() => {
+              clearSession();
+              window.location.href = "/login";
+            }}
+          >
+            {t("nav.signout")}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

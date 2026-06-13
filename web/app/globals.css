@@ -699,14 +699,119 @@ label.req::after {
   height: 30px;
   font-size: 13px;
 }
-.nav-avatar {
+/* Group separator in the nav: distinguishes brand / primary / config / ops. */
+.nav-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  flex: none;
+}
+
+/* Account menu (avatar dropdown): identity + preferences + sign-out. */
+.user-menu {
+  position: relative;
+}
+.user-menu-trigger {
   display: inline-flex;
-  border-radius: 50%;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px 2px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
   transition: box-shadow 0.15s ease;
 }
-.nav-avatar:hover {
-  text-decoration: none;
+.user-menu-trigger:hover {
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.nav-caret {
+  color: var(--muted);
+  transition: transform 0.18s var(--ease);
+}
+.nav-caret.up {
+  transform: rotate(180deg);
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  min-width: 236px;
+  padding: 6px;
+  background: var(--surface-pop);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow-pop);
+  z-index: 40;
+  animation: menu-in 0.16s var(--ease) both;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 10px;
+}
+.menu-name {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-mail {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-item:hover {
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+.menu-item.danger {
+  color: var(--red);
+}
+.menu-item.danger:hover {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+.menu-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
 }
 
 /* --- footer ------------------------------------------------------------------ */

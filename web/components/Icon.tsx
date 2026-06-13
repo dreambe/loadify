@@ -31,6 +31,7 @@ const paths: Record<string, React.ReactNode> = {
   warn: <path d="M12 3 2 20h20L12 3zM12 9v5M12 17.5v.5" />,
   check: <path d="M5 13l4 4L19 7" />,
   x: <path d="M6 6l12 12M18 6 6 18" />,
+  chevron: <path d="M6 9l6 6 6-6" />,
 };
 
 export default function Icon({
