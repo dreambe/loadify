@@ -170,17 +170,46 @@ function AccountMenu({ user }: { user: User | null }) {
           )}
 
           <div className="menu-sep" />
-          <button role="menuitem" className="menu-item" onClick={toggleTheme}>
+          <div className="menu-row">
             <span>{t("nav.theme")}</span>
-            <span className="menu-val">
-              <Icon name={theme === "dark" ? "moon" : "sun"} size={14} />
-              {theme === "dark" ? t("nav.themeDarkName") : t("nav.themeLightName")}
-            </span>
-          </button>
-          <button role="menuitem" className="menu-item" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
+            <div className="seg" role="group" aria-label={t("nav.theme")}>
+              <button
+                className={"seg-btn" + (theme === "light" ? " on" : "")}
+                aria-pressed={theme === "light"}
+                aria-label={t("nav.themeLightName")}
+                onClick={() => theme !== "light" && toggleTheme()}
+              >
+                <Icon name="sun" size={14} />
+              </button>
+              <button
+                className={"seg-btn" + (theme === "dark" ? " on" : "")}
+                aria-pressed={theme === "dark"}
+                aria-label={t("nav.themeDarkName")}
+                onClick={() => theme !== "dark" && toggleTheme()}
+              >
+                <Icon name="moon" size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="menu-row">
             <span>{t("nav.language")}</span>
-            <span className="menu-val">{lang === "zh" ? "中文" : "English"}</span>
-          </button>
+            <div className="seg" role="group" aria-label={t("nav.language")}>
+              <button
+                className={"seg-btn" + (lang === "zh" ? " on" : "")}
+                aria-pressed={lang === "zh"}
+                onClick={() => setLang("zh")}
+              >
+                中
+              </button>
+              <button
+                className={"seg-btn" + (lang === "en" ? " on" : "")}
+                aria-pressed={lang === "en"}
+                onClick={() => setLang("en")}
+              >
+                EN
+              </button>
+            </div>
+          </div>
 
           <div className="menu-sep" />
           <button
