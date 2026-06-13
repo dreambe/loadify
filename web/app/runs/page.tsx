@@ -66,6 +66,7 @@ export default function RunsPage() {
   const [envId, setEnvId] = useState("");
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [err, setErr] = useState("");
+  const [runFilter, setRunFilter] = useState("");
 
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [showSchedules, setShowSchedules] = useState(false);
@@ -129,7 +130,17 @@ export default function RunsPage() {
     refresh();
   }
 
-  const runPager = usePager(runs, 10);
+  // Filter the run history so it stays navigable at scale (by run name, test
+  // name, status or creator), then paginate.
+  const rq = runFilter.trim().toLowerCase();
+  const filteredRuns = rq
+    ? runs.filter((r) =>
+        `${r.name ?? ""} ${testName(r.test_def_id)} ${r.status} ${r.creator_name ?? ""}`
+          .toLowerCase()
+          .includes(rq)
+      )
+    : runs;
+  const runPager = usePager(filteredRuns, 10);
 
   if (!ready) return null;
   const canRun = roleAtLeast(user?.role, "operator");
@@ -272,6 +283,13 @@ export default function RunsPage() {
         {err && <div className="error">{err}</div>}
 
         <div className="panel">
+          <div className="field" style={{ maxWidth: 320, marginBottom: 12 }}>
+            <input
+              value={runFilter}
+              onChange={(e) => setRunFilter(e.target.value)}
+              placeholder={t("runs.filterPh")}
+            />
+          </div>
           <table>
             <thead>
               <tr>
@@ -308,10 +326,10 @@ export default function RunsPage() {
                   )}
                 </tr>
               ))}
-              {runs.length === 0 && (
+              {filteredRuns.length === 0 && (
                 <tr>
                   <td colSpan={canRun ? 6 : 5} className="muted">
-                    {t("runs.empty")}
+                    {runs.length === 0 ? t("runs.empty") : t("runs.noMatch")}
                   </td>
                 </tr>
               )}

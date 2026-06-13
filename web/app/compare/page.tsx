@@ -34,6 +34,7 @@ function CompareInner() {
   const [a, setA] = useState<Side>({ series: [] });
   const [b, setB] = useState<Side>({ series: [] });
   const [hover, setHover] = useState<number | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     api.listRuns().then(setRuns).catch(() => {});
@@ -78,13 +79,27 @@ function CompareInner() {
     );
   }
 
+  // Filter the run list so the pickers stay usable when there are many runs.
+  const q = filter.trim().toLowerCase();
+  const filteredRuns = q
+    ? runs.filter((r) =>
+        `${r.name ?? ""} ${r.id} ${r.status} ${new Date(r.created_at).toLocaleString()}`
+          .toLowerCase()
+          .includes(q)
+      )
+    : runs;
+
   function picker(label: string, value: string, set: (v: string) => void) {
+    // Keep the currently-selected run visible even if it's filtered out.
+    const opts = value && !filteredRuns.some((r) => r.id === value)
+      ? [...runs.filter((r) => r.id === value), ...filteredRuns]
+      : filteredRuns;
     return (
       <div>
         <label>{label}</label>
         <select value={value} onChange={(e) => set(e.target.value)}>
           <option value="">{t("compare.select")}</option>
-          {runs.map((r) => (
+          {opts.map((r) => (
             <option key={r.id} value={r.id}>
               {r.name || r.id.slice(0, 8)} · {r.status} · {new Date(r.created_at).toLocaleString()}
             </option>
@@ -109,6 +124,14 @@ function CompareInner() {
       <div className="container">
         <h1>{t("compare.title")}</h1>
         <div className="panel">
+          <div className="field" style={{ maxWidth: 360 }}>
+            <label>{t("compare.filter")}</label>
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={t("compare.filterPh")}
+            />
+          </div>
           <div className="row">
             {picker(t("compare.runA"), aId, setAId)}
             {picker(t("compare.runB"), bId, setBId)}
