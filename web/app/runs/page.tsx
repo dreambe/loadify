@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import Help from "@/components/Help";
+import Icon from "@/components/Icon";
 import { Pager, usePager } from "@/components/Pager";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
@@ -300,7 +301,7 @@ export default function RunsPage() {
                     <td>
                       <div className="actions">
                         <button className="ghost sm" onClick={() => rerun(r)}>
-                          ↻ {t("runs.rerun")}
+                          <Icon name="rerun" /> {t("runs.rerun")}
                         </button>
                       </div>
                     </td>

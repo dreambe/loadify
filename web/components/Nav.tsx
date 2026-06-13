@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { clearSession, getToken, getUser } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import Icon from "./Icon";
 import type { User } from "@/lib/types";
 
 const THEME_KEY = "loadify_theme";
@@ -93,8 +94,9 @@ export default function Nav() {
         className="secondary"
         onClick={toggleTheme}
         title={theme === "dark" ? t("nav.themeLight") : t("nav.themeDark")}
+        aria-label={theme === "dark" ? t("nav.themeLight") : t("nav.themeDark")}
       >
-        {theme === "dark" ? "☀" : "☾"}
+        <Icon name={theme === "dark" ? "sun" : "moon"} />
       </button>
       <button
         className="secondary"

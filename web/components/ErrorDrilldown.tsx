@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import Icon from "./Icon";
 import type { DrillSample, SeriesPoint } from "@/lib/types";
 
 // ErrorDrilldown lets you inspect what failed after a run: pick an error class
@@ -49,7 +50,7 @@ export default function ErrorDrilldown({
     <div className="panel">
       <h2>{t("drill.title")}</h2>
       <p className="muted" style={{ marginTop: -4, fontSize: 12.5 }}>
-        ⚠ {t("drill.sampledNote")}
+        <Icon name="warn" size={13} /> {t("drill.sampledNote")}
         {totalErrors > 0 ? ` · ${t("drill.approxErrors")}: ~${Math.round(totalErrors)}` : ""}
       </p>
       <div className="row" style={{ gap: 8 }}>

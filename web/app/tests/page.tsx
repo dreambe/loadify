@@ -11,6 +11,7 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
+import Icon from "@/components/Icon";
 import { parseCSV } from "@/lib/csv";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
 import HttpRequestBuilder, {
@@ -311,7 +312,7 @@ export default function TestsPage() {
           {canCreate && (
             <div className="row" style={{ gap: 8 }}>
               <button className="secondary" onClick={() => setImporting(true)}>
-                ⬇ {t("tests.import")}
+                <Icon name="upload" /> {t("tests.import")}
               </button>
               <button
                 onClick={() => {
@@ -472,7 +473,7 @@ export default function TestsPage() {
               <div className="row" style={{ alignItems: "center", marginTop: 8 }}>
                 <span style={{ color: "var(--green)" }}>{ok}</span>
                 <button type="button" onClick={quickRun}>
-                  ▶ {t("tests.runNow")}
+                  <Icon name="play" /> {t("tests.runNow")}
                 </button>
               </div>
             )}
@@ -542,7 +543,7 @@ export default function TestsPage() {
                                   .catch((e) => toast.error(e.message))
                               }
                             >
-                              ▶ {t("tests.run")}
+                              <Icon name="play" /> {t("tests.run")}
                             </button>
                             <button className="ghost sm" onClick={() => loadIntoForm(td, "edit")}>
                               {t("tests.edit")}

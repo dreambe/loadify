@@ -7,10 +7,10 @@ import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
 import { useToast } from "@/components/Toast";
-import type { TrendPoint } from "@/lib/types";
+import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import type { Run, SeriesPoint } from "@/lib/types";
+import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
   const { t } = useI18n();
@@ -95,21 +95,21 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                       .then((res) => (window.location.href = `/runs/${res.run_id}`))
                   }
                 >
-                  ↻ {t("runs.rerun")}
+                  <Icon name="rerun" /> {t("runs.rerun")}
                 </button>
                 <button className="ghost" onClick={setAsBaseline}>
-                  ☆ {t("run.setBaseline")}
+                  <Icon name="star" /> {t("run.setBaseline")}
                 </button>
               </>
             )}
             {terminal && (
               <a className="badge" href={reportURL(runId)} target="_blank" rel="noreferrer">
-                📄 {t("run.report")}
+                <Icon name="report" /> {t("run.report")}
               </a>
             )}
             {terminal && (
               <a className="badge" href={exportCSVURL(runId)} download>
-                ⬇ {t("run.exportCsv")}
+                <Icon name="download" /> {t("run.exportCsv")}
               </a>
             )}
             {run && <span className={`badge ${run.status}`}>{run.status}</span>}
@@ -133,7 +133,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               marginBottom: 12,
             }}
           >
-            🛑 {t("run.autoStopped")}: {run.summary.reason}
+            <Icon name="warn" /> {t("run.autoStopped")}: {run.summary.reason}
           </div>
         )}
 

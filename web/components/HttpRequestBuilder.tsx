@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, type DebugResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
+import Icon from "./Icon";
 
 // Assert mirrors the backend plan.HTTPAssert: one per-request check.
 export interface Assert {
@@ -201,7 +202,7 @@ export default function HttpRequestBuilder({
           />
         </div>
         <button type="button" className="secondary" onClick={runDebug} disabled={!value.url || debugging}>
-          {debugging ? t("debug.sending") : `▶ ${t("debug.send")}`}
+          {debugging ? t("debug.sending") : <><Icon name="play" /> {t("debug.send")}</>}
         </button>
       </div>
 
