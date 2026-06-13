@@ -9,7 +9,7 @@ import { Pager, usePager } from "@/components/Pager";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import type { Environment, Run, Schedule, TestDefinition } from "@/lib/types";
+import type { Environment, Run, TestDefinition } from "@/lib/types";
 
 // TestPicker is a searchable test selector: type to filter, pick from the
 // native datalist. Selection maps the typed label back to the test id.
@@ -68,18 +68,12 @@ export default function RunsPage() {
   const [err, setErr] = useState("");
   const [runFilter, setRunFilter] = useState("");
 
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [showSchedules, setShowSchedules] = useState(false);
-  const [schedTestId, setSchedTestId] = useState("");
-  const [schedInterval, setSchedInterval] = useState(60);
-
   async function refresh() {
     try {
       setRuns(await api.listRuns());
     } catch (e: any) {
       setErr(e.message);
     }
-    api.listSchedules().then(setSchedules).catch(() => {});
   }
 
   useEffect(() => {
@@ -114,20 +108,6 @@ export default function RunsPage() {
     } catch (e: any) {
       setErr(e.message);
     }
-  }
-
-  async function createSchedule() {
-    if (!schedTestId || schedInterval <= 0) return;
-    try {
-      await api.createSchedule(schedTestId, schedInterval, 0);
-      refresh();
-    } catch (e: any) {
-      setErr(e.message);
-    }
-  }
-  async function toggleSchedule(id: string, enabled: boolean) {
-    await api.setScheduleEnabled(id, enabled).catch(() => {});
-    refresh();
   }
 
   // Filter the run history so it stays navigable at scale (by run name, test
@@ -211,73 +191,9 @@ export default function RunsPage() {
         )}
 
         {canRun && (
-          <div className="panel">
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ margin: 0 }}>
-                {t("sched.title")}
-                <Help tip={t("sched.help")} />
-              </h2>
-              <button className="secondary" onClick={() => setShowSchedules((v) => !v)}>
-                {showSchedules ? t("sched.hide") : t("sched.show")}
-                {schedules.length > 0 ? ` (${schedules.length})` : ""}
-              </button>
-            </div>
-            {showSchedules && (
-              <div style={{ marginTop: 12 }}>
-                <div className="row">
-                  <div>
-                    <label>{t("runs.test")}</label>
-                    <TestPicker
-                      tests={tests}
-                      value={schedTestId}
-                      onChange={setSchedTestId}
-                      placeholder={t("runs.searchTest")}
-                      listId="sched-tests"
-                    />
-                  </div>
-                  <div>
-                    <label>{t("sched.every")}</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={schedInterval}
-                      onChange={(e) => setSchedInterval(parseInt(e.target.value || "1", 10))}
-                      style={{ width: 100 }}
-                    />
-                  </div>
-                  <button onClick={createSchedule} disabled={!schedTestId}>
-                    {t("sched.create")}
-                  </button>
-                </div>
-                {schedules.length > 0 && (
-                  <table style={{ marginTop: 12 }}>
-                    <thead>
-                      <tr>
-                        <th>{t("sched.colTest")}</th>
-                        <th>{t("sched.colInterval")}</th>
-                        <th>{t("sched.colNext")}</th>
-                        <th>{t("sched.colState")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {schedules.map((sc) => (
-                        <tr key={sc.id}>
-                          <td>{testName(sc.test_def_id)}</td>
-                          <td>{sc.interval_minutes} min</td>
-                          <td className="muted">{new Date(sc.next_run_at).toLocaleString()}</td>
-                          <td>
-                            <button className="secondary" onClick={() => toggleSchedule(sc.id, !sc.enabled)}>
-                              {sc.enabled ? t("sched.disable") : t("sched.enable")}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            )}
-          </div>
+          <p className="muted" style={{ marginTop: -4 }}>
+            {t("sched.movedHint")} <Link href="/schedules">{t("nav.schedules")}</Link>
+          </p>
         )}
 
         {err && <div className="error">{err}</div>}

@@ -53,6 +53,8 @@ type metaStore interface {
 	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)
 	ListSchedules(ctx context.Context, limit int) ([]postgres.Schedule, error)
 	SetScheduleEnabled(ctx context.Context, id string, enabled bool) error
+	UpdateSchedule(ctx context.Context, id string, intervalMin, desiredWorkers int) error
+	DeleteSchedule(ctx context.Context, id string) error
 	ClaimDueSchedule(ctx context.Context) (*postgres.Schedule, error)
 	SetScheduleLastRun(ctx context.Context, id, runID string) error
 }

@@ -60,6 +60,32 @@ func (s *Store) SetScheduleEnabled(ctx context.Context, id string, enabled bool)
 	return err
 }
 
+// UpdateSchedule changes a schedule's interval and worker count, re-basing the
+// next run off the new interval so the change takes effect promptly.
+func (s *Store) UpdateSchedule(ctx context.Context, id string, intervalMin, desiredWorkers int) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE schedules
+		SET interval_minutes=$2, desired_workers=$3,
+		    next_run_at = now() + ($2 || ' minutes')::interval
+		WHERE id=$1`, id, intervalMin, desiredWorkers)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrScheduleNotFound
+	}
+	return err
+}
+
+// DeleteSchedule removes a schedule.
+func (s *Store) DeleteSchedule(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM schedules WHERE id=$1`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrScheduleNotFound
+	}
+	return err
+}
+
+// ErrScheduleNotFound is returned when a schedule id matches no row.
+var ErrScheduleNotFound = errors.New("postgres: schedule not found")
+
 // ClaimDueSchedule atomically claims one due schedule and advances its
 // next_run_at, so multiple apisrv replicas never double-fire. Returns nil when
 // nothing is due.

@@ -72,6 +72,17 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     }
   }
 
+  async function clearAsBaseline() {
+    if (!run) return;
+    try {
+      await api.clearBaseline(run.test_def_id);
+      toast.success(t("run.baselineCleared"));
+      api.getRun(runId).then(setRun).catch(() => {});
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   if (!ready) return null;
   const canStop = roleAtLeast(user?.role, "operator");
   const baseline = run?.summary?.baseline;
@@ -250,9 +261,16 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <div className="panel">
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <h2 style={{ margin: 0 }}>{t("run.vsBaseline")}</h2>
-                  <span className={`badge ${run?.summary?.regressed ? "failed" : "completed"}`}>
-                    {run?.summary?.regressed ? t("run.regressed") : t("run.noRegress")}
-                  </span>
+                  <div className="row" style={{ alignItems: "center" }}>
+                    <span className={`badge ${run?.summary?.regressed ? "failed" : "completed"}`}>
+                      {run?.summary?.regressed ? t("run.regressed") : t("run.noRegress")}
+                    </span>
+                    {canStop && (
+                      <button className="ghost sm" onClick={clearAsBaseline}>
+                        {t("run.clearBaseline")}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="metrics-grid" style={{ marginTop: 12 }}>
                   <div className="metric">

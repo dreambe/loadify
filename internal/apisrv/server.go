@@ -148,6 +148,8 @@ func (s *Server) routes() {
 		// Schedules: viewer reads, operator manages.
 		r.With(viewer).Get("/schedules", s.handleListSchedules)
 		r.With(operator).Post("/schedules", s.handleCreateSchedule)
+		r.With(operator).Put("/schedules/{id}", s.handleUpdateSchedule)
+		r.With(operator).Delete("/schedules/{id}", s.handleDeleteSchedule)
 		r.With(operator).Post("/schedules/{id}/enabled", s.handleSetScheduleEnabled)
 
 		// User management is admin-only.

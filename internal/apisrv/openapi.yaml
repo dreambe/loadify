@@ -464,6 +464,31 @@ paths:
                 interval_minutes: { type: integer, minimum: 1 }
                 desired_workers: { type: integer }
       responses: { "201": { description: created } }
+  /api/v1/schedules/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [schedules]
+      summary: Update a schedule's interval and worker count (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interval_minutes]
+              properties:
+                interval_minutes: { type: integer, minimum: 1 }
+                desired_workers: { type: integer }
+      responses:
+        "200": { description: updated }
+        "404": { description: not found }
+    delete:
+      tags: [schedules]
+      summary: Delete a schedule (role operator+)
+      responses:
+        "204": { description: deleted }
+        "404": { description: not found }
   /api/v1/schedules/{id}/enabled:
     post:
       tags: [schedules]

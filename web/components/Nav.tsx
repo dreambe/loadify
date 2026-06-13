@@ -86,6 +86,7 @@ export default function Nav() {
       {item("/runs", t("nav.runs"))}
       {item("/tests", t("nav.tests"))}
       {item("/environments", t("nav.environments"))}
+      {item("/schedules", t("nav.schedules"))}
       {item("/compare", t("nav.compare"))}
       {item("/workers", t("nav.workers"))}
       {user?.role === "admin" && item("/users", t("nav.users"))}

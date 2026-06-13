@@ -110,6 +110,8 @@ func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int) (string
 }
 func (f *fakeMeta) ListSchedules(_ context.Context, _ int) ([]postgres.Schedule, error) { return nil, nil }
 func (f *fakeMeta) SetScheduleEnabled(_ context.Context, _ string, _ bool) error        { return nil }
+func (f *fakeMeta) UpdateSchedule(_ context.Context, _ string, _, _ int) error          { return nil }
+func (f *fakeMeta) DeleteSchedule(_ context.Context, _ string) error                    { return nil }
 func (f *fakeMeta) ClaimDueSchedule(_ context.Context) (*postgres.Schedule, error) {
 	if len(f.dueOnce) == 0 {
 		return nil, nil

@@ -54,6 +54,51 @@ func (s *Server) handleListSchedules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, scs)
 }
 
+type updateScheduleReq struct {
+	IntervalMinutes int `json:"interval_minutes"`
+	DesiredWorkers  int `json:"desired_workers"`
+}
+
+func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
+	var req updateScheduleReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if req.IntervalMinutes <= 0 {
+		writeErr(w, http.StatusBadRequest, "interval_minutes must be positive")
+		return
+	}
+	if req.DesiredWorkers <= 0 {
+		req.DesiredWorkers = 1
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if err := s.pg.UpdateSchedule(ctx, chi.URLParam(r, "id"), req.IntervalMinutes, req.DesiredWorkers); err != nil {
+		if err == postgres.ErrScheduleNotFound {
+			writeErr(w, http.StatusNotFound, "schedule not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if err := s.pg.DeleteSchedule(ctx, chi.URLParam(r, "id")); err != nil {
+		if err == postgres.ErrScheduleNotFound {
+			writeErr(w, http.StatusNotFound, "schedule not found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleSetScheduleEnabled(w http.ResponseWriter, r *http.Request) {
 	enabled := r.URL.Query().Get("enabled") != "false"
 	ctx, cancel := withTimeout(r.Context())

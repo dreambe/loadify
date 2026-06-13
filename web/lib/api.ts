@@ -108,6 +108,8 @@ export const api = {
   testTrend: (id: string, n = 20) => reqList<TrendPoint>(`/api/v1/tests/${id}/trend?n=${n}`),
   setBaseline: (testId: string, runId: string) =>
     req<void>(`/api/v1/tests/${testId}/baseline`, { method: "POST", body: JSON.stringify({ run_id: runId }) }),
+  clearBaseline: (testId: string) =>
+    req<void>(`/api/v1/tests/${testId}/baseline`, { method: "POST", body: JSON.stringify({ run_id: "" }) }),
   importTest: (format: string, content: string) =>
     req<{ name: string; protocol: string; plan: unknown }>("/api/v1/tests/import", {
       method: "POST",
@@ -156,6 +158,12 @@ export const api = {
     }),
   setScheduleEnabled: (id: string, enabled: boolean) =>
     req<{ enabled: boolean }>(`/api/v1/schedules/${id}/enabled?enabled=${enabled}`, { method: "POST" }),
+  updateSchedule: (id: string, intervalMinutes: number, desiredWorkers: number) =>
+    req<void>(`/api/v1/schedules/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ interval_minutes: intervalMinutes, desired_workers: desiredWorkers }),
+    }),
+  deleteSchedule: (id: string) => req<void>(`/api/v1/schedules/${id}`, { method: "DELETE" }),
 
   listAudit: (limit = 200) => reqList<AuditEntry>(`/api/v1/audit?limit=${limit}`),
 
