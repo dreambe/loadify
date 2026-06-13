@@ -53,6 +53,8 @@ export interface RunSummary {
   checks?: ThresholdCheck[];
   auto_stopped?: boolean;
   reason?: string;
+  metrics_degraded?: boolean;
+  metrics_error?: string;
   regressed?: boolean;
   baseline?: {
     run_id: string;

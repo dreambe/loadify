@@ -6,6 +6,7 @@ import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
+import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast } from "@/lib/auth";
@@ -73,6 +74,10 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   if (!ready) return null;
   const canStop = roleAtLeast(user?.role, "operator");
   const baseline = run?.summary?.baseline;
+  // The closed (VU) model's latency is optimistic under saturation (coordinated
+  // omission); flag it so the curve discloses its own caveat. QPS/arrival-rate
+  // runs are not affected.
+  const vuMode = isVuMode(run?.test_snapshot);
 
   // X-axis: elapsed test time from the first series point.
   const seriesBase = series.length > 0 ? new Date(series[0].ts).getTime() : 0;
@@ -136,6 +141,21 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             <Icon name="warn" /> {t("run.autoStopped")}: {run.summary.reason}
           </div>
         )}
+        {run?.summary?.metrics_degraded && (
+          <div
+            className="error"
+            style={{
+              background: "rgba(255,200,87,.12)",
+              border: "1px solid var(--yellow)",
+              color: "var(--yellow)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: 12,
+            }}
+          >
+            <Icon name="warn" /> {t("run.metricsDegraded")}
+          </div>
+        )}
 
         {run?.status === "running" && canStop && (
           <button
@@ -160,7 +180,14 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               />
             </div>
             <div className="panel">
-              <h2>{t("run.latency")}</h2>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <h2 style={{ margin: 0 }}>
+                  {t("run.latency")}
+                  {vuMode && <Help tip={t("run.coOmissionNote")} />}
+                </h2>
+                {vuMode && <span className="badge queued">{t("run.coOmissionBadge")}</span>}
+              </div>
+              <div style={{ height: 12 }} />
               <LineChart
                 unit="ms"
                 series={[
@@ -296,6 +323,15 @@ function SummaryReport({ run, t }: { run: Run; t: (k: string) => string }) {
 
 // SnapshotPanel shows the test definition as it was when the run started, so a
 // run stays self-describing even after the test is edited or deleted.
+// isVuMode reports whether a run used the closed (VU) load model. The open
+// (QPS/arrival-rate) model is indicated by any ramp stage carrying target_rps;
+// absent a snapshot we default to true so the honest caveat is shown.
+function isVuMode(snapshot: any): boolean {
+  const stages = snapshot?.ramp;
+  if (!Array.isArray(stages)) return true;
+  return !stages.some((s: any) => (s?.target_rps ?? 0) > 0);
+}
+
 function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => string }) {
   const [open, setOpen] = useState(false);
   const plan = snapshot?.plan ?? {};

@@ -467,7 +467,12 @@ func (s *Server) finalizeRunReason(runID, status, reason string) {
 	summary, total, serr := s.ch.Summary(sctx, runID)
 	payload := map[string]any{"total_requests": total, "summary": summary}
 	if serr != nil {
+		// A metrics-store failure must never be silent: the run still finalizes
+		// (so it doesn't hang "running" forever), but it is flagged so the UI can
+		// warn that the numbers are incomplete and not a basis for conclusions.
 		s.log.Warn("run summary failed", "run", runID, "err", serr)
+		payload["metrics_degraded"] = true
+		payload["metrics_error"] = serr.Error()
 	}
 	if reason != "" {
 		payload["auto_stopped"] = true
