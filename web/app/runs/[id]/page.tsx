@@ -11,6 +11,7 @@ import { useToast } from "@/components/Toast";
 import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { chartColor, latencyColors } from "@/lib/colors";
 import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
@@ -173,7 +174,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             <div className="panel">
               <h2>{t("run.throughput")}</h2>
               <LineChart
-                series={[{ label: "qps", color: "#36d6e7", data: series.map((p) => p.rps) }]}
+                series={[{ label: "qps", color: chartColor.accent, data: series.map((p) => p.rps) }]}
                 xLabels={xLabels}
                 hoverIndex={hover}
                 onHover={setHover}
@@ -191,10 +192,10 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <LineChart
                 unit="ms"
                 series={[
-                  { label: "p50", color: "#3ddc97", data: series.map((p) => p.p50_ms) },
-                  { label: "p90", color: "#7c8cf8", data: series.map((p) => p.p90_ms) },
-                  { label: "p95", color: "#ffc857", data: series.map((p) => p.p95_ms) },
-                  { label: "p99", color: "#ff5d73", data: series.map((p) => p.p99_ms) },
+                  { label: "p50", color: latencyColors.p50, data: series.map((p) => p.p50_ms) },
+                  { label: "p90", color: latencyColors.p90, data: series.map((p) => p.p90_ms) },
+                  { label: "p95", color: latencyColors.p95, data: series.map((p) => p.p95_ms) },
+                  { label: "p99", color: latencyColors.p99, data: series.map((p) => p.p99_ms) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}
@@ -204,8 +205,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             <div className="panel">
               <h2>{t("run.errorRate")}</h2>
               <LineChart
+                unit="%"
                 series={[
-                  { label: "errors", color: "#ff5d73", data: series.map((p) => p.error_rate * 100) },
+                  { label: "errors", color: chartColor.red, data: series.map((p) => p.error_rate * 100) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}
@@ -272,7 +274,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 <h2>{t("run.trend")}</h2>
                 <LineChart
                   unit="ms"
-                  series={[{ label: "p95", color: "#36d6e7", data: trend.map((p) => p.metrics.p95_ms) }]}
+                  series={[{ label: "p95", color: chartColor.accent, data: trend.map((p) => p.metrics.p95_ms) }]}
                   xLabels={trend.map((p) => (p.ended_at ? new Date(p.ended_at).toLocaleDateString() : ""))}
                 />
                 <p className="muted" style={{ fontSize: 12 }}>{t("run.trendHint")}</p>

@@ -101,7 +101,7 @@ function LoadBar({ pct }: { pct: number }) {
   const color = clamped >= 85 ? "var(--red)" : clamped >= 60 ? "var(--yellow)" : "var(--green)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 80, height: 8, background: "#0d1117", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
+      <div style={{ width: 80, height: 8, background: "var(--panel-2)", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
         <div style={{ width: `${clamped}%`, height: "100%", background: color }} />
       </div>
       <span className="muted" style={{ fontSize: 12 }}>{pct.toFixed(0)}%</span>

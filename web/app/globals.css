@@ -20,7 +20,10 @@
   --glow-1: rgba(54, 214, 231, 0.07);
   --glow-2: rgba(124, 140, 248, 0.06);
   --grid-line: rgba(126, 141, 166, 0.045);
-  --font-ui: var(--font-grotesk), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+  --chart-grid: rgba(126, 141, 166, 0.14);
+  /* Opaque elevated surface for popovers/tooltips/toasts (theme-aware). */
+  --surface-pop: rgba(10, 16, 27, 0.96);
+  --font-ui: var(--font-grotesk), "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
     ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -60,6 +63,8 @@ html[data-theme="light"] {
   --glow-1: rgba(13, 150, 168, 0.07);
   --glow-2: rgba(86, 103, 224, 0.06);
   --grid-line: rgba(94, 108, 130, 0.07);
+  --chart-grid: rgba(94, 108, 130, 0.18);
+  --surface-pop: rgba(255, 255, 255, 0.98);
   --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 18px rgba(22, 32, 46, 0.07);
 }
 
@@ -218,6 +223,21 @@ a:hover {
   from {
     opacity: 0;
     transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Subtle per-route fade/rise, replayed on navigation (see PageTransition). */
+.page-enter {
+  animation: page-enter 0.28s var(--ease) both;
+}
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -563,7 +583,7 @@ button.sm {
   max-width: 320px;
   padding: 8px 11px;
   border-radius: 8px;
-  background: rgba(10, 16, 27, 0.96);
+  background: var(--surface-pop);
   border: 1px solid var(--border-strong);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   color: var(--text);
@@ -799,7 +819,7 @@ label.req::after {
   gap: var(--s2);
   padding: var(--s3) var(--s4);
   border-radius: var(--radius-sm);
-  background: rgba(10, 16, 27, 0.96);
+  background: var(--surface-pop);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-pop);
   color: var(--text);

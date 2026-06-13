@@ -162,7 +162,7 @@ export default function LineChart({
               x2={width - pad.right}
               y1={y(v)}
               y2={y(v)}
-              stroke="rgba(126,141,166,0.14)"
+              stroke="var(--chart-grid)"
               strokeWidth={1}
             />
             <text
@@ -254,7 +254,7 @@ export default function LineChart({
             position: "absolute",
             top: 8,
             [tooltipRight ? "left" : "right"]: 16,
-            background: "rgba(10, 16, 27, 0.85)",
+            background: "color-mix(in srgb, var(--panel) 88%, transparent)",
             backdropFilter: "blur(8px)",
             WebkitBackdropFilter: "blur(8px)",
             border: "1px solid var(--border-strong)",
@@ -264,7 +264,7 @@ export default function LineChart({
             fontFamily: "var(--font-mono)",
             fontVariantNumeric: "tabular-nums",
             pointerEvents: "none",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            boxShadow: "var(--shadow-pop)",
           }}
         >
           <div style={{ color: "var(--muted)", marginBottom: 2 }}>{hoverLabel}</div>

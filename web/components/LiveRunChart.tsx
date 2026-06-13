@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { liveSocketURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { LiveTick, LogSample } from "@/lib/types";
+import { chartColor, latencyColors } from "@/lib/colors";
 import LineChart, { formatElapsed } from "./LineChart";
 
 const MAX_POINTS = 120;
@@ -77,7 +78,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
       <div className="panel" style={{ marginTop: 16 }}>
         <h2>{t("run.throughput")}</h2>
         <LineChart
-          series={[{ label: "qps", color: "#36d6e7", data: ticks.map((tk) => tk.rps) }]}
+          series={[{ label: "qps", color: chartColor.accent, data: ticks.map((tk) => tk.rps) }]}
           xLabels={xLabels}
           hoverIndex={hover}
           onHover={setHover}
@@ -89,10 +90,10 @@ export default function LiveRunChart({ runId }: { runId: string }) {
         <LineChart
           unit="ms"
           series={[
-            { label: "p50", color: "#3ddc97", data: ticks.map((tk) => tk.p50_ms) },
-            { label: "p90", color: "#7c8cf8", data: ticks.map((tk) => tk.p90_ms) },
-            { label: "p95", color: "#ffc857", data: ticks.map((tk) => tk.p95_ms) },
-            { label: "p99", color: "#ff5d73", data: ticks.map((tk) => tk.p99_ms) },
+            { label: "p50", color: latencyColors.p50, data: ticks.map((tk) => tk.p50_ms) },
+            { label: "p90", color: latencyColors.p90, data: ticks.map((tk) => tk.p90_ms) },
+            { label: "p95", color: latencyColors.p95, data: ticks.map((tk) => tk.p95_ms) },
+            { label: "p99", color: latencyColors.p99, data: ticks.map((tk) => tk.p99_ms) },
           ]}
           xLabels={xLabels}
           hoverIndex={hover}
@@ -103,8 +104,9 @@ export default function LiveRunChart({ runId }: { runId: string }) {
       <div className="panel">
         <h2>{t("run.errorRate")}</h2>
         <LineChart
+          unit="%"
           series={[
-            { label: "errors", color: "#ff5d73", data: ticks.map((tk) => tk.error_rate * 100) },
+            { label: "errors", color: chartColor.red, data: ticks.map((tk) => tk.error_rate * 100) },
           ]}
           xLabels={xLabels}
           hoverIndex={hover}

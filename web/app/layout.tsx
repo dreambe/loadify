@@ -3,6 +3,7 @@ import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
 import Footer from "@/components/Footer";
+import PageTransition from "@/components/PageTransition";
 import { ToastProvider } from "@/components/Toast";
 import { ConfirmProvider } from "@/components/Confirm";
 
@@ -32,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <LocaleProvider>
           <ToastProvider>
             <ConfirmProvider>
-              <div style={{ minHeight: "calc(100vh - 90px)" }}>{children}</div>
+              <PageTransition>{children}</PageTransition>
               <Footer />
             </ConfirmProvider>
           </ToastProvider>
