@@ -177,7 +177,12 @@ a:hover {
   bottom: -14px;
   height: 2px;
   background: linear-gradient(90deg, var(--accent), transparent);
-  box-shadow: 0 0 10px rgba(54, 214, 231, 0.7);
+  transform-origin: left;
+  animation: underline 0.28s var(--ease) both;
+}
+@keyframes underline {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
 }
 .nav .spacer {
   flex: 1;
@@ -234,6 +239,7 @@ h1 {
   font-weight: 700;
   letter-spacing: -0.03em;
   margin: 0 0 var(--s5);
+  animation: rise 0.4s var(--ease) both;
 }
 h2 {
   font-size: 13px;
@@ -289,9 +295,21 @@ td .actions {
 }
 tbody tr {
   transition: background 0.12s ease;
+  animation: row-in 0.32s var(--ease) both;
 }
+/* Stagger the first rows in for a quick "results landing" feel. */
+tbody tr:nth-child(1) { animation-delay: 0.02s; }
+tbody tr:nth-child(2) { animation-delay: 0.05s; }
+tbody tr:nth-child(3) { animation-delay: 0.08s; }
+tbody tr:nth-child(4) { animation-delay: 0.11s; }
+tbody tr:nth-child(5) { animation-delay: 0.14s; }
+tbody tr:nth-child(6) { animation-delay: 0.17s; }
 tbody tr:hover {
-  background: rgba(54, 214, 231, 0.04);
+  background: rgba(54, 214, 231, 0.05);
+}
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 tbody tr:last-child td {
   border-bottom: none;
@@ -348,7 +366,7 @@ button:hover:not(:disabled) {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
 }
 button:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.985);
 }
 button:focus-visible {
   outline: none;
@@ -394,6 +412,14 @@ button.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--red) 14%, transparent);
   box-shadow: none;
   transform: none;
+}
+/* In dense rows a danger action reads as a quiet red ghost until hovered. */
+button.danger.sm {
+  border-color: transparent;
+  font-weight: 500;
+}
+button.danger.sm:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
 }
 /* Small size for dense table rows. */
 button.sm {
@@ -474,10 +500,19 @@ button.sm {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: var(--s3) var(--s4);
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+  animation: rise 0.36s var(--ease) both;
 }
+.metric:nth-child(2) { animation-delay: 0.03s; }
+.metric:nth-child(3) { animation-delay: 0.06s; }
+.metric:nth-child(4) { animation-delay: 0.09s; }
+.metric:nth-child(5) { animation-delay: 0.12s; }
+.metric:nth-child(6) { animation-delay: 0.15s; }
+.metric:nth-child(7) { animation-delay: 0.18s; }
+.metric:nth-child(8) { animation-delay: 0.21s; }
 .metric:hover {
   border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 .metric .label {
   color: var(--muted);
@@ -867,12 +902,12 @@ label.req::after {
 /* --- login ------------------------------------------------------------------ */
 
 .login-shell {
-  /* Leave room for the footer so it shows without scrolling, while staying
-     centered and never crushing the card on short screens. */
-  min-height: calc(100vh - 78px);
+  /* Fill exactly the area above the footer so the card is truly centered and
+     the page never overflows into a scroll. */
+  min-height: calc(100vh - 92px);
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--s5);
 }
 .login-card {
   width: 100%;
