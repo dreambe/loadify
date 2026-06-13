@@ -39,6 +39,12 @@ type metaStore interface {
 	SetUserWebhooks(ctx context.Context, id string, urls []string) error
 	DeleteUser(ctx context.Context, id string) error
 
+	ListEnvironments(ctx context.Context, limit int) ([]postgres.Environment, error)
+	GetEnvironment(ctx context.Context, id string) (*postgres.Environment, error)
+	CreateEnvironment(ctx context.Context, name string, vars map[string]string, createdBy *string) (string, error)
+	UpdateEnvironment(ctx context.Context, id, name string, vars map[string]string) error
+	DeleteEnvironment(ctx context.Context, id string) error
+
 	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)
 	ListSchedules(ctx context.Context, limit int) ([]postgres.Schedule, error)
 	SetScheduleEnabled(ctx context.Context, id string, enabled bool) error

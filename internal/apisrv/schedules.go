@@ -94,7 +94,7 @@ func (s *Server) fireDueSchedules(ctx context.Context) {
 			cancel()
 			return // nothing due
 		}
-		runID, st, err := s.launchRun(cctx, sc.TestDefID, sc.DesiredWorkers, "", nil)
+		runID, st, err := s.launchRun(cctx, sc.TestDefID, sc.DesiredWorkers, "", nil, "")
 		if err != nil {
 			s.log.Warn("scheduler: launch failed", "schedule", sc.ID, "err", err)
 		} else {

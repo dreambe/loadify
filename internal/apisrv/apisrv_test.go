@@ -84,6 +84,17 @@ func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error) 
 func (f *fakeMeta) CreateUser(_ context.Context, email, name, role, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "new", Email: email, Name: name, Role: role}, nil
 }
+func (f *fakeMeta) ListEnvironments(_ context.Context, _ int) ([]postgres.Environment, error) {
+	return nil, nil
+}
+func (f *fakeMeta) GetEnvironment(_ context.Context, id string) (*postgres.Environment, error) {
+	return &postgres.Environment{ID: id, Name: "dev", Vars: map[string]string{"base_url": "http://dev.example.com"}}, nil
+}
+func (f *fakeMeta) CreateEnvironment(_ context.Context, _ string, _ map[string]string, _ *string) (string, error) {
+	return "env-1", nil
+}
+func (f *fakeMeta) UpdateEnvironment(_ context.Context, _, _ string, _ map[string]string) error { return nil }
+func (f *fakeMeta) DeleteEnvironment(_ context.Context, _ string) error                          { return nil }
 func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int) (string, error) {
 	return "sched-1", nil
 }

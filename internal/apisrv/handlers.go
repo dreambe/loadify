@@ -196,6 +196,7 @@ type startRunReq struct {
 	TestID         string `json:"test_id"`
 	Name           string `json:"name"`
 	DesiredWorkers int    `json:"desired_workers"`
+	EnvironmentID  string `json:"environment_id"`
 }
 
 func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +208,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 
-	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers, req.Name, callerID(r))
+	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers, req.Name, callerID(r), req.EnvironmentID)
 	if err != nil {
 		writeErr(w, statusCodeFor(err), err.Error())
 		return
@@ -218,7 +219,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 // launchRun starts a run for a test definition and returns its id and status
 // ("running"/"queued"). Shared by the REST handler and the scheduler. An empty
 // name falls back to "<test name> @ <time>"; createdBy is nil for the scheduler.
-func (s *Server) launchRun(ctx context.Context, testID string, workers int, name string, createdBy *string) (string, string, error) {
+func (s *Server) launchRun(ctx context.Context, testID string, workers int, name string, createdBy *string, envID string) (string, string, error) {
 	td, err := s.pg.GetTestDefinition(ctx, testID)
 	if err != nil {
 		return "", "", errNotFound("test not found")
@@ -226,7 +227,24 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	if td.Archived {
 		return "", "", errBadRequest("test has been deleted")
 	}
-	p, err := plan.Parse(td.PlanJSON)
+
+	// Resolve a user-defined environment and substitute {{KEY}} placeholders
+	// across the raw plan JSON and script before anything is parsed/dispatched,
+	// so every protocol — not just scenarios — gets environment variables.
+	planJSON := td.PlanJSON
+	scriptJS := td.ScriptJS
+	var envName string
+	if envID != "" {
+		env, eerr := s.pg.GetEnvironment(ctx, envID)
+		if eerr != nil {
+			return "", "", errBadRequest("environment not found")
+		}
+		envName = env.Name
+		planJSON = json.RawMessage(substituteEnv(string(td.PlanJSON), env.Vars))
+		scriptJS = substituteEnv(td.ScriptJS, env.Vars)
+	}
+
+	p, err := plan.Parse(planJSON)
 	if err != nil {
 		return "", "", errBadRequest(err.Error())
 	}
@@ -248,7 +266,7 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	}
 
 	var script *loadifyv1.ScriptBundle
-	mainJS := td.ScriptJS
+	mainJS := scriptJS
 	if p.Protocol == plan.Scenario {
 		// Scenarios compile to a script and run on the script driver.
 		js, cerr := scriptpkg.CompileScenario(p.Scenario)
@@ -263,14 +281,18 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 			script.Modules = map[string]string{"__data__": string(td.DataJSON)}
 		}
 	}
-	resp, err := s.coord.StartRun(ctx, &loadifyv1.StartRunRequest{
+	startReq := &loadifyv1.StartRunRequest{
 		RunId:          runID,
 		Protocol:       protoEnum(p.Protocol),
-		PlanJson:       td.PlanJSON,
+		PlanJson:       planJSON,
 		Ramp:           ramp,
 		Script:         script,
 		DesiredWorkers: int32(workers),
-	})
+	}
+	if envName != "" {
+		startReq.Env = map[string]string{"__environment__": envName}
+	}
+	resp, err := s.coord.StartRun(ctx, startReq)
 	if err != nil {
 		_, _ = s.pg.FinishRun(context.Background(), runID, "failed", json.RawMessage(`{"error":"dispatch failed"}`))
 		return "", "", errUnavailable(err.Error())

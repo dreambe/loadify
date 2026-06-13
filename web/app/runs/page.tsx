@@ -8,7 +8,7 @@ import { Pager, usePager } from "@/components/Pager";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import type { Run, Schedule, TestDefinition } from "@/lib/types";
+import type { Environment, Run, Schedule, TestDefinition } from "@/lib/types";
 
 // TestPicker is a searchable test selector: type to filter, pick from the
 // native datalist. Selection maps the typed label back to the test id.
@@ -62,6 +62,8 @@ export default function RunsPage() {
   const [testId, setTestId] = useState("");
   const [runName, setRunName] = useState("");
   const [workers, setWorkers] = useState(1);
+  const [envId, setEnvId] = useState("");
+  const [envs, setEnvs] = useState<Environment[]>([]);
   const [err, setErr] = useState("");
 
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -82,6 +84,7 @@ export default function RunsPage() {
     if (!ready) return;
     refresh();
     api.listTests().then(setTests).catch(() => {});
+    api.listEnvironments().then(setEnvs).catch(() => {});
     const t = setInterval(refresh, 4000);
     return () => clearInterval(t);
   }, [ready]);
@@ -92,7 +95,7 @@ export default function RunsPage() {
     if (!testId) return;
     setErr("");
     try {
-      const res = await api.startRun(testId, workers, runName);
+      const res = await api.startRun(testId, workers, runName, envId);
       window.location.href = `/runs/${res.run_id}`;
     } catch (e: any) {
       setErr(e.message);
@@ -172,6 +175,22 @@ export default function RunsPage() {
                   style={{ width: 90 }}
                 />
               </div>
+              {envs.length > 0 && (
+                <div>
+                  <label>
+                    {t("runs.environment")}
+                    <Help tip={t("runs.environmentHelp")} />
+                  </label>
+                  <select value={envId} onChange={(e) => setEnvId(e.target.value)}>
+                    <option value="">{t("runs.noEnv")}</option>
+                    {envs.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <button onClick={start} disabled={!testId}>
                 {t("runs.startBtn")}
               </button>

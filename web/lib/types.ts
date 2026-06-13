@@ -125,6 +125,15 @@ export interface GroupTick {
   p99_ms: number;
 }
 
+// Environment is a user-defined named set of variables for {{KEY}} substitution.
+export interface Environment {
+  id: string;
+  name: string;
+  vars: Record<string, string>;
+  creator_name?: string;
+  created_at: string;
+}
+
 // DrillSample is one persisted sampled request for post-run error drill-down.
 export interface DrillSample {
   ts: string;

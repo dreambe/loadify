@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { DrillSample, Run, Schedule, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
+import type { DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
@@ -113,10 +113,15 @@ export const api = {
 
   listRuns: () => reqList<Run>("/api/v1/runs"),
   getRun: (id: string) => req<Run>(`/api/v1/runs/${id}`),
-  startRun: (testId: string, desiredWorkers: number, name = "") =>
+  startRun: (testId: string, desiredWorkers: number, name = "", environmentId = "") =>
     req<{ run_id: string; status: string }>("/api/v1/runs", {
       method: "POST",
-      body: JSON.stringify({ test_id: testId, desired_workers: desiredWorkers, name }),
+      body: JSON.stringify({
+        test_id: testId,
+        desired_workers: desiredWorkers,
+        name,
+        environment_id: environmentId || undefined,
+      }),
     }),
   stopRun: (id: string) =>
     req<{ run_id: string; status: string }>(`/api/v1/runs/${id}/stop`, { method: "POST" }),
@@ -130,6 +135,13 @@ export const api = {
     if (filter.limit) q.set("limit", String(filter.limit));
     return req<{ sampled: boolean; samples: DrillSample[] }>(`/api/v1/runs/${id}/samples?${q.toString()}`);
   },
+
+  listEnvironments: () => reqList<Environment>("/api/v1/environments"),
+  createEnvironment: (name: string, vars: Record<string, string>) =>
+    req<{ id: string }>("/api/v1/environments", { method: "POST", body: JSON.stringify({ name, vars }) }),
+  updateEnvironment: (id: string, name: string, vars: Record<string, string>) =>
+    req<void>(`/api/v1/environments/${id}`, { method: "PUT", body: JSON.stringify({ name, vars }) }),
+  deleteEnvironment: (id: string) => req<void>(`/api/v1/environments/${id}`, { method: "DELETE" }),
 
   listWorkers: () => reqList<WorkerInfo>("/api/v1/workers"),
 
