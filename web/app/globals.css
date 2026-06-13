@@ -230,6 +230,23 @@ a:hover {
   }
 }
 
+/* Tag chips on the tests list — click to filter by that tag. */
+.tag-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.tag-chip:hover {
+  border-color: var(--accent);
+}
+
 /* Subtle per-route fade/rise, replayed on navigation (see PageTransition). */
 .page-enter {
   animation: page-enter 0.28s var(--ease) both;

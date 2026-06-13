@@ -84,6 +84,7 @@ export const api = {
     script?: string;
     thresholds?: unknown;
     dataset?: unknown;
+    tags?: string[];
   }) => req<{ id: string }>("/api/v1/tests", { method: "POST", body: JSON.stringify(body) }),
   updateTest: (
     id: string,
@@ -95,6 +96,7 @@ export const api = {
       script?: string;
       thresholds?: unknown;
       dataset?: unknown;
+      tags?: string[];
     }
   ) => req<void>(`/api/v1/tests/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteTest: (id: string) => req<void>(`/api/v1/tests/${id}`, { method: "DELETE" }),

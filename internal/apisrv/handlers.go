@@ -62,6 +62,7 @@ type createTestReq struct {
 	Script     string          `json:"script,omitempty"`
 	Thresholds json.RawMessage `json:"thresholds,omitempty"`
 	Dataset    json.RawMessage `json:"dataset,omitempty"`
+	Tags       []string        `json:"tags,omitempty"`
 }
 
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +86,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		ScriptJS:   req.Script,
 		Thresholds: req.Thresholds,
 		DataJSON:   req.Dataset,
+		Tags:       normalizeTags(req.Tags),
 		CreatedBy:  callerID(r),
 	})
 	if err != nil {
@@ -116,12 +118,32 @@ func (s *Server) handleUpdateTest(w http.ResponseWriter, r *http.Request) {
 		ScriptJS:   req.Script,
 		Thresholds: req.Thresholds,
 		DataJSON:   req.Dataset,
+		Tags:       normalizeTags(req.Tags),
 	})
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// normalizeTags trims, de-dupes and drops empty tags, capping the count so the
+// label set stays a lightweight grouping aid rather than free-form metadata.
+func normalizeTags(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, t := range in {
+		t = strings.TrimSpace(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+		if len(out) >= 12 {
+			break
+		}
+	}
+	return out
 }
 
 // handleDeleteTest archives a test definition: it disappears from lists and

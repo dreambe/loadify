@@ -75,3 +75,8 @@
 - **JWT 存 localStorage**:已加 CSP/安全头收敛 XSS 面;迁移到 httpOnly cookie + 令牌吊销
   是更大改动,单列。
 - **goja(非 V8)**:CPU 密集脚本的单机 VU 密度有上限,架构取舍,不更换。
+- **项目/工作区隔离(多租户分组)**:当前所有用例/任务/环境在一个全局扁平命名空间,
+  无法按团队/项目隔离。完整方案需新 `projects` 表 + `project_id` 外键贯穿
+  tests/runs/environments/schedules/baseline + 项目级 RBAC + 全站列表 scoping + 导航
+  项目切换器,爆炸半径覆盖几乎所有查询与页面,单列下一轮。**本轮已落地轻量前置:用例
+  标签(tags)+ 按标签过滤**,以低风险拿到大部分「组织海量用例」的价值。

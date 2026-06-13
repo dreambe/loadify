@@ -20,6 +20,7 @@ export interface TestDefinition {
   script?: string;
   thresholds?: Threshold[];
   dataset?: unknown;
+  tags?: string[];
   created_by?: string;
   creator_name?: string;
   created_at: string;

@@ -90,6 +90,7 @@ export default function TestsPage() {
   const [thresholds, setThresholds] = useState<Threshold[]>([{ metric: "p95_ms", op: "<", value: 200 }]);
   const [script, setScript] = useState("");
   const [dataset, setDataset] = useState("");
+  const [tags, setTags] = useState("");
   const [autoStop, setAutoStop] = useState(true);
   const [autoStopPct, setAutoStopPct] = useState(50);
   const [importing, setImporting] = useState(false);
@@ -111,7 +112,11 @@ export default function TestsPage() {
   }, [ready]);
 
   const filtered = filter
-    ? tests.filter((td) => (td.name + td.protocol + (td.creator_name || "")).toLowerCase().includes(filter.toLowerCase()))
+    ? tests.filter((td) =>
+        (td.name + td.protocol + (td.creator_name || "") + " " + (td.tags || []).join(" "))
+          .toLowerCase()
+          .includes(filter.toLowerCase())
+      )
     : tests;
   const pager = usePager(filtered, 10);
 
@@ -127,6 +132,7 @@ export default function TestsPage() {
     setThresholds([{ metric: "p95_ms", op: "<", value: 200 }]);
     setScript("");
     setDataset("");
+    setTags("");
     setAutoStop(true);
     setAutoStopPct(50);
   }
@@ -152,6 +158,7 @@ export default function TestsPage() {
     setThresholds(td.thresholds && td.thresholds.length ? td.thresholds : []);
     setScript(td.script || "");
     setDataset(td.dataset ? JSON.stringify(td.dataset, null, 2) : "");
+    setTags((td.tags || []).join(", "));
     const as = (td.plan as any)?.auto_stop;
     setAutoStop(!as || as.enabled !== false);
     setAutoStopPct(as?.error_rate_pct || 50);
@@ -283,6 +290,7 @@ export default function TestsPage() {
       script: script || undefined,
       thresholds,
       dataset: datasetObj,
+      tags: tags.split(",").map((s) => s.trim()).filter(Boolean),
     };
     try {
       if (editingId) {
@@ -349,6 +357,13 @@ export default function TestsPage() {
               <div className="field span-2">
                 <label className="req">{t("tests.name")}</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} required />
+              </div>
+              <div className="field span-2">
+                <label>
+                  {t("tests.tags")}
+                  <Help tip={t("tests.tagsHelp")} />
+                </label>
+                <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t("tests.tagsPh")} />
               </div>
               <div className="field">
                 <label>{t("tests.protocol")}</label>
@@ -527,7 +542,24 @@ export default function TestsPage() {
                 <tbody>
                   {pager.slice.map((td) => (
                     <tr key={td.id}>
-                      <td>{td.name}</td>
+                      <td>
+                        {td.name}
+                        {td.tags && td.tags.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                            {td.tags.map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                className="tag-chip"
+                                onClick={() => setFilter(tag)}
+                                title={t("tests.tagFilter")}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="muted">{td.protocol}</td>
                       <td className="muted">{td.creator_name || "–"}</td>
                       <td className="muted">{new Date(td.created_at).toLocaleString()}</td>

@@ -62,6 +62,7 @@ type TestDefinition struct {
 	CreatorName   string          `json:"creator_name,omitempty"`
 	Archived      bool            `json:"archived,omitempty"`
 	BaselineRunID *string         `json:"baseline_run_id,omitempty"`
+	Tags          []string        `json:"tags,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
@@ -105,10 +106,14 @@ func (s *Store) CreateTestDefinition(ctx context.Context, td *TestDefinition) (s
 	if len(td.DataJSON) > 0 {
 		dataset = td.DataJSON
 	}
+	tags := td.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO test_definitions (name, protocol, plan_json, ramp_json, script_js, thresholds_json, data_json, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-		td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset, td.CreatedBy).Scan(&id)
+		INSERT INTO test_definitions (name, protocol, plan_json, ramp_json, script_js, thresholds_json, data_json, created_by, tags)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+		td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset, td.CreatedBy, tags).Scan(&id)
 	return id, err
 }
 
@@ -122,11 +127,15 @@ func (s *Store) UpdateTestDefinition(ctx context.Context, td *TestDefinition) er
 	if len(td.DataJSON) > 0 {
 		dataset = td.DataJSON
 	}
+	tags := td.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE test_definitions
-		SET name=$2, protocol=$3, plan_json=$4, ramp_json=$5, script_js=$6, thresholds_json=$7, data_json=$8
+		SET name=$2, protocol=$3, plan_json=$4, ramp_json=$5, script_js=$6, thresholds_json=$7, data_json=$8, tags=$9
 		WHERE id=$1 AND NOT archived`,
-		td.ID, td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset)
+		td.ID, td.Name, td.Protocol, td.PlanJSON, td.RampJSON, td.ScriptJS, thresholds, dataset, tags)
 	if err == nil && tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
@@ -151,10 +160,10 @@ func (s *Store) ArchiveTestDefinition(ctx context.Context, id string) error {
 func (s *Store) GetTestDefinition(ctx context.Context, id string) (*TestDefinition, error) {
 	td := &TestDefinition{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.baseline_run_id, t.created_at
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.baseline_run_id, coalesce(t.tags,'{}'), t.created_at
 		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
 		WHERE t.id = $1`, id).
-		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.BaselineRunID, &td.CreatedAt)
+		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.BaselineRunID, &td.Tags, &td.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +176,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.baseline_run_id, t.created_at
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.baseline_run_id, coalesce(t.tags,'{}'), t.created_at
 		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
 		WHERE NOT t.archived
 		ORDER BY t.created_at DESC LIMIT $1`, limit)
@@ -178,7 +187,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 	out := []TestDefinition{}
 	for rows.Next() {
 		var td TestDefinition
-		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.BaselineRunID, &td.CreatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.BaselineRunID, &td.Tags, &td.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, td)
