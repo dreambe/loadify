@@ -16,6 +16,35 @@ import (
 	"github.com/dreambe/loadify/internal/worker/protocols"
 )
 
+func TestScriptIterationTimeout(t *testing.T) {
+	// A runaway loop must be interrupted within the budget and reported as a
+	// timeout, not hang the VU.
+	p, _ := plan.Parse([]byte(`{"protocol":"script","script_timeout_ms":150}`))
+	drv, err := script.New(&loadifyv1.ScriptBundle{MainJs: `function iteration(){ while(true){} }`}, p, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := drv.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer drv.Teardown(ctx)
+
+	done := make(chan protocols.Result, 1)
+	go func() { done <- drv.Exec(ctx, &protocols.VU{ID: 1}) }()
+	select {
+	case res := <-done:
+		if res.OK {
+			t.Fatal("runaway iteration reported ok")
+		}
+		if res.ErrorKind != "script_timeout" {
+			t.Errorf("error kind = %q, want script_timeout", res.ErrorKind)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("iteration was not interrupted by the timeout")
+	}
+}
+
 func TestScriptDriverRunsHTTP(t *testing.T) {
 	var hits int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

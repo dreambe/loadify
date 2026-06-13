@@ -26,10 +26,13 @@ type Executor struct {
 	barrier *barrier
 	log     *slog.Logger
 
-	mu      sync.Mutex
-	vus     []*vuHandle
-	nextID  int
-	stopped bool
+	maxVUs int // hard ceiling on the pool; <=0 means unlimited
+
+	mu           sync.Mutex
+	vus          []*vuHandle
+	nextID       int
+	stopped      bool
+	cappedLogged bool
 }
 
 type vuHandle struct {
@@ -59,6 +62,7 @@ func New(c Config) *Executor {
 		ramp:    c.Ramp,
 		sampler: c.Sampler,
 		thinker: newThinker(c.ThinkTime, c.ThinkCfg),
+		maxVUs:  maxVUsPerWorker(),
 		log:     log,
 	}
 	if c.Rendezvous != nil && c.Rendezvous.VUs > 1 {
@@ -114,6 +118,13 @@ func (e *Executor) scaleTo(ctx context.Context, target int) {
 	defer e.mu.Unlock()
 	if e.stopped {
 		target = 0
+	}
+	if capped := clampVUs(target, e.maxVUs); capped != target {
+		target = capped
+		if !e.cappedLogged {
+			e.cappedLogged = true
+			e.log.Warn("VU pool capped", "max_vus_per_worker", e.maxVUs)
+		}
 	}
 	for len(e.vus) < target {
 		e.spawnLocked(ctx)

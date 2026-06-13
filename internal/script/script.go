@@ -37,11 +37,12 @@ const dataKey = "__data__"
 
 // Driver runs a JS scenario under load.
 type Driver struct {
-	prog    *goja.Program
-	group   string
-	client  *http.Client
-	timeout time.Duration
-	dataset []map[string]any
+	prog       *goja.Program
+	group      string
+	client     *http.Client
+	timeout    time.Duration
+	iterBudget time.Duration // per-iteration wall-clock budget; goja Interrupt on overrun
+	dataset    []map[string]any
 
 	mu  sync.Mutex
 	vus map[int]*vu
@@ -61,7 +62,10 @@ func New(bundle *loadifyv1.ScriptBundle, p *plan.Plan, _ loadifyv1.Protocol) (pr
 	if p != nil && p.HTTP != nil && p.HTTP.Group != "" {
 		group = p.HTTP.Group
 	}
-	d := &Driver{prog: prog, group: group}
+	d := &Driver{prog: prog, group: group, iterBudget: plan.DefaultScriptTimeout}
+	if p != nil {
+		d.iterBudget = p.ScriptTimeout()
+	}
 	if raw := bundle.Modules[dataKey]; raw != "" {
 		if err := json.Unmarshal([]byte(raw), &d.dataset); err != nil {
 			return nil, fmt.Errorf("script: invalid data feeder JSON: %w", err)
@@ -96,16 +100,42 @@ func (d *Driver) Exec(ctx context.Context, vuState *protocols.VU) protocols.Resu
 	v.acc.reset()
 	v.acc.ctx = ctx
 
-	_, callErr := v.fn(goja.Undefined())
+	callErr := d.callBounded(v)
 
 	res := v.acc.result(d.group)
-	if callErr != nil {
-		res.OK = false
-		if res.ErrorKind == "" {
-			res.ErrorKind = "script_error"
-		}
-	}
+	applyCallErr(&res, callErr)
 	return res
+}
+
+// applyCallErr marks a result failed from a call error. A timeout (goja
+// interrupt) always wins over any partial error kind already recorded.
+func applyCallErr(res *protocols.Result, callErr error) {
+	if callErr == nil {
+		return
+	}
+	res.OK = false
+	if _, timeout := callErr.(*goja.InterruptedError); timeout {
+		res.ErrorKind = "script_timeout"
+		return
+	}
+	if res.ErrorKind == "" {
+		res.ErrorKind = "script_error"
+	}
+}
+
+// callBounded runs the iteration entrypoint under a wall-clock budget: if it
+// overruns (e.g. an infinite loop in user JS), goja is interrupted so the VU is
+// freed instead of pinning a core. The interrupt surfaces as a call error.
+func (d *Driver) callBounded(v *vu) error {
+	if d.iterBudget <= 0 {
+		_, err := v.fn(goja.Undefined())
+		return err
+	}
+	timer := time.AfterFunc(d.iterBudget, func() { v.rt.Interrupt("script timeout") })
+	defer timer.Stop()
+	_, err := v.fn(goja.Undefined())
+	v.rt.ClearInterrupt()
+	return err
 }
 
 // ExecMulti runs one iteration and returns every result it produced. A scenario
@@ -121,7 +151,7 @@ func (d *Driver) ExecMulti(ctx context.Context, vuState *protocols.VU) []protoco
 	v.acc.ctx = ctx
 	v.em.results = v.em.results[:0]
 
-	_, callErr := v.fn(goja.Undefined())
+	callErr := d.callBounded(v)
 
 	if len(v.em.results) > 0 {
 		// Scenario emitted labeled per-step results; copy out (the backing slice
@@ -131,12 +161,7 @@ func (d *Driver) ExecMulti(ctx context.Context, vuState *protocols.VU) []protoco
 		return out
 	}
 	res := v.acc.result(d.group)
-	if callErr != nil {
-		res.OK = false
-		if res.ErrorKind == "" {
-			res.ErrorKind = "script_error"
-		}
-	}
+	applyCallErr(&res, callErr)
 	return []protocols.Result{res}
 }
 

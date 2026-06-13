@@ -49,6 +49,37 @@ type Plan struct {
 	// MaxVUs caps the worker pool for the open (arrival-rate) model. 0 lets the
 	// worker derive a safe bound from the peak target rate.
 	MaxVUs int `json:"max_vus,omitempty"`
+	// ScriptTimeoutMs bounds a single goja iteration; an iteration exceeding it
+	// is interrupted and counted as a failure rather than hanging the VU. 0 uses
+	// the default (DefaultScriptTimeout).
+	ScriptTimeoutMs int64 `json:"script_timeout_ms,omitempty"`
+	// MaxRequestBodyBytes caps the size of any request body template. 0 uses the
+	// default (DefaultMaxRequestBody).
+	MaxRequestBodyBytes int `json:"max_request_body_bytes,omitempty"`
+}
+
+// DefaultScriptTimeout bounds a single script iteration so an infinite loop in
+// user JS interrupts instead of pinning a worker core forever.
+const DefaultScriptTimeout = 30 * time.Second
+
+// DefaultMaxRequestBody caps a request body template (1 MiB) so a pathological
+// plan can't balloon worker memory. Raise per-plan via MaxRequestBodyBytes.
+const DefaultMaxRequestBody = 1 << 20
+
+// ScriptTimeout returns the effective per-iteration script timeout.
+func (p *Plan) ScriptTimeout() time.Duration {
+	if p.ScriptTimeoutMs > 0 {
+		return time.Duration(p.ScriptTimeoutMs) * time.Millisecond
+	}
+	return DefaultScriptTimeout
+}
+
+// maxBodyBytes returns the effective request-body size cap.
+func (p *Plan) maxBodyBytes() int {
+	if p.MaxRequestBodyBytes > 0 {
+		return p.MaxRequestBodyBytes
+	}
+	return DefaultMaxRequestBody
 }
 
 // ThinkTimeConfig describes a randomized per-iteration pause.
@@ -284,6 +315,7 @@ func Parse(data []byte) (*Plan, error) {
 
 // Validate checks that the plan is internally consistent.
 func (p *Plan) Validate() error {
+	limit := p.maxBodyBytes()
 	switch p.Protocol {
 	case HTTP, HTTPS:
 		if p.HTTP == nil {
@@ -295,6 +327,9 @@ func (p *Plan) Validate() error {
 		if p.HTTP.Method == "" {
 			p.HTTP.Method = "GET"
 		}
+		if len(p.HTTP.Body) > limit {
+			return fmt.Errorf("plan: http.body %d bytes exceeds limit %d", len(p.HTTP.Body), limit)
+		}
 		for i := range p.HTTP.Asserts {
 			if err := p.HTTP.Asserts[i].Validate(); err != nil {
 				return err
@@ -303,6 +338,9 @@ func (p *Plan) Validate() error {
 	case GRPC:
 		if p.GRPC == nil || p.GRPC.Target == "" || p.GRPC.FullMethod == "" {
 			return fmt.Errorf("plan: grpc target and full_method are required")
+		}
+		if len(p.GRPC.RequestJSON) > limit {
+			return fmt.Errorf("plan: grpc.request_json %d bytes exceeds limit %d", len(p.GRPC.RequestJSON), limit)
 		}
 	case WebSocket:
 		if p.WS == nil || p.WS.URL == "" {
@@ -317,6 +355,11 @@ func (p *Plan) Validate() error {
 	case Scenario:
 		if err := p.Scenario.validate(); err != nil {
 			return err
+		}
+		for i := range p.Scenario.Steps {
+			if len(p.Scenario.Steps[i].Body) > limit {
+				return fmt.Errorf("plan: scenario step %d body %d bytes exceeds limit %d", i+1, len(p.Scenario.Steps[i].Body), limit)
+			}
 		}
 	default:
 		return fmt.Errorf("plan: unknown protocol %q", p.Protocol)

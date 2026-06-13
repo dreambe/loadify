@@ -49,6 +49,11 @@ func NewArrival(c ArrivalConfig) *ArrivalExecutor {
 		// Allow up to ~5s of in-flight requests at peak rate, with a floor.
 		maxVUs = int(c.Ramp.PeakRPS())*5 + 100
 	}
+	// Never let the derived (or requested) pool exceed the per-worker ceiling.
+	if capped := clampVUs(maxVUs, maxVUsPerWorker()); capped != maxVUs {
+		log.Warn("arrival VU pool capped", "requested", maxVUs, "max_vus_per_worker", capped)
+		maxVUs = capped
+	}
 	return &ArrivalExecutor{driver: c.Driver, ramp: c.Ramp, sampler: c.Sampler, maxVUs: maxVUs, log: log}
 }
 
