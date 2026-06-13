@@ -32,6 +32,10 @@ const claimsKey ctxKey = 0
 // Middleware verifies bearer tokens and enforces role minimums.
 type Middleware struct {
 	Secret string
+	// Validate, when set, is consulted after signature/expiry checks pass. It
+	// returns false to reject an otherwise-valid token — used to honor account
+	// disable / credential-change revocation that JWT expiry alone cannot.
+	Validate func(*Claims) bool
 }
 
 // claimsFrom extracts and verifies the bearer token from the request.
@@ -63,6 +67,10 @@ func (m Middleware) Require(min Role) func(http.Handler) http.Handler {
 			c, ok := m.claimsFrom(r)
 			if !ok {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
+			}
+			if m.Validate != nil && !m.Validate(c) {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "token revoked"})
 				return
 			}
 			if !c.Role.AtLeast(min) {

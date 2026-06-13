@@ -22,17 +22,20 @@ type User struct {
 	Disabled     bool       `json:"disabled"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+	// CredsChangedAt advances when the account is disabled, has its password
+	// reset or role changed; tokens issued before it are no longer accepted.
+	CredsChangedAt time.Time `json:"-"`
 }
 
 // ErrUserNotFound is returned when a lookup matches no row.
 var ErrUserNotFound = errors.New("postgres: user not found")
 
-const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), coalesce(webhook_urls,'[]'), disabled, created_at, last_login_at`
+const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), coalesce(webhook_urls,'[]'), disabled, created_at, last_login_at, creds_changed_at`
 
 func scanUser(row pgx.Row) (*User, error) {
 	u := &User{}
 	var webhooks []byte
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &webhooks, &u.Disabled, &u.CreatedAt, &u.LastLoginAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &webhooks, &u.Disabled, &u.CreatedAt, &u.LastLoginAt, &u.CredsChangedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
@@ -97,7 +100,7 @@ func (s *Store) TouchLogin(ctx context.Context, id string) error {
 
 // UpdateUserRole changes a user's role.
 func (s *Store) UpdateUserRole(ctx context.Context, id, role string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, id, role)
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET role=$2, creds_changed_at=now() WHERE id=$1`, id, role)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrUserNotFound
 	}
@@ -106,7 +109,7 @@ func (s *Store) UpdateUserRole(ctx context.Context, id, role string) error {
 
 // SetUserPassword replaces a user's password hash.
 func (s *Store) SetUserPassword(ctx context.Context, id, passwordHash string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE users SET password_hash=nullif($2,'') WHERE id=$1`, id, passwordHash)
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET password_hash=nullif($2,''), creds_changed_at=now() WHERE id=$1`, id, passwordHash)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrUserNotFound
 	}
@@ -115,7 +118,7 @@ func (s *Store) SetUserPassword(ctx context.Context, id, passwordHash string) er
 
 // SetUserDisabled toggles whether an account may sign in.
 func (s *Store) SetUserDisabled(ctx context.Context, id string, disabled bool) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE users SET disabled=$2 WHERE id=$1`, id, disabled)
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET disabled=$2, creds_changed_at=now() WHERE id=$1`, id, disabled)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrUserNotFound
 	}

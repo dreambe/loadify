@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
@@ -35,6 +36,9 @@ type Server struct {
 	jwtTTL      time.Duration
 	frontendURL string
 	webhookURL  string
+	// revCache memoizes per-user revocation state (disabled / creds-changed) so
+	// token validation doesn't hit the database on every request.
+	revCache sync.Map
 }
 
 // Config configures the Server.
@@ -70,6 +74,8 @@ func New(c Config) *Server {
 		frontendURL: c.FrontendURL,
 		webhookURL:  c.WebhookURL,
 	}
+	// Honor account disable / credential changes for already-issued tokens.
+	s.authmw.Validate = s.validateClaims
 	s.routes()
 	return s
 }

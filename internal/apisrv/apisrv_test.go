@@ -22,6 +22,7 @@ import (
 
 type fakeMeta struct {
 	users      map[string]*postgres.User // by email
+	usersByID  map[string]*postgres.User // by id (for revocation checks)
 	activeRuns []postgres.Run
 	finished   map[string]string // runID -> status
 	dueOnce     []postgres.Schedule
@@ -73,6 +74,9 @@ func (f *fakeMeta) GetUserByEmail(_ context.Context, email string) (*postgres.Us
 	return nil, postgres.ErrUserNotFound
 }
 func (f *fakeMeta) GetUserByID(_ context.Context, id string) (*postgres.User, error) {
+	if u, ok := f.usersByID[id]; ok {
+		return u, nil
+	}
 	return &postgres.User{ID: id}, nil
 }
 func (f *fakeMeta) UpsertFeishuUser(_ context.Context, _, _, _, _ string) (*postgres.User, error) {
@@ -201,6 +205,39 @@ func TestRBACGating(t *testing.T) {
 	// Admin-only route.
 	if c := do("GET", "/api/v1/users", token(t, auth.RoleOperator), ""); c != http.StatusForbidden {
 		t.Errorf("operator users: got %d want 403", c)
+	}
+}
+
+func TestTokenRevocation(t *testing.T) {
+	meta := newFakeMeta()
+	meta.usersByID = map[string]*postgres.User{}
+	srv := newTestServer(meta, &fakeCoord{})
+
+	do := func(tok string) int {
+		req := httptest.NewRequest("GET", "/api/v1/tests", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	tok := token(t, auth.RoleViewer) // subject "u", issued now
+	if c := do(tok); c != http.StatusOK {
+		t.Fatalf("baseline: got %d want 200", c)
+	}
+
+	// Disabled account: its still-unexpired token must be rejected.
+	meta.usersByID["u"] = &postgres.User{ID: "u", Disabled: true}
+	srv.revCache.Delete("u")
+	if c := do(tok); c != http.StatusUnauthorized {
+		t.Errorf("disabled account: got %d want 401", c)
+	}
+
+	// Credentials changed after the token was issued → revoked.
+	meta.usersByID["u"] = &postgres.User{ID: "u", CredsChangedAt: time.Now().Add(time.Hour)}
+	srv.revCache.Delete("u")
+	if c := do(tok); c != http.StatusUnauthorized {
+		t.Errorf("creds changed: got %d want 401", c)
 	}
 }
 
