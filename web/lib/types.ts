@@ -174,6 +174,17 @@ export interface DrillSample {
   resp_body: string;
 }
 
+// AuditEntry is one recorded mutating action (who did what, when, outcome).
+export interface AuditEntry {
+  id: string;
+  ts: string;
+  user_id?: string;
+  user_name: string;
+  method: string;
+  path: string;
+  status: number;
+}
+
 export interface SeriesPoint {
   ts: string;
   rps: number;

@@ -8,7 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
-import type { User } from "@/lib/types";
+import type { AuditEntry, User } from "@/lib/types";
 
 export default function UsersPage() {
   const { t } = useI18n();
@@ -212,10 +212,88 @@ export default function UsersPage() {
                 </tbody>
               </table>
             </div>
+
+            <AuditPanel onError={toast.error} />
           </>
         )}
       </div>
     </>
+  );
+}
+
+// AuditPanel shows the recent record of mutating actions (who/when/what/outcome)
+// across the platform. Admin-only — reads are not recorded, only changes.
+function AuditPanel({ onError }: { onError: (m: string) => void }) {
+  const { t } = useI18n();
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api
+      .listAudit()
+      .then(setEntries)
+      .catch((e) => onError(e.message))
+      .finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Collapse the API path into a human-readable action label, keeping the raw
+  // method+path available as a tooltip for precision.
+  function action(e: AuditEntry): string {
+    const ok = e.status >= 200 && e.status < 300;
+    const verb =
+      e.method === "POST" ? t("audit.create")
+      : e.method === "PUT" || e.method === "PATCH" ? t("audit.update")
+      : e.method === "DELETE" ? t("audit.delete")
+      : e.method;
+    const resource = e.path.replace(/^\/api\/v1\//, "").replace(/\/[0-9a-f-]{8,}/gi, "");
+    return `${verb} ${resource}${ok ? "" : ` (${e.status})`}`;
+  }
+
+  return (
+    <div className="panel">
+      <h2>
+        {t("audit.title")}
+        <Help tip={t("audit.help")} />
+      </h2>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("audit.colTime")}</th>
+              <th>{t("audit.colUser")}</th>
+              <th>{t("audit.colAction")}</th>
+              <th className="num">{t("audit.colStatus")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => {
+              const ok = e.status >= 200 && e.status < 300;
+              return (
+                <tr key={e.id}>
+                  <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                    {new Date(e.ts).toLocaleString()}
+                  </td>
+                  <td>{e.user_name || "–"}</td>
+                  <td title={`${e.method} ${e.path}`} style={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
+                    {action(e)}
+                  </td>
+                  <td className="num">
+                    <span className={"badge " + (ok ? "completed" : "failed")}>{e.status}</span>
+                  </td>
+                </tr>
+              );
+            })}
+            {loaded && entries.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  {t("audit.empty")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

@@ -118,7 +118,7 @@ export default function EnvironmentsPage() {
                 />
                 <button
                   type="button"
-                  className="ghost sm"
+                  className="secondary"
                   onClick={() => setPairs(pairs.filter((_, idx) => idx !== i).length ? pairs.filter((_, idx) => idx !== i) : [{ key: "", value: "" }])}
                 >
                   {t("ramp.remove")}
@@ -126,7 +126,7 @@ export default function EnvironmentsPage() {
               </div>
             ))}
             <div className="row" style={{ marginTop: 8 }}>
-              <button type="button" className="ghost sm" onClick={() => setPairs([...pairs, { key: "", value: "" }])}>
+              <button type="button" className="secondary" onClick={() => setPairs([...pairs, { key: "", value: "" }])}>
                 + {t("env.addVar")}
               </button>
             </div>

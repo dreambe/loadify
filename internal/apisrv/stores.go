@@ -47,6 +47,9 @@ type metaStore interface {
 	UpdateEnvironment(ctx context.Context, id, name string, vars map[string]string) error
 	DeleteEnvironment(ctx context.Context, id string) error
 
+	WriteAudit(ctx context.Context, e postgres.AuditEntry) error
+	ListAudit(ctx context.Context, limit int) ([]postgres.AuditEntry, error)
+
 	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)
 	ListSchedules(ctx context.Context, limit int) ([]postgres.Schedule, error)
 	SetScheduleEnabled(ctx context.Context, id string, enabled bool) error

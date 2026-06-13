@@ -477,6 +477,13 @@ paths:
       tags: [workers]
       summary: List connected workers with health/load (role viewer+)
       responses: { "200": { description: array of workers } }
+  /api/v1/audit:
+    get:
+      tags: [audit]
+      summary: List recent audit log entries — mutating actions by who/when/what/outcome (role admin)
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 200, maximum: 500 } }
+      responses: { "200": { description: array of audit entries } }
   /api/v1/users:
     get:
       tags: [users]

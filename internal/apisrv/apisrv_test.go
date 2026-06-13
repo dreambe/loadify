@@ -99,6 +99,8 @@ func (f *fakeMeta) CreateEnvironment(_ context.Context, _ string, _ map[string]s
 }
 func (f *fakeMeta) UpdateEnvironment(_ context.Context, _, _ string, _ map[string]string) error { return nil }
 func (f *fakeMeta) DeleteEnvironment(_ context.Context, _ string) error                          { return nil }
+func (f *fakeMeta) WriteAudit(_ context.Context, _ postgres.AuditEntry) error                    { return nil }
+func (f *fakeMeta) ListAudit(_ context.Context, _ int) ([]postgres.AuditEntry, error)            { return nil, nil }
 func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int) (string, error) {
 	return "sched-1", nil
 }

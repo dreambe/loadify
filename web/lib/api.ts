@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
+import type { AuditEntry, DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
@@ -156,6 +156,8 @@ export const api = {
     }),
   setScheduleEnabled: (id: string, enabled: boolean) =>
     req<{ enabled: boolean }>(`/api/v1/schedules/${id}/enabled?enabled=${enabled}`, { method: "POST" }),
+
+  listAudit: (limit = 200) => reqList<AuditEntry>(`/api/v1/audit?limit=${limit}`),
 
   listUsers: () => reqList<User>("/api/v1/users"),
   createUser: (body: { email: string; name: string; role: string; password: string }) =>

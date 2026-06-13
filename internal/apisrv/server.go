@@ -95,6 +95,9 @@ func (s *Server) routes() {
 	admin := s.authmw.Require(auth.RoleAdmin)
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// Record mutating actions (who/when/what/outcome) for operators+admins.
+		r.Use(s.auditMiddleware)
+
 		// Public auth endpoints.
 		r.Get("/auth/config", s.handleAuthConfig)
 		r.Post("/auth/login", s.handleLogin)
@@ -140,6 +143,7 @@ func (s *Server) routes() {
 		r.With(operator).Post("/schedules/{id}/enabled", s.handleSetScheduleEnabled)
 
 		// User management is admin-only.
+		r.With(admin).Get("/audit", s.handleListAudit)
 		r.With(admin).Get("/users", s.handleListUsers)
 		r.With(admin).Post("/users", s.handleCreateUser)
 		r.With(admin).Patch("/users/{id}", s.handleUpdateUser)
