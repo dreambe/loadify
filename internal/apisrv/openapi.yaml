@@ -181,6 +181,68 @@ paths:
       responses:
         "201": { description: "created; returns { id }" }
         "400": { description: invalid plan }
+  /api/v1/environments:
+    get:
+      tags: [environments]
+      summary: List user-defined environments (role viewer+)
+      responses: { "200": { description: array of environments } }
+    post:
+      tags: [environments]
+      summary: Create an environment (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                vars: { type: object, additionalProperties: { type: string } }
+      responses: { "201": { description: "created; returns { id }" } }
+  /api/v1/environments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [environments]
+      summary: Update an environment (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                vars: { type: object, additionalProperties: { type: string } }
+      responses: { "204": { description: updated }, "404": { description: not found } }
+    delete:
+      tags: [environments]
+      summary: Delete an environment (role operator+)
+      responses: { "204": { description: deleted }, "404": { description: not found } }
+  /api/v1/tests/{id}/trend:
+    get:
+      tags: [tests]
+      summary: Recent runs' compact metrics for a test's trend chart (role viewer+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: n, in: query, schema: { type: integer, default: 20 } }
+      responses: { "200": { description: array of trend points (oldest→newest) } }
+  /api/v1/tests/{id}/baseline:
+    post:
+      tags: [tests]
+      summary: Set (or clear, empty run_id) a test's baseline run (role operator+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                run_id: { type: string }
+      responses: { "204": { description: set }, "404": { description: not found } }
   /api/v1/tests/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }

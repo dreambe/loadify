@@ -81,6 +81,7 @@ func (s *Server) routes() {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
+	r.Use(securityHeaders)
 	r.Use(corsMiddleware)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
@@ -145,6 +146,22 @@ func (s *Server) routes() {
 		r.With(admin).Delete("/users/{id}", s.handleDeleteUser)
 	})
 	s.mux = r
+}
+
+// securityHeaders adds defensive response headers. The API serves JSON/HTML
+// reports only, so a tight CSP is safe and shrinks the XSS surface. (Moving
+// the SPA's JWT from localStorage to an httpOnly cookie is a larger change —
+// tracked separately; this is the cheap first line of defense.)
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		// The HTML report is self-contained (inline styles/SVG, no scripts).
+		h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
