@@ -25,7 +25,9 @@ type metaStore interface {
 	FinishRun(ctx context.Context, id, status string, summary json.RawMessage) (bool, error)
 	GetRun(ctx context.Context, id string) (*postgres.Run, error)
 	ListRuns(ctx context.Context, limit int) ([]postgres.Run, error)
+	ListRunsByTest(ctx context.Context, testID string, limit int) ([]postgres.Run, error)
 	ListActiveRuns(ctx context.Context) ([]postgres.Run, error)
+	SetBaseline(ctx context.Context, testID, runID string) error
 
 	GetUserByEmail(ctx context.Context, email string) (*postgres.User, error)
 	GetUserByID(ctx context.Context, id string) (*postgres.User, error)

@@ -109,6 +109,15 @@ func feishuCard(name, runID, status string, payload map[string]any, frontendURL 
 	if reason, ok := payload["reason"].(string); ok && reason != "" {
 		lines = append(lines, "**中止原因 / Reason:** "+reason)
 	}
+	if regressed, _ := payload["regressed"].(bool); regressed {
+		line := "**⚠ 性能回归 / Regression:** p95 高于基线"
+		if bl, ok := payload["baseline"].(map[string]any); ok {
+			if d, ok := numField(bl, "p95_delta_pct"); ok {
+				line = fmt.Sprintf("**⚠ 性能回归 / Regression:** p95 %+.1f%% vs baseline", d)
+			}
+		}
+		lines = append(lines, line)
+	}
 	if passed, ok := payload["passed"].(bool); ok {
 		if passed {
 			lines = append(lines, "**SLA:** ✅ 通过 PASSED")

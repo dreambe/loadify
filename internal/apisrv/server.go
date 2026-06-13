@@ -107,6 +107,8 @@ func (s *Server) routes() {
 		// Reads require a viewer (or higher).
 		r.With(viewer).Get("/tests", s.handleListTests)
 		r.With(viewer).Get("/tests/{id}", s.handleGetTest)
+		r.With(viewer).Get("/tests/{id}/trend", s.handleTestTrend)
+		r.With(operator).Post("/tests/{id}/baseline", s.handleSetBaseline)
 		r.With(viewer).Get("/runs", s.handleListRuns)
 		r.With(viewer).Get("/runs/{id}", s.handleGetRun)
 		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)

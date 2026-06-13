@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, User, WorkerInfo } from "./types";
+import type { DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
@@ -105,6 +105,9 @@ export const api = {
     body?: string;
     insecure_skip_verify?: boolean;
   }) => req<DebugResponse>("/api/v1/tests/debug", { method: "POST", body: JSON.stringify(body) }),
+  testTrend: (id: string, n = 20) => reqList<TrendPoint>(`/api/v1/tests/${id}/trend?n=${n}`),
+  setBaseline: (testId: string, runId: string) =>
+    req<void>(`/api/v1/tests/${testId}/baseline`, { method: "POST", body: JSON.stringify({ run_id: runId }) }),
   importTest: (format: string, content: string) =>
     req<{ name: string; protocol: string; plan: unknown }>("/api/v1/tests/import", {
       method: "POST",

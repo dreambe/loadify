@@ -58,10 +58,40 @@ type TestDefinition struct {
 	ScriptJS    string          `json:"script,omitempty"`
 	Thresholds  json.RawMessage `json:"thresholds,omitempty"`
 	DataJSON    json.RawMessage `json:"dataset,omitempty"`
-	CreatedBy   *string         `json:"created_by,omitempty"`
-	CreatorName string          `json:"creator_name,omitempty"`
-	Archived    bool            `json:"archived,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
+	CreatedBy     *string         `json:"created_by,omitempty"`
+	CreatorName   string          `json:"creator_name,omitempty"`
+	Archived      bool            `json:"archived,omitempty"`
+	BaselineRunID *string         `json:"baseline_run_id,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+}
+
+// SetBaseline marks (or clears, with empty runID) a run as the test's baseline.
+func (s *Store) SetBaseline(ctx context.Context, testID, runID string) error {
+	var rid any
+	if runID != "" {
+		rid = runID
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE test_definitions SET baseline_run_id=$2 WHERE id=$1`, testID, rid)
+	if err == nil && tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return err
+}
+
+// ListRunsByTest returns a test's recent runs (newest first) for trend lines.
+func (s *Store) ListRunsByTest(ctx context.Context, testID string, limit int) ([]Run, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.id, r.test_def_id, coalesce(r.name,''), r.status, r.desired_workers, r.started_at, r.ended_at, coalesce(r.summary,'{}'), r.created_by, coalesce(nullif(u.name,''), u.email, ''), coalesce(r.test_snapshot,'null'), r.created_at
+		FROM runs r LEFT JOIN users u ON u.id = r.created_by
+		WHERE r.test_def_id=$1 ORDER BY r.created_at DESC LIMIT $2`, testID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRuns(rows)
 }
 
 // CreateTestDefinition inserts a test definition and returns its id.
@@ -121,10 +151,10 @@ func (s *Store) ArchiveTestDefinition(ctx context.Context, id string) error {
 func (s *Store) GetTestDefinition(ctx context.Context, id string) (*TestDefinition, error) {
 	td := &TestDefinition{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.created_at
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.baseline_run_id, t.created_at
 		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
 		WHERE t.id = $1`, id).
-		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.CreatedAt)
+		Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.BaselineRunID, &td.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +167,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.created_at
+		SELECT t.id, t.name, t.protocol, t.plan_json, t.ramp_json, coalesce(t.script_js,''), coalesce(t.thresholds_json,'[]'), coalesce(t.data_json,'null'), t.created_by, coalesce(nullif(u.name,''), u.email, ''), t.archived, t.baseline_run_id, t.created_at
 		FROM test_definitions t LEFT JOIN users u ON u.id = t.created_by
 		WHERE NOT t.archived
 		ORDER BY t.created_at DESC LIMIT $1`, limit)
@@ -148,7 +178,7 @@ func (s *Store) ListTestDefinitions(ctx context.Context, limit int) ([]TestDefin
 	out := []TestDefinition{}
 	for rows.Next() {
 		var td TestDefinition
-		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.CreatedAt); err != nil {
+		if err := rows.Scan(&td.ID, &td.Name, &td.Protocol, &td.PlanJSON, &td.RampJSON, &td.ScriptJS, &td.Thresholds, &td.DataJSON, &td.CreatedBy, &td.CreatorName, &td.Archived, &td.BaselineRunID, &td.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, td)

@@ -170,6 +170,87 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tds)
 }
 
+// runMetrics is the compact per-run metric snapshot used for trend/baseline.
+type runMetrics struct {
+	Total     float64 `json:"total"`
+	ErrorRate float64 `json:"error_rate"` // percent
+	P50       float64 `json:"p50_ms"`
+	P90       float64 `json:"p90_ms"`
+	P95       float64 `json:"p95_ms"`
+	P99       float64 `json:"p99_ms"`
+}
+
+// metricsFromSummary pulls the compact metrics out of a run's summary JSON.
+func metricsFromSummary(summary json.RawMessage) runMetrics {
+	var s struct {
+		Total   float64 `json:"total_requests"`
+		Summary struct {
+			ErrorRate float64 `json:"error_rate"`
+			P50ms     float64 `json:"p50_ms"`
+			P90ms     float64 `json:"p90_ms"`
+			P95ms     float64 `json:"p95_ms"`
+			P99ms     float64 `json:"p99_ms"`
+		} `json:"summary"`
+	}
+	_ = json.Unmarshal(summary, &s)
+	return runMetrics{
+		Total: s.Total, ErrorRate: s.Summary.ErrorRate * 100,
+		P50: s.Summary.P50ms, P90: s.Summary.P90ms, P95: s.Summary.P95ms, P99: s.Summary.P99ms,
+	}
+}
+
+type trendPoint struct {
+	RunID   string     `json:"run_id"`
+	Name    string     `json:"name"`
+	Status  string     `json:"status"`
+	EndedAt *time.Time `json:"ended_at,omitempty"`
+	Metrics runMetrics `json:"metrics"`
+}
+
+// handleTestTrend returns a test's recent runs as compact metric points
+// (oldest→newest) for trend charts.
+func (s *Server) handleTestTrend(w http.ResponseWriter, r *http.Request) {
+	n, _ := strconv.Atoi(r.URL.Query().Get("n"))
+	if n <= 0 {
+		n = 20
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	runs, err := s.pg.ListRunsByTest(ctx, chi.URLParam(r, "id"), n)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]trendPoint, 0, len(runs))
+	// Reverse to oldest→newest so charts read left-to-right in time order.
+	for i := len(runs) - 1; i >= 0; i-- {
+		rn := runs[i]
+		if rn.Status != "completed" && rn.Status != "failed" {
+			continue
+		}
+		out = append(out, trendPoint{RunID: rn.ID, Name: rn.Name, Status: rn.Status, EndedAt: rn.EndedAt, Metrics: metricsFromSummary(rn.Summary)})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleSetBaseline marks (run_id set) or clears (empty) a test's baseline run.
+func (s *Server) handleSetBaseline(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if err := s.pg.SetBaseline(ctx, chi.URLParam(r, "id"), req.RunID); err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
@@ -332,6 +413,47 @@ func (s *Server) watchRun(runID string) {
 	s.finalizeRunReason(runID, status, reason)
 }
 
+// regressP95Pct is the p95 increase over baseline that flags a regression.
+const regressP95Pct = 20.0
+
+// attachBaseline, when the run's test has a baseline run, computes deltas vs the
+// baseline and writes baseline/regressed into the summary payload. Best-effort.
+func (s *Server) attachBaseline(ctx context.Context, runID string, total int64, summary store.SeriesPoint, payload map[string]any) {
+	run, err := s.pg.GetRun(ctx, runID)
+	if err != nil {
+		return
+	}
+	td, err := s.pg.GetTestDefinition(ctx, run.TestDefID)
+	if err != nil || td.BaselineRunID == nil || *td.BaselineRunID == "" || *td.BaselineRunID == runID {
+		return
+	}
+	base, err := s.pg.GetRun(ctx, *td.BaselineRunID)
+	if err != nil {
+		return
+	}
+	bm := metricsFromSummary(base.Summary)
+	pctChange := func(cur, baseV float64) float64 {
+		if baseV == 0 {
+			return 0
+		}
+		return (cur - baseV) / baseV * 100
+	}
+	curP95 := summary.P95ms
+	p95Delta := pctChange(curP95, bm.P95)
+	regressed := bm.P95 > 0 && p95Delta > regressP95Pct
+	payload["baseline"] = map[string]any{
+		"run_id":         *td.BaselineRunID,
+		"p95_ms":         bm.P95,
+		"p95_delta_pct":  p95Delta,
+		"error_rate":     bm.ErrorRate,
+		"total_requests": bm.Total,
+	}
+	payload["regressed"] = regressed
+	if regressed {
+		s.log.Info("run regressed vs baseline", "run", runID, "p95_delta_pct", p95Delta)
+	}
+}
+
 // finalizeRun computes a run's summary, evaluates SLA thresholds and marks the
 // run terminal. It is idempotent (FinishRun is a no-op once terminal), so the
 // watcher and the reaper may both call it safely.
@@ -358,6 +480,8 @@ func (s *Server) finalizeRunReason(runID, status, reason string) {
 			status = "failed"
 		}
 	}
+	// Compare against the test's baseline run, if one is set.
+	s.attachBaseline(sctx, runID, total, summary, payload)
 	body, _ := json.Marshal(payload)
 	switched, err := s.pg.FinishRun(sctx, runID, status, body)
 	if err != nil {

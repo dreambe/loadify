@@ -53,6 +53,30 @@ export interface RunSummary {
   checks?: ThresholdCheck[];
   auto_stopped?: boolean;
   reason?: string;
+  regressed?: boolean;
+  baseline?: {
+    run_id: string;
+    p95_ms: number;
+    p95_delta_pct: number;
+    error_rate: number;
+    total_requests: number;
+  };
+}
+
+// TrendPoint is one run's compact metrics for a test's trend chart.
+export interface TrendPoint {
+  run_id: string;
+  name: string;
+  status: string;
+  ended_at?: string;
+  metrics: {
+    total: number;
+    error_rate: number;
+    p50_ms: number;
+    p90_ms: number;
+    p95_ms: number;
+    p99_ms: number;
+  };
 }
 
 export interface Threshold {

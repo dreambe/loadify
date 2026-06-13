@@ -61,6 +61,10 @@ func (f *fakeMeta) GetRun(_ context.Context, id string) (*postgres.Run, error) {
 	return &postgres.Run{ID: id, TestDefID: "test-1", Status: "running"}, nil
 }
 func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error)      { return nil, nil }
+func (f *fakeMeta) ListRunsByTest(_ context.Context, _ string, _ int) ([]postgres.Run, error) {
+	return nil, nil
+}
+func (f *fakeMeta) SetBaseline(_ context.Context, _, _ string) error { return nil }
 func (f *fakeMeta) ListActiveRuns(_ context.Context) ([]postgres.Run, error)       { return f.activeRuns, nil }
 func (f *fakeMeta) GetUserByEmail(_ context.Context, email string) (*postgres.User, error) {
 	if u, ok := f.users[email]; ok {

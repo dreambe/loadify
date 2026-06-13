@@ -6,6 +6,8 @@ import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
+import { useToast } from "@/components/Toast";
+import type { TrendPoint } from "@/lib/types";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import type { Run, SeriesPoint } from "@/lib/types";
@@ -13,8 +15,10 @@ import type { Run, SeriesPoint } from "@/lib/types";
 export default function RunDetailPage({ params }: { params: { id: string } }) {
   const { t } = useI18n();
   const { user, ready } = useAuth();
+  const toast = useToast();
   const [run, setRun] = useState<Run | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [hover, setHover] = useState<number | null>(null);
   const runId = params.id;
   const stopped = useRef(false);
@@ -50,8 +54,25 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     }
   }, [terminal, runId]);
 
+  useEffect(() => {
+    if (terminal && run?.test_def_id) {
+      api.testTrend(run.test_def_id, 20).then(setTrend).catch(() => {});
+    }
+  }, [terminal, run?.test_def_id]);
+
+  async function setAsBaseline() {
+    if (!run) return;
+    try {
+      await api.setBaseline(run.test_def_id, run.id);
+      toast.success(t("run.baselineSet"));
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   if (!ready) return null;
   const canStop = roleAtLeast(user?.role, "operator");
+  const baseline = run?.summary?.baseline;
 
   // X-axis: elapsed test time from the first series point.
   const seriesBase = series.length > 0 ? new Date(series[0].ts).getTime() : 0;
@@ -65,16 +86,21 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <h1>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
           <div className="row" style={{ alignItems: "center" }}>
             {terminal && run && canStop && (
-              <button
-                className="secondary"
-                onClick={() =>
-                  api
-                    .startRun(run.test_def_id, Math.max(1, run.desired_workers), "")
-                    .then((res) => (window.location.href = `/runs/${res.run_id}`))
-                }
-              >
-                ↻ {t("runs.rerun")}
-              </button>
+              <>
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    api
+                      .startRun(run.test_def_id, Math.max(1, run.desired_workers), "")
+                      .then((res) => (window.location.href = `/runs/${res.run_id}`))
+                  }
+                >
+                  ↻ {t("runs.rerun")}
+                </button>
+                <button className="ghost" onClick={setAsBaseline}>
+                  ☆ {t("run.setBaseline")}
+                </button>
+              </>
             )}
             {terminal && (
               <a className="badge" href={reportURL(runId)} target="_blank" rel="noreferrer">
@@ -189,6 +215,40 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {baseline && (
+              <div className="panel">
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <h2 style={{ margin: 0 }}>{t("run.vsBaseline")}</h2>
+                  <span className={`badge ${run?.summary?.regressed ? "failed" : "completed"}`}>
+                    {run?.summary?.regressed ? t("run.regressed") : t("run.noRegress")}
+                  </span>
+                </div>
+                <div className="metrics-grid" style={{ marginTop: 12 }}>
+                  <div className="metric">
+                    <div className="label">p95 {t("run.baselineWas")}</div>
+                    <div className="value">{baseline.p95_ms.toFixed(1)} ms</div>
+                  </div>
+                  <div className="metric">
+                    <div className="label">p95 {t("run.delta")}</div>
+                    <div className="value" style={{ color: baseline.p95_delta_pct > 0 ? "var(--red)" : "var(--green)" }}>
+                      {baseline.p95_delta_pct > 0 ? "+" : ""}
+                      {baseline.p95_delta_pct.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {trend.length > 1 && (
+              <div className="panel">
+                <h2>{t("run.trend")}</h2>
+                <LineChart
+                  unit="ms"
+                  series={[{ label: "p95", color: "#36d6e7", data: trend.map((p) => p.metrics.p95_ms) }]}
+                  xLabels={trend.map((p) => (p.ended_at ? new Date(p.ended_at).toLocaleDateString() : ""))}
+                />
+                <p className="muted" style={{ fontSize: 12 }}>{t("run.trendHint")}</p>
               </div>
             )}
             {run?.summary != null && <SummaryReport run={run} t={t} />}
