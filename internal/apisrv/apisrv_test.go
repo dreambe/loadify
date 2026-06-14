@@ -25,9 +25,11 @@ type fakeMeta struct {
 	usersByID  map[string]*postgres.User // by id (for revocation checks)
 	activeRuns []postgres.Run
 	finished   map[string]string // runID -> status
-	dueOnce     []postgres.Schedule
-	scheduleRun map[string]string // scheduleID -> runID
-	owner       *string           // CreatedBy returned for tests/runs/environments
+	dueOnce          []postgres.Schedule
+	scheduleRun      map[string]string // scheduleID -> runID
+	owner            *string           // CreatedBy returned for tests/runs/environments
+	lastRunCreatedBy *string           // captured from the most recent CreateRun
+	lastRunSource    string
 }
 
 func newFakeMeta() *fakeMeta {
@@ -47,7 +49,9 @@ func (f *fakeMeta) GetTestDefinition(_ context.Context, id string) (*postgres.Te
 func (f *fakeMeta) ListTestDefinitions(_ context.Context, _ int) ([]postgres.TestDefinition, error) {
 	return nil, nil
 }
-func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, _ *string, _ json.RawMessage) (string, error) {
+func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, createdBy *string, source string, _ json.RawMessage) (string, error) {
+	f.lastRunCreatedBy = createdBy
+	f.lastRunSource = source
 	return "run-1", nil
 }
 func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error              { return nil }
@@ -357,13 +361,21 @@ func TestReaperFinalizesOrphans(t *testing.T) {
 
 func TestSchedulerFiresDueSchedule(t *testing.T) {
 	meta := newFakeMeta()
-	meta.dueOnce = []postgres.Schedule{{ID: "sched-1", TestDefID: "test-1", IntervalMin: 5}}
+	owner := "alice"
+	meta.dueOnce = []postgres.Schedule{{ID: "sched-1", TestDefID: "test-1", IntervalMin: 5, CreatedBy: &owner}}
 	srv := newTestServer(meta, &fakeCoord{})
 
 	srv.fireDueSchedules(context.Background())
 
 	if meta.scheduleRun["sched-1"] != "run-1" {
 		t.Errorf("schedule did not launch a run: %v", meta.scheduleRun)
+	}
+	// The run is owned by the schedule's creator but tagged as schedule-triggered.
+	if meta.lastRunCreatedBy == nil || *meta.lastRunCreatedBy != "alice" {
+		t.Errorf("scheduled run created_by = %v, want alice", meta.lastRunCreatedBy)
+	}
+	if meta.lastRunSource != "schedule" {
+		t.Errorf("scheduled run source = %q, want schedule", meta.lastRunSource)
 	}
 }
 

@@ -37,6 +37,7 @@ export interface Run {
   summary?: RunSummary;
   created_by?: string;
   creator_name?: string;
+  source?: string; // "manual" | "schedule"
   test_snapshot?: any;
   created_at: string;
 }

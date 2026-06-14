@@ -227,7 +227,10 @@ export default function RunsPage() {
                   <td>
                     <span className={`badge ${r.status}`}>{r.status}</span>
                   </td>
-                  <td className="muted">{r.creator_name || t("run.creatorSystem")}</td>
+                  <td className="muted">
+                    {r.creator_name || t("run.creatorSystem")}
+                    {r.source === "schedule" ? ` · ${t("run.scheduled")}` : ""}
+                  </td>
                   <td className="muted">
                     {r.started_at ? new Date(r.started_at).toLocaleString() : "–"}
                   </td>

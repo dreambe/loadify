@@ -352,7 +352,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 
-	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers, req.Name, callerID(r), req.EnvironmentID)
+	runID, runStatus, err := s.launchRun(ctx, req.TestID, req.DesiredWorkers, req.Name, callerID(r), "manual", req.EnvironmentID)
 	if err != nil {
 		writeErr(w, statusCodeFor(err), err.Error())
 		return
@@ -363,7 +363,7 @@ func (s *Server) handleStartRun(w http.ResponseWriter, r *http.Request) {
 // launchRun starts a run for a test definition and returns its id and status
 // ("running"/"queued"). Shared by the REST handler and the scheduler. An empty
 // name falls back to "<test name> @ <time>"; createdBy is nil for the scheduler.
-func (s *Server) launchRun(ctx context.Context, testID string, workers int, name string, createdBy *string, envID string) (string, string, error) {
+func (s *Server) launchRun(ctx context.Context, testID string, workers int, name string, createdBy *string, source, envID string) (string, string, error) {
 	td, err := s.pg.GetTestDefinition(ctx, testID)
 	if err != nil {
 		return "", "", errNotFound("test not found")
@@ -408,7 +408,7 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	// environment is later edited (the original template alone wouldn't reveal
 	// which target this run hit).
 	snapshot := buildRunSnapshot(td, planJSON, scriptJS, envName, envVars)
-	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy, snapshot)
+	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy, source, snapshot)
 	if err != nil {
 		return "", "", err
 	}

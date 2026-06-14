@@ -164,7 +164,9 @@ func (s *Server) fireDueSchedules(ctx context.Context) {
 			cancel()
 			return // nothing due
 		}
-		runID, st, err := s.launchRun(cctx, sc.TestDefID, sc.DesiredWorkers, "", nil, "")
+		// The run is owned by (accountable to) the schedule's creator, but its
+		// source records that it was triggered automatically, not by hand.
+		runID, st, err := s.launchRun(cctx, sc.TestDefID, sc.DesiredWorkers, "", sc.CreatedBy, "schedule", "")
 		if err != nil {
 			s.log.Warn("scheduler: launch failed", "schedule", sc.ID, "err", err)
 		} else {
