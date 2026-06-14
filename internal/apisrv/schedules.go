@@ -16,6 +16,22 @@ type createScheduleReq struct {
 	DesiredWorkers  int    `json:"desired_workers"`
 }
 
+// ownsSchedule applies the owner-or-admin write policy to a schedule, writing
+// the error response and returning false when the caller may not proceed. A
+// schedule's owner is the user who created it.
+func (s *Server) ownsSchedule(w http.ResponseWriter, r *http.Request, ctx context.Context, id string) bool {
+	sc, err := s.pg.GetSchedule(ctx, id)
+	if err != nil {
+		if err == postgres.ErrScheduleNotFound {
+			writeErr(w, http.StatusNotFound, "schedule not found")
+		} else {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+		}
+		return false
+	}
+	return !s.denyIfNotOwner(w, r, sc.CreatedBy)
+}
+
 func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 	var req createScheduleReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -32,7 +48,7 @@ func (s *Server) handleCreateSchedule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "test not found")
 		return
 	}
-	id, err := s.pg.CreateSchedule(ctx, req.TestID, req.IntervalMinutes, req.DesiredWorkers)
+	id, err := s.pg.CreateSchedule(ctx, req.TestID, req.IntervalMinutes, req.DesiredWorkers, callerID(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -74,6 +90,9 @@ func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
+	if !s.ownsSchedule(w, r, ctx, chi.URLParam(r, "id")) {
+		return
+	}
 	if err := s.pg.UpdateSchedule(ctx, chi.URLParam(r, "id"), req.IntervalMinutes, req.DesiredWorkers); err != nil {
 		if err == postgres.ErrScheduleNotFound {
 			writeErr(w, http.StatusNotFound, "schedule not found")
@@ -88,6 +107,9 @@ func (s *Server) handleUpdateSchedule(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
+	if !s.ownsSchedule(w, r, ctx, chi.URLParam(r, "id")) {
+		return
+	}
 	if err := s.pg.DeleteSchedule(ctx, chi.URLParam(r, "id")); err != nil {
 		if err == postgres.ErrScheduleNotFound {
 			writeErr(w, http.StatusNotFound, "schedule not found")
@@ -103,6 +125,9 @@ func (s *Server) handleSetScheduleEnabled(w http.ResponseWriter, r *http.Request
 	enabled := r.URL.Query().Get("enabled") != "false"
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
+	if !s.ownsSchedule(w, r, ctx, chi.URLParam(r, "id")) {
+		return
+	}
 	if err := s.pg.SetScheduleEnabled(ctx, chi.URLParam(r, "id"), enabled); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

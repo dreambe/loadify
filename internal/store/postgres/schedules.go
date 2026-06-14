@@ -12,22 +12,24 @@ func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
 // Schedule runs a test definition on a fixed interval.
 type Schedule struct {
-	ID             string     `json:"id"`
-	TestDefID      string     `json:"test_def_id"`
-	IntervalMin    int        `json:"interval_minutes"`
-	DesiredWorkers int        `json:"desired_workers"`
-	Enabled        bool       `json:"enabled"`
-	NextRunAt      time.Time  `json:"next_run_at"`
-	LastRunID      *string    `json:"last_run_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID             string    `json:"id"`
+	TestDefID      string    `json:"test_def_id"`
+	IntervalMin    int       `json:"interval_minutes"`
+	DesiredWorkers int       `json:"desired_workers"`
+	Enabled        bool      `json:"enabled"`
+	NextRunAt      time.Time `json:"next_run_at"`
+	LastRunID      *string   `json:"last_run_id,omitempty"`
+	CreatedBy      *string   `json:"created_by,omitempty"`
+	CreatorName    string    `json:"creator_name,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // CreateSchedule inserts a schedule, first run due now.
-func (s *Store) CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error) {
+func (s *Store) CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int, createdBy *string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO schedules (test_def_id, interval_minutes, desired_workers)
-		VALUES ($1,$2,$3) RETURNING id`, testDefID, intervalMin, desiredWorkers).Scan(&id)
+		INSERT INTO schedules (test_def_id, interval_minutes, desired_workers, created_by)
+		VALUES ($1,$2,$3,$4) RETURNING id`, testDefID, intervalMin, desiredWorkers, createdBy).Scan(&id)
 	return id, err
 }
 
@@ -37,8 +39,9 @@ func (s *Store) ListSchedules(ctx context.Context, limit int) ([]Schedule, error
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, test_def_id, interval_minutes, desired_workers, enabled, next_run_at, last_run_id, created_at
-		FROM schedules ORDER BY created_at DESC LIMIT $1`, limit)
+		SELECT s.id, s.test_def_id, s.interval_minutes, s.desired_workers, s.enabled, s.next_run_at, s.last_run_id, s.created_by, coalesce(nullif(u.name,''), u.email, ''), s.created_at
+		FROM schedules s LEFT JOIN users u ON u.id = s.created_by
+		ORDER BY s.created_at DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -46,12 +49,29 @@ func (s *Store) ListSchedules(ctx context.Context, limit int) ([]Schedule, error
 	out := []Schedule{}
 	for rows.Next() {
 		var sc Schedule
-		if err := rows.Scan(&sc.ID, &sc.TestDefID, &sc.IntervalMin, &sc.DesiredWorkers, &sc.Enabled, &sc.NextRunAt, &sc.LastRunID, &sc.CreatedAt); err != nil {
+		if err := rows.Scan(&sc.ID, &sc.TestDefID, &sc.IntervalMin, &sc.DesiredWorkers, &sc.Enabled, &sc.NextRunAt, &sc.LastRunID, &sc.CreatedBy, &sc.CreatorName, &sc.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, sc)
 	}
 	return out, rows.Err()
+}
+
+// GetSchedule fetches one schedule (including its owner) for authorization.
+func (s *Store) GetSchedule(ctx context.Context, id string) (*Schedule, error) {
+	var sc Schedule
+	err := s.pool.QueryRow(ctx, `
+		SELECT s.id, s.test_def_id, s.interval_minutes, s.desired_workers, s.enabled, s.next_run_at, s.last_run_id, s.created_by, coalesce(nullif(u.name,''), u.email, ''), s.created_at
+		FROM schedules s LEFT JOIN users u ON u.id = s.created_by
+		WHERE s.id=$1`, id).
+		Scan(&sc.ID, &sc.TestDefID, &sc.IntervalMin, &sc.DesiredWorkers, &sc.Enabled, &sc.NextRunAt, &sc.LastRunID, &sc.CreatedBy, &sc.CreatorName, &sc.CreatedAt)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, ErrScheduleNotFound
+		}
+		return nil, err
+	}
+	return &sc, nil
 }
 
 // SetScheduleEnabled toggles a schedule.

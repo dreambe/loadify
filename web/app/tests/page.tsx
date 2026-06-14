@@ -320,6 +320,10 @@ export default function TestsPage() {
 
   if (!ready) return null;
   const canCreate = roleAtLeast(user?.role, "operator");
+  // Shared read, owner-or-admin write: anyone may run or copy a test, but only
+  // its creator (or an admin) may edit or delete it.
+  const canModify = (td: TestDefinition) =>
+    roleAtLeast(user?.role, "admin") || (!!td.created_by && td.created_by === user?.id);
 
   return (
     <>
@@ -607,15 +611,19 @@ export default function TestsPage() {
                             >
                               <Icon name="play" /> {t("tests.run")}
                             </button>
-                            <button className="ghost sm" onClick={() => loadIntoForm(td, "edit")}>
-                              {t("tests.edit")}
-                            </button>
+                            {canModify(td) && (
+                              <button className="ghost sm" onClick={() => loadIntoForm(td, "edit")}>
+                                {t("tests.edit")}
+                              </button>
+                            )}
                             <button className="ghost sm" onClick={() => loadIntoForm(td, "copy")}>
                               {t("tests.copy")}
                             </button>
-                            <button className="danger sm" onClick={() => remove(td)}>
-                              {t("tests.delete")}
-                            </button>
+                            {canModify(td) && (
+                              <button className="danger sm" onClick={() => remove(td)}>
+                                {t("tests.delete")}
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}

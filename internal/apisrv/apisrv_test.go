@@ -106,8 +106,11 @@ func (f *fakeMeta) UpdateEnvironment(_ context.Context, _, _ string, _ map[strin
 func (f *fakeMeta) DeleteEnvironment(_ context.Context, _ string) error                          { return nil }
 func (f *fakeMeta) WriteAudit(_ context.Context, _ postgres.AuditEntry) error                    { return nil }
 func (f *fakeMeta) ListAudit(_ context.Context, _ int) ([]postgres.AuditEntry, error)            { return nil, nil }
-func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int) (string, error) {
+func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int, _ *string) (string, error) {
 	return "sched-1", nil
+}
+func (f *fakeMeta) GetSchedule(_ context.Context, id string) (*postgres.Schedule, error) {
+	return &postgres.Schedule{ID: id, TestDefID: "test-1", CreatedBy: f.owner}, nil
 }
 func (f *fakeMeta) ListSchedules(_ context.Context, _ int) ([]postgres.Schedule, error) { return nil, nil }
 func (f *fakeMeta) SetScheduleEnabled(_ context.Context, _ string, _ bool) error        { return nil }
@@ -156,6 +159,9 @@ func (c *fakeCoord) GetRunState(context.Context, *loadifyv1.RunStateRequest, ...
 }
 func (c *fakeCoord) StreamLive(context.Context, *loadifyv1.LiveRequest, ...grpc.CallOption) (loadifyv1.CoordinatorService_StreamLiveClient, error) {
 	return nil, status.Error(codes.Unavailable, "no stream in tests")
+}
+func (c *fakeCoord) StopRun(context.Context, *loadifyv1.StopRunRequest, ...grpc.CallOption) (*loadifyv1.StopRunResponse, error) {
+	return &loadifyv1.StopRunResponse{}, nil
 }
 
 func newTestServer(meta *fakeMeta, coord loadifyv1.CoordinatorServiceClient) *Server {
@@ -234,15 +240,18 @@ func TestOwnershipGating(t *testing.T) {
 		{"DELETE", "/api/v1/tests/test-1", ""},
 		{"POST", "/api/v1/runs/run-1/stop", ""},
 		{"DELETE", "/api/v1/environments/env-1", ""},
+		{"PUT", "/api/v1/schedules/sched-1", `{"interval_minutes":5,"desired_workers":1}`},
+		{"DELETE", "/api/v1/schedules/sched-1", ""},
+		{"POST", "/api/v1/schedules/sched-1/enabled?enabled=false", ""},
 	}
 	for _, tc := range cases {
 		// Non-owner operator is forbidden.
 		if c := do(tc.method, tc.path, opTok, tc.body); c != http.StatusForbidden {
 			t.Errorf("non-owner %s %s: got %d want 403", tc.method, tc.path, c)
 		}
-		// Admin may mutate anything.
-		if c := do(tc.method, tc.path, adminTok, tc.body); c == http.StatusForbidden {
-			t.Errorf("admin %s %s: got 403, want allowed", tc.method, tc.path)
+		// Admin may mutate anything (and must actually succeed, not 5xx).
+		if c := do(tc.method, tc.path, adminTok, tc.body); c/100 != 2 {
+			t.Errorf("admin %s %s: got %d, want 2xx", tc.method, tc.path, c)
 		}
 	}
 
@@ -250,8 +259,8 @@ func TestOwnershipGating(t *testing.T) {
 	uid := "u"
 	meta.owner = &uid
 	for _, tc := range cases {
-		if c := do(tc.method, tc.path, opTok, tc.body); c == http.StatusForbidden {
-			t.Errorf("owner %s %s: got 403, want allowed", tc.method, tc.path)
+		if c := do(tc.method, tc.path, opTok, tc.body); c/100 != 2 {
+			t.Errorf("owner %s %s: got %d, want 2xx", tc.method, tc.path, c)
 		}
 	}
 }

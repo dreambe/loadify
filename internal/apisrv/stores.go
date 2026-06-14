@@ -50,7 +50,8 @@ type metaStore interface {
 	WriteAudit(ctx context.Context, e postgres.AuditEntry) error
 	ListAudit(ctx context.Context, limit int) ([]postgres.AuditEntry, error)
 
-	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int) (string, error)
+	CreateSchedule(ctx context.Context, testDefID string, intervalMin, desiredWorkers int, createdBy *string) (string, error)
+	GetSchedule(ctx context.Context, id string) (*postgres.Schedule, error)
 	ListSchedules(ctx context.Context, limit int) ([]postgres.Schedule, error)
 	SetScheduleEnabled(ctx context.Context, id string, enabled bool) error
 	UpdateSchedule(ctx context.Context, id string, intervalMin, desiredWorkers int) error
