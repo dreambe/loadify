@@ -415,6 +415,14 @@ func (s *Server) handleStopRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 	runID := chi.URLParam(r, "id")
+	run, err := s.pg.GetRun(ctx, runID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if s.denyIfNotOwner(w, r, run.CreatedBy) {
+		return
+	}
 	if _, err := s.coord.StopRun(ctx, &loadifyv1.StopRunRequest{RunId: runID, Graceful: true}); err != nil {
 		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return

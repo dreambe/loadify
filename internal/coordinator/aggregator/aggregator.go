@@ -30,10 +30,11 @@ type Aggregator struct {
 	mu          sync.Mutex
 	buckets     map[int64]map[metrics.Key]*metrics.Bucket // bucketSec -> key -> agg
 	samples     map[int64][]*loadifyv1.Sample             // bucketSec -> raw samples
-	workerVUs   map[string]int64
+	vusBySec    map[int64]map[string]int64                // bucketSec -> worker -> active VUs
 	listeners   []chan *loadifyv1.LiveTick
 	lastEmitted int64
 	totalCount  int64
+	lateBatches int64 // batches that arrived after their second was finalized
 
 	// Auto-stop circuit breaker (cross-worker error-rate over a window).
 	autoStop  plan.AutoStopConfig
@@ -88,7 +89,7 @@ func New(runID string, proto loadifyv1.Protocol, writer store.RollupWriter, log 
 		log:       log,
 		buckets:   make(map[int64]map[metrics.Key]*metrics.Bucket),
 		samples:   make(map[int64][]*loadifyv1.Sample),
-		workerVUs: make(map[string]int64),
+		vusBySec:  make(map[int64]map[string]int64),
 	}
 }
 
@@ -96,7 +97,18 @@ func New(runID string, proto loadifyv1.Protocol, writer store.RollupWriter, log 
 func (a *Aggregator) Ingest(b *loadifyv1.MetricBatch) {
 	sec := b.BucketUnixMs / 1000
 	a.mu.Lock()
-	a.workerVUs[b.WorkerId] = b.ActiveVus
+	// A batch for an already-finalized second can never be emitted (its bucket
+	// is gone). Don't resurrect a zombie bucket that would be silently dropped
+	// at the next finalize — count it instead so the loss is observable.
+	if a.lastEmitted != 0 && sec <= a.lastEmitted {
+		a.lateBatches++
+		a.mu.Unlock()
+		return
+	}
+	if a.vusBySec[sec] == nil {
+		a.vusBySec[sec] = make(map[string]int64)
+	}
+	a.vusBySec[sec][b.WorkerId] = b.ActiveVus
 	bk := a.buckets[sec]
 	if bk == nil {
 		bk = make(map[metrics.Key]*metrics.Bucket)
@@ -148,6 +160,13 @@ func (a *Aggregator) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			a.finalize(time.Now().Add(time.Hour)) // drain everything
+			a.mu.Lock()
+			late := a.lateBatches
+			a.mu.Unlock()
+			if late > 0 {
+				a.log.Warn("dropped late metric batches; rollups for those seconds are incomplete",
+					"run", a.runID, "late_batches", late, "grace", finalizeGrace)
+			}
 			a.closeListeners()
 			return
 		case now := <-t.C:
@@ -169,15 +188,18 @@ func (a *Aggregator) finalize(now time.Time) {
 	var rows []store.Rollup
 	var ticks []*loadifyv1.LiveTick
 	var sampleRows []store.Sample
-	activeVUs := int64(0)
-	for _, v := range a.workerVUs {
-		activeVUs += v
-	}
 	for _, sec := range ready {
 		bk := a.buckets[sec]
 		delete(a.buckets, sec)
 		secSamples := a.samples[sec]
 		delete(a.samples, sec)
+		// Use the VU count reported for THIS second, not the current pool size,
+		// so a ramping/draining run's per-second ActiveVUs reflects history.
+		activeVUs := int64(0)
+		for _, v := range a.vusBySec[sec] {
+			activeVUs += v
+		}
+		delete(a.vusBySec, sec)
 		if a.lastEmitted != 0 && sec <= a.lastEmitted {
 			continue
 		}

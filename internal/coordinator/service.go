@@ -229,6 +229,18 @@ func (s *Service) StartRun(_ context.Context, req *loadifyv1.StartRunRequest) (*
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Idempotency: a run id already known to the coordinator (e.g. a duplicate
+	// StartRun, or one racing a rehydrate after restart) must not overwrite the
+	// live runState — that would orphan its aggregator goroutine. Report the
+	// current state instead.
+	if rs := s.runs[req.RunId]; rs != nil {
+		st := "queued"
+		if rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
+			st = "running"
+		}
+		return &loadifyv1.StartRunResponse{RunId: req.RunId, AssignedWorkers: int32(len(rs.assigned)), Status: st}, nil
+	}
+
 	if s.canDispatchLocked(req.Protocol) {
 		assigned, err := s.dispatchLocked(req)
 		if err != nil {
@@ -321,10 +333,13 @@ func (s *Service) drainLocked() {
 		}
 		s.queue = s.queue[1:]
 		if _, err := s.dispatchLocked(req); err != nil {
-			s.log.Warn("drain dispatch failed", "run", req.RunId, "err", err)
-			if rs := s.runs[req.RunId]; rs != nil {
-				rs.status = loadifyv1.RunStatus_RUN_STATUS_FAILED
-			}
+			// A transient dispatch failure (e.g. a worker's send buffer was
+			// momentarily full) must not strand the run: put it back at the
+			// front and stop draining this round so it retries on the next
+			// event rather than being silently lost.
+			s.log.Warn("drain dispatch failed; re-queueing", "run", req.RunId, "err", err)
+			s.queue = append([]*loadifyv1.StartRunRequest{req}, s.queue...)
+			return
 		}
 	}
 }

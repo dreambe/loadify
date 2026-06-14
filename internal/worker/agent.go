@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
@@ -29,7 +30,8 @@ type Agent struct {
 	region   string
 	log      *slog.Logger
 
-	sendCh chan *loadifyv1.WorkerMessage
+	sendCh      chan *loadifyv1.WorkerMessage
+	droppedSend atomic.Int64 // metric messages dropped because sendCh was full
 
 	mu        sync.Mutex
 	runs      map[string]context.CancelFunc
@@ -187,14 +189,16 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 	var exec interface {
 		Run(context.Context) error
 	}
+	var arr *executor.ArrivalExecutor
 	if ramp.IsArrival() {
-		exec = executor.NewArrival(executor.ArrivalConfig{
+		arr = executor.NewArrival(executor.ArrivalConfig{
 			Driver:  drv,
 			Ramp:    ramp,
 			Sampler: smp,
 			MaxVUs:  p.MaxVUs,
 			Logger:  log,
 		})
+		exec = arr
 	} else {
 		exec = executor.New(executor.Config{
 			Driver:     drv,
@@ -235,6 +239,16 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 		log.Error("executor error", "err", err)
 	}
 	close(flushDone)
+	// Saturation in the open model means requests were never issued: surface it
+	// so a "green" run that silently under-delivered its target rate is visible.
+	if arr != nil {
+		if d := arr.Dropped(); d > 0 {
+			log.Warn("dropped iterations: worker pool saturated at cap; achieved rate was below target", "dropped", d)
+		}
+	}
+	if d := a.droppedSend.Swap(0); d > 0 {
+		log.Warn("dropped metric messages: coordinator send buffer was full; reported metrics are incomplete", "dropped", d)
+	}
 	// Final flush.
 	a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Metrics{Metrics: smp.Flush(time.Now())}})
 	a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Finished{Finished: &loadifyv1.RunFinished{
@@ -295,7 +309,12 @@ func (a *Agent) enqueue(msg *loadifyv1.WorkerMessage) {
 	select {
 	case a.sendCh <- msg:
 	default:
-		a.log.Warn("send buffer full, dropping message")
+		// Count drops; the run summary will be incomplete. Warn once here to
+		// avoid log spam under sustained backpressure (a full tally is logged
+		// at run end).
+		if a.droppedSend.Add(1) == 1 {
+			a.log.Warn("coordinator send buffer full; dropping metric messages — reported metrics will be incomplete")
+		}
 	}
 }
 

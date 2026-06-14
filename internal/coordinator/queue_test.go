@@ -63,6 +63,15 @@ func TestAdmissionQueuesWhenAtCapacity(t *testing.T) {
 	if respA.Status != "running" {
 		t.Fatalf("run A status = %q, want running", respA.Status)
 	}
+	// Idempotency: re-issuing StartRun for a live run must report the current
+	// state, not overwrite it (which would orphan its aggregator goroutine).
+	respA2, err := cc.StartRun(ctx, &loadifyv1.StartRunRequest{RunId: "A", Protocol: loadifyv1.Protocol_PROTOCOL_HTTP, PlanJson: plan, Ramp: ramp, DesiredWorkers: 1})
+	if err != nil {
+		t.Fatalf("StartRun A (repeat): %v", err)
+	}
+	if respA2.Status != "running" {
+		t.Fatalf("repeat StartRun A status = %q, want running (idempotent)", respA2.Status)
+	}
 	respB, err := cc.StartRun(ctx, &loadifyv1.StartRunRequest{RunId: "B", Protocol: loadifyv1.Protocol_PROTOCOL_HTTP, PlanJson: plan, Ramp: ramp, DesiredWorkers: 1})
 	if err != nil {
 		t.Fatalf("StartRun B: %v", err)

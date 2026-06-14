@@ -97,6 +97,31 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUpdateTest rewrites an existing test definition in place.
+// canMutate implements the "shared read, owner-or-admin write" policy: any
+// authenticated user may view every resource, but only its creator or an admin
+// may modify it. A nil owner (legacy rows predating ownership tracking) is
+// admin-only, to fail safe.
+func canMutate(c *auth.Claims, ownerID *string) bool {
+	if c == nil {
+		return false
+	}
+	if c.Role == auth.RoleAdmin {
+		return true
+	}
+	return ownerID != nil && *ownerID == c.Subject
+}
+
+// denyIfNotOwner writes 403 and returns true when the caller may not mutate a
+// resource owned by ownerID.
+func (s *Server) denyIfNotOwner(w http.ResponseWriter, r *http.Request, ownerID *string) bool {
+	c, _ := auth.FromContext(r.Context())
+	if !canMutate(c, ownerID) {
+		writeErr(w, http.StatusForbidden, "only the creator or an admin may modify this resource")
+		return true
+	}
+	return false
+}
+
 func (s *Server) handleUpdateTest(w http.ResponseWriter, r *http.Request) {
 	var req createTestReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -109,7 +134,15 @@ func (s *Server) handleUpdateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
-	err := s.pg.UpdateTestDefinition(ctx, &postgres.TestDefinition{
+	existing, err := s.pg.GetTestDefinition(ctx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	if s.denyIfNotOwner(w, r, existing.CreatedBy) {
+		return
+	}
+	err = s.pg.UpdateTestDefinition(ctx, &postgres.TestDefinition{
 		ID:         chi.URLParam(r, "id"),
 		Name:       req.Name,
 		Protocol:   req.Protocol,
@@ -151,6 +184,14 @@ func normalizeTags(in []string) []string {
 func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
+	existing, err := s.pg.GetTestDefinition(ctx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	if s.denyIfNotOwner(w, r, existing.CreatedBy) {
+		return
+	}
 	if err := s.pg.ArchiveTestDefinition(ctx, chi.URLParam(r, "id")); err != nil {
 		writeErr(w, http.StatusNotFound, "not found")
 		return

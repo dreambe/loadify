@@ -27,6 +27,7 @@ type fakeMeta struct {
 	finished   map[string]string // runID -> status
 	dueOnce     []postgres.Schedule
 	scheduleRun map[string]string // scheduleID -> runID
+	owner       *string           // CreatedBy returned for tests/runs/environments
 }
 
 func newFakeMeta() *fakeMeta {
@@ -41,7 +42,7 @@ func (f *fakeMeta) UpdateTestDefinition(_ context.Context, _ *postgres.TestDefin
 }
 func (f *fakeMeta) ArchiveTestDefinition(_ context.Context, _ string) error { return nil }
 func (f *fakeMeta) GetTestDefinition(_ context.Context, id string) (*postgres.TestDefinition, error) {
-	return &postgres.TestDefinition{ID: id, Protocol: "http", PlanJSON: json.RawMessage(`{"protocol":"http","http":{"url":"http://x"}}`)}, nil
+	return &postgres.TestDefinition{ID: id, Protocol: "http", CreatedBy: f.owner, PlanJSON: json.RawMessage(`{"protocol":"http","http":{"url":"http://x"}}`)}, nil
 }
 func (f *fakeMeta) ListTestDefinitions(_ context.Context, _ int) ([]postgres.TestDefinition, error) {
 	return nil, nil
@@ -59,7 +60,7 @@ func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage
 	return true, nil
 }
 func (f *fakeMeta) GetRun(_ context.Context, id string) (*postgres.Run, error) {
-	return &postgres.Run{ID: id, TestDefID: "test-1", Status: "running"}, nil
+	return &postgres.Run{ID: id, TestDefID: "test-1", Status: "running", CreatedBy: f.owner}, nil
 }
 func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error)      { return nil, nil }
 func (f *fakeMeta) ListRunsByTest(_ context.Context, _ string, _ int) ([]postgres.Run, error) {
@@ -96,7 +97,7 @@ func (f *fakeMeta) ListEnvironments(_ context.Context, _ int) ([]postgres.Enviro
 	return nil, nil
 }
 func (f *fakeMeta) GetEnvironment(_ context.Context, id string) (*postgres.Environment, error) {
-	return &postgres.Environment{ID: id, Name: "dev", Vars: map[string]string{"base_url": "http://dev.example.com"}}, nil
+	return &postgres.Environment{ID: id, Name: "dev", CreatedBy: f.owner, Vars: map[string]string{"base_url": "http://dev.example.com"}}, nil
 }
 func (f *fakeMeta) CreateEnvironment(_ context.Context, _ string, _ map[string]string, _ *string) (string, error) {
 	return "env-1", nil
@@ -207,6 +208,51 @@ func TestRBACGating(t *testing.T) {
 	// Admin-only route.
 	if c := do("GET", "/api/v1/users", token(t, auth.RoleOperator), ""); c != http.StatusForbidden {
 		t.Errorf("operator users: got %d want 403", c)
+	}
+}
+
+// TestOwnershipGating verifies the "shared read, owner-or-admin write" policy:
+// an operator cannot mutate resources they don't own, an admin can mutate any,
+// and the creator can mutate their own.
+func TestOwnershipGating(t *testing.T) {
+	meta := newFakeMeta() // owner nil → only an admin may mutate
+	srv := newTestServer(meta, &fakeCoord{})
+	h := srv.Handler()
+	do := func(method, path, tok, body string) int {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr.Code
+	}
+	validPlan := `{"name":"t","protocol":"http","plan":{"protocol":"http","http":{"url":"http://x"}},"ramp":[]}`
+	opTok := token(t, auth.RoleOperator)   // Subject "u"
+	adminTok := token(t, auth.RoleAdmin)
+
+	cases := []struct{ method, path, body string }{
+		{"PUT", "/api/v1/tests/test-1", validPlan},
+		{"DELETE", "/api/v1/tests/test-1", ""},
+		{"POST", "/api/v1/runs/run-1/stop", ""},
+		{"DELETE", "/api/v1/environments/env-1", ""},
+	}
+	for _, tc := range cases {
+		// Non-owner operator is forbidden.
+		if c := do(tc.method, tc.path, opTok, tc.body); c != http.StatusForbidden {
+			t.Errorf("non-owner %s %s: got %d want 403", tc.method, tc.path, c)
+		}
+		// Admin may mutate anything.
+		if c := do(tc.method, tc.path, adminTok, tc.body); c == http.StatusForbidden {
+			t.Errorf("admin %s %s: got 403, want allowed", tc.method, tc.path)
+		}
+	}
+
+	// When the operator IS the creator, the same mutations are allowed.
+	uid := "u"
+	meta.owner = &uid
+	for _, tc := range cases {
+		if c := do(tc.method, tc.path, opTok, tc.body); c == http.StatusForbidden {
+			t.Errorf("owner %s %s: got 403, want allowed", tc.method, tc.path)
+		}
 	}
 }
 

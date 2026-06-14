@@ -86,6 +86,14 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
+	existing, err := s.pg.GetEnvironment(ctx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, statusForEnvErr(err), err.Error())
+		return
+	}
+	if s.denyIfNotOwner(w, r, existing.CreatedBy) {
+		return
+	}
 	if err := s.pg.UpdateEnvironment(ctx, chi.URLParam(r, "id"), req.Name, req.Vars); err != nil {
 		writeErr(w, statusForEnvErr(err), err.Error())
 		return
@@ -96,6 +104,14 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleDeleteEnvironment(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
+	existing, err := s.pg.GetEnvironment(ctx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, statusForEnvErr(err), err.Error())
+		return
+	}
+	if s.denyIfNotOwner(w, r, existing.CreatedBy) {
+		return
+	}
 	if err := s.pg.DeleteEnvironment(ctx, chi.URLParam(r, "id")); err != nil {
 		writeErr(w, statusForEnvErr(err), err.Error())
 		return
