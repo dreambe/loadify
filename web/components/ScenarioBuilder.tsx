@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { api, type DebugResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
+import Icon from "./Icon";
+import JsonExplorer from "./JsonExplorer";
 
 // A scenario is a multi-step HTTP plan: steps run in sequence (chaining
 // extracted variables) or one-per-iteration by weight (traffic mix).
@@ -77,6 +81,25 @@ export function planToScenario(plan: any): ScenarioSpec {
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
 
+// isJson gates the interactive tree view; non-JSON bodies show as raw text.
+function isJson(s: string): boolean {
+  try {
+    JSON.parse(s);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// prettyBody re-indents JSON for the raw view; other content is left as-is.
+function prettyBody(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
+
 export default function ScenarioBuilder({
   value,
   onChange,
@@ -88,8 +111,51 @@ export default function ScenarioBuilder({
   const weighted = value.mode === "weighted";
   const totalWeight = value.steps.reduce((sum, s) => sum + (s.weight || 1), 0);
 
+  // Per-step debug responses, keyed by step index. A step's "send test request"
+  // fires its literal request (no {{var}} resolution) so the user can inspect
+  // the response and click fields to build extract rows.
+  const [debug, setDebug] = useState<Record<number, DebugResponse>>({});
+  const [debugging, setDebugging] = useState<number | null>(null);
+  const [rawView, setRawView] = useState<Record<number, boolean>>({});
+
   const setStep = (i: number, patch: Partial<ScenarioStep>) =>
     onChange({ ...value, steps: value.steps.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) });
+
+  // removeStep drops the step and clears cached debug results, whose numeric
+  // keys would otherwise drift onto the wrong steps after the indices shift.
+  const removeStep = (i: number) => {
+    onChange({ ...value, steps: value.steps.filter((_, idx) => idx !== i) });
+    setDebug({});
+  };
+
+  async function runDebug(i: number) {
+    const st = value.steps[i];
+    if (!st.url) return;
+    setDebugging(i);
+    setDebug((d) => {
+      const n = { ...d };
+      delete n[i];
+      return n;
+    });
+    const headers: Record<string, string> = {};
+    for (const h of st.headers) if (h.key) headers[h.key] = h.value;
+    try {
+      const r = await api.debugRequest({ method: st.method, url: st.url, headers, body: st.body || undefined });
+      setDebug((d) => ({ ...d, [i]: r }));
+    } catch (e: any) {
+      setDebug((d) => ({
+        ...d,
+        [i]: { status: 0, status_text: "", latency_ms: 0, headers: {}, body: "", body_truncated: false, recv_bytes: 0, error: e.message },
+      }));
+    } finally {
+      setDebugging(null);
+    }
+  }
+
+  // pickExtract appends an extract row pre-filled with the leaf key as the
+  // variable name and the clicked field's dot-path; the user renames to confirm.
+  const pickExtract = (i: number) => (path: string, leafKey: string) =>
+    setStep(i, { extracts: [...value.steps[i].extracts, { var: leafKey, path }] });
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14 }}>
@@ -132,11 +198,7 @@ export default function ScenarioBuilder({
               {weighted ? "◆" : `${i + 1}.`} {st.name || t("scenario.step") + " " + (i + 1)}
             </b>
             {value.steps.length > 1 && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onChange({ ...value, steps: value.steps.filter((_, idx) => idx !== i) })}
-              >
+              <button type="button" className="secondary" onClick={() => removeStep(i)}>
                 {t("ramp.remove")}
               </button>
             )}
@@ -229,6 +291,96 @@ export default function ScenarioBuilder({
             onChange={(e) => setStep(i, { body: e.target.value })}
             placeholder={weighted ? "" : t("scenario.bodyPh")}
           />
+
+          {/* Per-step debug: fire the literal request, inspect & pick fields. */}
+          <div className="row" style={{ marginTop: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!st.url || debugging === i}
+              onClick={() => runDebug(i)}
+            >
+              {debugging === i ? (
+                t("debug.sending")
+              ) : (
+                <>
+                  <Icon name="play" /> {t("scenario.sendTest")}
+                </>
+              )}
+            </button>
+            <Help tip={t("scenario.sendTestHint")} />
+          </div>
+          {debug[i] && (
+            <div
+              style={{
+                marginTop: 8,
+                border: "1px solid var(--border-strong)",
+                borderRadius: 8,
+                padding: 10,
+                background: "var(--bg)",
+              }}
+            >
+              {debug[i].error ? (
+                <div className="error" style={{ margin: 0 }}>
+                  {t("debug.failed")}: {debug[i].error}
+                </div>
+              ) : (
+                <>
+                  <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span className="row" style={{ alignItems: "center", gap: 8 }}>
+                      <span className={`badge ${debug[i].status < 400 ? "completed" : "failed"}`}>
+                        {debug[i].status} {debug[i].status_text}
+                      </span>
+                      <span className="muted" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                        {debug[i].latency_ms.toFixed(1)} ms
+                      </span>
+                    </span>
+                    {!weighted && isJson(debug[i].body) && (
+                      <span style={{ display: "flex", gap: 4 }}>
+                        <button
+                          type="button"
+                          className={rawView[i] ? "secondary" : ""}
+                          style={{ padding: "2px 10px", fontSize: 12 }}
+                          onClick={() => setRawView((v) => ({ ...v, [i]: false }))}
+                        >
+                          {t("json.viewTree")}
+                        </button>
+                        <button
+                          type="button"
+                          className={rawView[i] ? "" : "secondary"}
+                          style={{ padding: "2px 10px", fontSize: 12 }}
+                          onClick={() => setRawView((v) => ({ ...v, [i]: true }))}
+                        >
+                          {t("json.viewRaw")}
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  {!weighted && !rawView[i] && isJson(debug[i].body) ? (
+                    <>
+                      <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
+                        {t("json.pickHint")}
+                      </div>
+                      <JsonExplorer body={debug[i].body} mode="extract" onPick={pickExtract(i)} />
+                    </>
+                  ) : (
+                    <pre
+                      style={{
+                        margin: 0,
+                        maxHeight: 200,
+                        overflow: "auto",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-all",
+                        fontSize: 12,
+                      }}
+                    >
+                      {prettyBody(debug[i].body) || t("log.bodyEmpty")}
+                    </pre>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* Extracts (sequence chaining only) */}
           {!weighted && (

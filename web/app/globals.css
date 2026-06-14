@@ -1111,3 +1111,107 @@ label.req::after {
 .login-card .panel {
   box-shadow: var(--shadow-panel);
 }
+
+/* JsonExplorer — interactive response tree for picking extract/assert paths. */
+.jsonExplorer {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  max-height: 280px;
+  overflow: auto;
+}
+.jx-children {
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  margin-left: 5px;
+}
+.jx-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 5px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.jx-row:hover {
+  background: var(--accent-soft);
+}
+.jx-toggle {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  width: 12px;
+  text-align: center;
+  font-size: 10px;
+}
+.jx-toggle:hover {
+  color: var(--accent);
+}
+.jx-toggle-spacer {
+  display: inline-block;
+  width: 12px;
+}
+.jx-key {
+  color: var(--accent-2);
+}
+.jx-colon {
+  color: var(--muted);
+}
+.jx-summary {
+  color: var(--muted);
+}
+.jx-str {
+  color: var(--green);
+}
+.jx-num {
+  color: var(--accent);
+}
+.jx-null {
+  color: var(--muted);
+  font-style: italic;
+}
+.jx-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+.jx-path {
+  margin-left: auto;
+  color: var(--muted);
+  opacity: 0;
+  font-size: 11px;
+}
+.jx-row:hover .jx-path {
+  opacity: 0.7;
+}
+.jx-pick {
+  all: unset;
+  cursor: pointer;
+  color: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0 6px;
+  font-size: 11px;
+  opacity: 0;
+}
+.jx-row:hover .jx-pick {
+  opacity: 1;
+}
+.jx-pick:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.jx-cant {
+  margin-left: auto;
+  color: var(--muted);
+  opacity: 0;
+  font-size: 11px;
+  font-style: italic;
+}
+.jx-row:hover .jx-cant {
+  opacity: 0.6;
+}
+.jx-more {
+  color: var(--muted);
+  padding-left: 4px;
+}

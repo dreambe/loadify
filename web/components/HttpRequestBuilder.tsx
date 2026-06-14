@@ -5,6 +5,7 @@ import { api, type DebugResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 import Icon from "./Icon";
+import JsonExplorer from "./JsonExplorer";
 
 // Assert mirrors the backend plan.HTTPAssert: one per-request check.
 export interface Assert {
@@ -140,12 +141,24 @@ export default function HttpRequestBuilder({
   const { t } = useI18n();
   const [debugging, setDebugging] = useState(false);
   const [debug, setDebug] = useState<DebugResponse | null>(null);
+  const [respTree, setRespTree] = useState(true);
 
   function setHeader(i: number, patch: Partial<{ key: string; value: string }>) {
     onChange({ ...value, headers: value.headers.map((h, idx) => (idx === i ? { ...h, ...patch } : h)) });
   }
   function setAssert(i: number, patch: Partial<Assert>) {
     onChange({ ...value, asserts: value.asserts.map((a, idx) => (idx === i ? { ...a, ...patch } : a)) });
+  }
+
+  // pickAssert turns a clicked response field into a pre-filled assertion row.
+  // Scalars seed an eq check against the sampled value; objects/arrays default
+  // to exists. The path matches the runtime evaluator exactly.
+  function pickAssert(path: string, _leafKey: string, sample: unknown) {
+    const scalar = sample === null || typeof sample !== "object";
+    const row: Assert = scalar
+      ? { source: "json", path, op: "eq", value: sample === null ? "" : String(sample) }
+      : { source: "json", path, op: "exists", value: "" };
+    onChange({ ...value, asserts: [...value.asserts, row] });
   }
 
   async function runDebug() {
@@ -345,28 +358,69 @@ export default function HttpRequestBuilder({
                   {debug.latency_ms.toFixed(1)} ms · {formatBytes(debug.recv_bytes)}
                 </span>
               </div>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-                {t("debug.respBody")}
-                {debug.body_truncated ? ` (${t("debug.truncated")})` : ""}
+              <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {t("debug.respBody")}
+                  {debug.body_truncated ? ` (${t("debug.truncated")})` : ""}
+                </span>
+                {isJson(debug.body) && (
+                  <span style={{ display: "flex", gap: 4 }}>
+                    <button
+                      type="button"
+                      className={respTree ? "" : "secondary"}
+                      style={{ padding: "2px 10px", fontSize: 12 }}
+                      onClick={() => setRespTree(true)}
+                    >
+                      {t("json.viewTree")}
+                    </button>
+                    <button
+                      type="button"
+                      className={respTree ? "secondary" : ""}
+                      style={{ padding: "2px 10px", fontSize: 12 }}
+                      onClick={() => setRespTree(false)}
+                    >
+                      {t("json.viewRaw")}
+                    </button>
+                  </span>
+                )}
               </div>
-              <pre
-                style={{
-                  margin: 0,
-                  maxHeight: 240,
-                  overflow: "auto",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                  fontSize: 12,
-                }}
-              >
-                {prettyBody(debug.body) || t("log.bodyEmpty")}
-              </pre>
+              {respTree && isJson(debug.body) ? (
+                <>
+                  <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
+                    {t("json.pickHint")}
+                  </div>
+                  <JsonExplorer body={debug.body} mode="assert" onPick={pickAssert} />
+                </>
+              ) : (
+                <pre
+                  style={{
+                    margin: 0,
+                    maxHeight: 240,
+                    overflow: "auto",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    fontSize: 12,
+                  }}
+                >
+                  {prettyBody(debug.body) || t("log.bodyEmpty")}
+                </pre>
+              )}
             </>
           )}
         </div>
       )}
     </div>
   );
+}
+
+// isJson reports whether the body parses as JSON (gates the tree view).
+function isJson(s: string): boolean {
+  try {
+    JSON.parse(s);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // prettyBody re-indents JSON bodies for readability; other content untouched.
