@@ -352,11 +352,23 @@ function isVuMode(snapshot: any): boolean {
   return !stages.some((s: any) => (s?.target_rps ?? 0) > 0);
 }
 
+// maskSnapshot returns a copy with environment variable values masked, so the
+// raw dump stays useful without exposing target credentials in the UI (full
+// secret handling is tracked separately).
+function maskSnapshot(snapshot: any): any {
+  if (!snapshot?.environment?.vars) return snapshot;
+  const masked = { ...snapshot, environment: { ...snapshot.environment, vars: {} as Record<string, string> } };
+  for (const k of Object.keys(snapshot.environment.vars)) masked.environment.vars[k] = "••••••";
+  return masked;
+}
+
 function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => string }) {
   const [open, setOpen] = useState(false);
   const plan = snapshot?.plan ?? {};
   const http = plan?.http;
   const scenario = plan?.scenario;
+  const env = snapshot?.environment;
+  const envKeys = env?.vars ? Object.keys(env.vars) : [];
   return (
     <div className="panel">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -370,9 +382,17 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
         {http ? ` · ${http.method} ${http.url}` : ""}
         {scenario ? ` · ${scenario.mode} · ${scenario.steps?.length ?? 0} ${t("run.steps")}` : ""}
       </div>
+      {env?.name && (
+        <div className="muted" style={{ marginTop: 4, fontSize: 12.5 }}>
+          {t("run.snapshotEnv")}: <b style={{ color: "var(--text-2)" }}>{env.name}</b>
+          {envKeys.length > 0 && (
+            <span style={{ fontFamily: "var(--font-mono)" }}> · {envKeys.join(", ")}</span>
+          )}
+        </div>
+      )}
       {open && (
         <pre style={{ marginTop: 10, maxHeight: 360, overflow: "auto", fontSize: 12 }}>
-          {JSON.stringify(snapshot, null, 2)}
+          {JSON.stringify(maskSnapshot(snapshot), null, 2)}
         </pre>
       )}
     </div>

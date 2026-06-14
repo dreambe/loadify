@@ -337,12 +337,14 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	planJSON := td.PlanJSON
 	scriptJS := td.ScriptJS
 	var envName string
+	var envVars map[string]string
 	if envID != "" {
 		env, eerr := s.pg.GetEnvironment(ctx, envID)
 		if eerr != nil {
 			return "", "", errBadRequest("environment not found")
 		}
 		envName = env.Name
+		envVars = env.Vars
 		planJSON = json.RawMessage(substituteEnv(string(td.PlanJSON), env.Vars))
 		scriptJS = substituteEnv(td.ScriptJS, env.Vars)
 	}
@@ -360,9 +362,11 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	if name == "" {
 		name = td.Name + " @ " + time.Now().Format("01-02 15:04")
 	}
-	// Snapshot the test definition into the run so the run page and history
-	// stay accurate even after the test is later edited or deleted.
-	snapshot, _ := json.Marshal(td)
+	// Snapshot what actually runs — the env-substituted plan/script plus the
+	// environment used — so the run stays reproducible even after the test or
+	// environment is later edited (the original template alone wouldn't reveal
+	// which target this run hit).
+	snapshot := buildRunSnapshot(td, planJSON, scriptJS, envName, envVars)
 	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy, snapshot)
 	if err != nil {
 		return "", "", err
@@ -408,6 +412,37 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	_ = s.pg.SetRunRunning(ctx, runID)
 	go s.watchRun(runID, p.AlertOrDefault())
 	return runID, "running", nil
+}
+
+// buildRunSnapshot records what a run actually executed: the test definition,
+// but with the env-substituted plan/script (the resolved targets, not the
+// {{KEY}} template) and a snapshot of the environment used. This keeps a run
+// self-contained and reproducible regardless of later edits. The frontend reads
+// snapshot.plan / snapshot.ramp / snapshot.environment.
+func buildRunSnapshot(td *postgres.TestDefinition, planJSON json.RawMessage, scriptJS, envName string, envVars map[string]string) json.RawMessage {
+	snap := map[string]any{}
+	if b, err := json.Marshal(td); err == nil {
+		_ = json.Unmarshal(b, &snap)
+	}
+	snap["plan"] = json.RawMessage(planJSON)
+	if scriptJS != "" {
+		snap["script"] = scriptJS
+	} else {
+		delete(snap, "script")
+	}
+	if envName != "" {
+		if envVars == nil {
+			envVars = map[string]string{}
+		}
+		snap["environment"] = map[string]any{"name": envName, "vars": envVars}
+	}
+	out, err := json.Marshal(snap)
+	if err != nil {
+		// Fall back to the raw definition rather than losing the snapshot entirely.
+		b, _ := json.Marshal(td)
+		return b
+	}
+	return out
 }
 
 // watchRun blocks on the live stream; when it closes the run is finished, so we
