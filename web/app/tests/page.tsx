@@ -93,6 +93,8 @@ export default function TestsPage() {
   const [tags, setTags] = useState("");
   const [autoStop, setAutoStop] = useState(true);
   const [autoStopPct, setAutoStopPct] = useState(50);
+  const [alertOn, setAlertOn] = useState(true);
+  const [alertPct, setAlertPct] = useState(30);
   const [importing, setImporting] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
@@ -135,6 +137,8 @@ export default function TestsPage() {
     setTags("");
     setAutoStop(true);
     setAutoStopPct(50);
+    setAlertOn(true);
+    setAlertPct(30);
   }
 
   // loadIntoForm fills the builder from an existing test (edit keeps the id,
@@ -162,6 +166,9 @@ export default function TestsPage() {
     const as = (td.plan as any)?.auto_stop;
     setAutoStop(!as || as.enabled !== false);
     setAutoStopPct(as?.error_rate_pct || 50);
+    const al = (td.plan as any)?.alert;
+    setAlertOn(!al || al.enabled !== false);
+    setAlertPct(al?.error_rate_pct || 30);
     setErr("");
     setOk("");
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -271,6 +278,9 @@ export default function TestsPage() {
     if (planObj && typeof planObj === "object") {
       planObj.auto_stop = autoStop
         ? { enabled: true, error_rate_pct: autoStopPct }
+        : { enabled: false };
+      planObj.alert = alertOn
+        ? { enabled: true, error_rate_pct: alertPct }
         : { enabled: false };
     }
     let datasetObj: unknown;
@@ -432,6 +442,26 @@ export default function TestsPage() {
                     max={100}
                     value={autoStopPct}
                     onChange={(e) => setAutoStopPct(parseInt(e.target.value || "50", 10))}
+                    style={{ width: 90 }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+              <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
+                <input type="checkbox" checked={alertOn} onChange={(e) => setAlertOn(e.target.checked)} />
+                {t("tests.alert")}
+                <Help tip={t("tests.alertHelp")} />
+              </label>
+              {alertOn && (
+                <div>
+                  <label style={{ margin: 0 }}>{t("tests.alertPct")}</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={alertPct}
+                    onChange={(e) => setAlertPct(parseInt(e.target.value || "30", 10))}
                     style={{ width: 90 }}
                   />
                 </div>

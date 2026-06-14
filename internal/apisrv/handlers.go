@@ -406,21 +406,28 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 		return runID, "queued", nil
 	}
 	_ = s.pg.SetRunRunning(ctx, runID)
-	go s.watchRun(runID)
+	go s.watchRun(runID, p.AlertOrDefault())
 	return runID, "running", nil
 }
 
 // watchRun blocks on the live stream; when it closes the run is finished, so we
 // finalize it. If apisrv restarts and loses this goroutine, the reaper
 // (StartReaper) finalizes the orphaned run instead.
-func (s *Server) watchRun(runID string) {
+func (s *Server) watchRun(runID string, alert plan.AlertConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 	stream, err := s.coord.StreamLive(ctx, &loadifyv1.LiveRequest{RunId: runID})
 	if err == nil {
+		ev := newAlertEvaluator(alert)
 		for {
-			if _, rerr := stream.Recv(); rerr != nil {
+			tick, rerr := stream.Recv()
+			if rerr != nil {
 				break
+			}
+			// Early-warning alert: fire once when the error rate spikes mid-run.
+			if rate, fire := ev.observe(tick); fire {
+				s.log.Warn("run error-rate alert", "run", runID, "error_rate", rate)
+				go s.notifyAlert(runID, rate)
 			}
 		}
 	}

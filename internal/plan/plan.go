@@ -46,6 +46,9 @@ type Plan struct {
 	Rendezvous *RendezvousConfig `json:"rendezvous,omitempty"`
 	// AutoStop is the safety circuit breaker; nil means "enabled with defaults".
 	AutoStop *AutoStopConfig `json:"auto_stop,omitempty"`
+	// Alert fires a one-shot mid-run notification when the error rate spikes —
+	// an early warning before the auto-stop breaker trips. nil = enabled default.
+	Alert *AlertConfig `json:"alert,omitempty"`
 	// MaxVUs caps the worker pool for the open (arrival-rate) model. 0 lets the
 	// worker derive a safe bound from the peak target rate.
 	MaxVUs int `json:"max_vus,omitempty"`
@@ -140,6 +143,43 @@ func (p *Plan) AutoStopOrDefault() AutoStopConfig {
 
 // AutoStopEnabled reports whether the breaker is on (default true).
 func (c AutoStopConfig) AutoStopEnabled() bool { return c.Enabled == nil || *c.Enabled }
+
+// AlertConfig fires a one-shot notification mid-run when the trailing-window
+// error rate crosses a threshold — an early warning before auto-stop aborts.
+// Enabled by default at a threshold below the auto-stop default.
+type AlertConfig struct {
+	Enabled      *bool   `json:"enabled,omitempty"`
+	ErrorRatePct float64 `json:"error_rate_pct,omitempty"`
+	WindowSec    int     `json:"window_sec,omitempty"`
+	MinRequests  int     `json:"min_requests,omitempty"`
+}
+
+// AlertOrDefault returns the effective alert config: a nil field means enabled
+// with safe defaults (notify at >30% errors over 10s once 20 requests are seen
+// — below the 50% auto-stop default, so it warns before the breaker trips).
+func (p *Plan) AlertOrDefault() AlertConfig {
+	c := AlertConfig{ErrorRatePct: 30, WindowSec: 10, MinRequests: 20}
+	if p.Alert != nil {
+		if p.Alert.Enabled != nil && !*p.Alert.Enabled {
+			return AlertConfig{Enabled: p.Alert.Enabled}
+		}
+		if p.Alert.ErrorRatePct > 0 {
+			c.ErrorRatePct = p.Alert.ErrorRatePct
+		}
+		if p.Alert.WindowSec > 0 {
+			c.WindowSec = p.Alert.WindowSec
+		}
+		if p.Alert.MinRequests > 0 {
+			c.MinRequests = p.Alert.MinRequests
+		}
+	}
+	on := true
+	c.Enabled = &on
+	return c
+}
+
+// AlertEnabled reports whether mid-run alerting is on (default true).
+func (c AlertConfig) AlertEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
 // HTTPConfig describes a single HTTP/HTTPS request template.
 type HTTPConfig struct {

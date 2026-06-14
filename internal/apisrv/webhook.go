@@ -58,6 +58,45 @@ func (s *Server) notifyWebhook(runID, status string, payload map[string]any) {
 		})
 	}
 
+	s.postWebhook(ctx, url, body, runID)
+}
+
+// notifyAlert delivers a one-shot mid-run early-warning notification when the
+// error rate spikes (distinct from the run-finished webhook and from auto-stop).
+func (s *Server) notifyAlert(runID string, errorRate float64) {
+	ctx, cancel := context.WithTimeout(context.Background(), webhookTimeout)
+	defer cancel()
+
+	var createdBy *string
+	name := runID
+	if run, err := s.pg.GetRun(ctx, runID); err == nil {
+		createdBy = run.CreatedBy
+		if run.Name != "" {
+			name = run.Name
+		}
+	}
+	url := s.resolveWebhook(ctx, createdBy)
+	if url == "" {
+		return
+	}
+
+	var body []byte
+	if isFeishu(url) {
+		body, _ = json.Marshal(alertCard(name, runID, errorRate, s.frontendURL))
+	} else {
+		body, _ = json.Marshal(map[string]any{
+			"event":      "run.alert",
+			"run_id":     runID,
+			"name":       name,
+			"error_rate": errorRate,
+			"ts":         time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	s.postWebhook(ctx, url, body, runID)
+}
+
+// postWebhook POSTs a JSON body to a webhook URL; failures are logged, never fatal.
+func (s *Server) postWebhook(ctx context.Context, url string, body []byte, runID string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		s.log.Warn("webhook: build request failed", "err", err)
@@ -152,6 +191,36 @@ func feishuCard(name, runID, status string, payload map[string]any, frontendURL 
 			"header": map[string]any{
 				"template": tmpl,
 				"title":    map[string]any{"tag": "plain_text", "content": fmt.Sprintf("%s Loadify · %s (%s)", emoji, name, status)},
+			},
+			"elements": elements,
+		},
+	}
+}
+
+// alertCard builds a Feishu/Lark card for a mid-run error-rate alert.
+func alertCard(name, runID string, errorRate float64, frontendURL string) map[string]any {
+	content := fmt.Sprintf("**⚠ 错误率突增 / Error-rate spike**\n**当前错误率 / Error rate:** %.1f%%\n压测仍在运行 / Run is still in progress.", errorRate*100)
+	elements := []map[string]any{
+		{"tag": "div", "text": map[string]any{"tag": "lark_md", "content": content}},
+	}
+	if frontendURL != "" {
+		elements = append(elements, map[string]any{
+			"tag": "action",
+			"actions": []map[string]any{{
+				"tag":  "button",
+				"text": map[string]any{"tag": "plain_text", "content": "查看详情 / Open run"},
+				"type": "primary",
+				"url":  strings.TrimRight(frontendURL, "/") + "/runs/" + runID,
+			}},
+		})
+	}
+	return map[string]any{
+		"msg_type": "interactive",
+		"card": map[string]any{
+			"config": map[string]any{"wide_screen_mode": true},
+			"header": map[string]any{
+				"template": "orange",
+				"title":    map[string]any{"tag": "plain_text", "content": fmt.Sprintf("⚠ Loadify 实时告警 · %s", name)},
 			},
 			"elements": elements,
 		},
