@@ -8,7 +8,7 @@ import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import { api } from "@/lib/api";
-import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import type { Environment } from "@/lib/types";
 
@@ -169,12 +169,20 @@ export default function EnvironmentsPage() {
                       {canEdit && (
                         <td>
                           <div className="actions">
-                            <button className="ghost sm" onClick={() => openEdit(env)}>
-                              {t("tests.edit")}
-                            </button>
-                            <button className="danger sm" onClick={() => remove(env)}>
-                              {t("env.delete")}
-                            </button>
+                            {(() => {
+                              const owns = ownsOrAdmin(user, env.created_by);
+                              const why = owns ? undefined : t("common.ownerOnly");
+                              return (
+                                <>
+                                  <button className="ghost sm" disabled={!owns} title={why} onClick={() => openEdit(env)}>
+                                    {t("tests.edit")}
+                                  </button>
+                                  <button className="danger sm" disabled={!owns} title={why} onClick={() => remove(env)}>
+                                    {t("env.delete")}
+                                  </button>
+                                </>
+                              );
+                            })()}
                           </div>
                         </td>
                       )}

@@ -36,6 +36,15 @@ export function roleAtLeast(role: Role | undefined, min: Role): boolean {
   return !!role && rank[role] >= rank[min];
 }
 
+// ownsOrAdmin mirrors the backend "owner-or-admin write" policy: a user may
+// modify a resource only if they created it or are an admin. Used to disable
+// (not hide) mutating controls for non-owners so the UI matches what the API
+// will allow.
+export function ownsOrAdmin(user: User | null | undefined, createdBy?: string): boolean {
+  if (!user) return false;
+  return user.role === "admin" || (!!createdBy && createdBy === user.id);
+}
+
 // useAuth exposes the current user and a loading flag, redirecting to /login
 // when no token is present.
 export function useAuth(redirect = true) {

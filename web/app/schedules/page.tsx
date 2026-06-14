@@ -9,7 +9,7 @@ import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import { api } from "@/lib/api";
-import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import type { Schedule, TestDefinition } from "@/lib/types";
 
@@ -136,7 +136,7 @@ export default function SchedulesPage() {
                       <td>{testName(sc.test_def_id)}</td>
                       <td>
                         {canEdit ? (
-                          <ScheduleEditor sc={sc} onSave={saveInterval} t={t} />
+                          <ScheduleEditor sc={sc} onSave={saveInterval} t={t} disabled={!ownsOrAdmin(user, sc.created_by)} />
                         ) : (
                           `${sc.interval_minutes} min · ${sc.desired_workers}w`
                         )}
@@ -148,12 +148,20 @@ export default function SchedulesPage() {
                       {canEdit && (
                         <td>
                           <div className="actions">
-                            <button className="ghost sm" onClick={() => toggle(sc)}>
-                              {sc.enabled ? t("sched.disable") : t("sched.enable")}
-                            </button>
-                            <button className="danger sm" onClick={() => remove(sc)}>
-                              {t("sched.delete")}
-                            </button>
+                            {(() => {
+                              const owns = ownsOrAdmin(user, sc.created_by);
+                              const why = owns ? undefined : t("common.ownerOnly");
+                              return (
+                                <>
+                                  <button className="ghost sm" disabled={!owns} title={why} onClick={() => toggle(sc)}>
+                                    {sc.enabled ? t("sched.disable") : t("sched.enable")}
+                                  </button>
+                                  <button className="danger sm" disabled={!owns} title={why} onClick={() => remove(sc)}>
+                                    {t("sched.delete")}
+                                  </button>
+                                </>
+                              );
+                            })()}
                           </div>
                         </td>
                       )}
@@ -175,22 +183,25 @@ function ScheduleEditor({
   sc,
   onSave,
   t,
+  disabled,
 }: {
   sc: Schedule;
   onSave: (sc: Schedule, min: number, w: number) => void;
   t: (k: string) => string;
+  disabled?: boolean;
 }) {
   const [min, setMin] = useState(sc.interval_minutes);
   const [w, setW] = useState(sc.desired_workers || 1);
   const dirty = min !== sc.interval_minutes || w !== (sc.desired_workers || 1);
+  const why = disabled ? t("common.ownerOnly") : undefined;
   return (
-    <div className="row" style={{ gap: 6, alignItems: "center" }}>
-      <input type="number" min={1} value={min} onChange={(e) => setMin(parseInt(e.target.value || "1", 10))} style={{ width: 70 }} />
+    <div className="row" style={{ gap: 6, alignItems: "center" }} title={why}>
+      <input type="number" min={1} disabled={disabled} value={min} onChange={(e) => setMin(parseInt(e.target.value || "1", 10))} style={{ width: 70 }} />
       <span className="muted">min ·</span>
-      <input type="number" min={1} value={w} onChange={(e) => setW(parseInt(e.target.value || "1", 10))} style={{ width: 56 }} />
+      <input type="number" min={1} disabled={disabled} value={w} onChange={(e) => setW(parseInt(e.target.value || "1", 10))} style={{ width: 56 }} />
       <span className="muted">w</span>
       {dirty && (
-        <button className="secondary sm" onClick={() => onSave(sc, min, w)}>
+        <button className="secondary sm" disabled={disabled} onClick={() => onSave(sc, min, w)}>
           {t("tests.save")}
         </button>
       )}

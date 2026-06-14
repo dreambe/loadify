@@ -611,19 +611,25 @@ export default function TestsPage() {
                             >
                               <Icon name="play" /> {t("tests.run")}
                             </button>
-                            {canModify(td) && (
-                              <button className="ghost sm" onClick={() => loadIntoForm(td, "edit")}>
-                                {t("tests.edit")}
-                              </button>
-                            )}
+                            <button
+                              className="ghost sm"
+                              disabled={!canModify(td)}
+                              title={canModify(td) ? undefined : t("common.ownerOnly")}
+                              onClick={() => loadIntoForm(td, "edit")}
+                            >
+                              {t("tests.edit")}
+                            </button>
                             <button className="ghost sm" onClick={() => loadIntoForm(td, "copy")}>
                               {t("tests.copy")}
                             </button>
-                            {canModify(td) && (
-                              <button className="danger sm" onClick={() => remove(td)}>
-                                {t("tests.delete")}
-                              </button>
-                            )}
+                            <button
+                              className="danger sm"
+                              disabled={!canModify(td)}
+                              title={canModify(td) ? undefined : t("common.ownerOnly")}
+                              onClick={() => remove(td)}
+                            >
+                              {t("tests.delete")}
+                            </button>
                           </div>
                         </td>
                       )}

@@ -9,7 +9,7 @@ import ErrorDrilldown from "@/components/ErrorDrilldown";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import Icon from "@/components/Icon";
-import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { chartColor, latencyColors } from "@/lib/colors";
 import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
@@ -172,6 +172,8 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
         {run?.status === "running" && canStop && (
           <button
             className="secondary"
+            disabled={!ownsOrAdmin(user, run?.created_by)}
+            title={ownsOrAdmin(user, run?.created_by) ? undefined : t("common.ownerOnly")}
             onClick={() => api.stopRun(runId).then(() => api.getRun(runId).then(setRun))}
           >
             {t("run.stop")}

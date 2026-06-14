@@ -102,6 +102,8 @@ export interface Schedule {
   enabled: boolean;
   next_run_at: string;
   last_run_id?: string;
+  created_by?: string;
+  creator_name?: string;
 }
 
 export interface WorkerInfo {
@@ -158,6 +160,7 @@ export interface Environment {
   id: string;
   name: string;
   vars: Record<string, string>;
+  created_by?: string;
   creator_name?: string;
   created_at: string;
 }
