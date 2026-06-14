@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
@@ -163,37 +163,34 @@ func (d *Driver) Teardown(_ context.Context) error {
 }
 
 // phase accumulates httptrace phase timings safely across the goroutines the
-// HTTP transport may use for dialing and reading.
+// HTTP transport may use for dialing and reading. Each field is written at most
+// once per request from a single callback, so lock-free atomics suffice and
+// keep the hot path free of mutex contention. Times are stored as Unix nanos.
 type phase struct {
-	mu                          sync.Mutex
-	dnsStart, connStart, tlsStart, firstByte time.Time
-	dnsUs, connectUs, tlsUs     int64
+	dnsStart, connStart, tlsStart atomic.Int64 // phase-start timestamps
+	dnsUs, connectUs, tlsUs       atomic.Int64 // measured phase durations (µs)
+	firstByte                     atomic.Int64 // first-response-byte timestamp
 }
 
-func (p *phase) markStart(field *time.Time) {
-	p.mu.Lock()
-	*field = time.Now()
-	p.mu.Unlock()
+func (p *phase) markStart(field *atomic.Int64) {
+	field.Store(time.Now().UnixNano())
 }
 
-func (p *phase) markDone(start *time.Time, out *int64) {
-	p.mu.Lock()
-	*out = sinceUs(*start)
-	p.mu.Unlock()
+func (p *phase) markDone(start, out *atomic.Int64) {
+	if s := start.Load(); s != 0 {
+		out.Store((time.Now().UnixNano() - s) / 1e3)
+	}
 }
 
 func (p *phase) markFirstByte() {
-	p.mu.Lock()
-	if p.firstByte.IsZero() {
-		p.firstByte = time.Now()
-	}
-	p.mu.Unlock()
+	p.firstByte.CompareAndSwap(0, time.Now().UnixNano())
 }
 
 func (p *phase) snapshot() (dnsUs, connectUs, tlsUs int64, firstByte time.Time) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.dnsUs, p.connectUs, p.tlsUs, p.firstByte
+	if fb := p.firstByte.Load(); fb != 0 {
+		firstByte = time.Unix(0, fb)
+	}
+	return p.dnsUs.Load(), p.connectUs.Load(), p.tlsUs.Load(), firstByte
 }
 
 func sinceUs(t time.Time) int64 {

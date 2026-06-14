@@ -5,6 +5,9 @@ package plan
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -234,6 +237,13 @@ func (a *HTTPAssert) Validate() error {
 	if !validAssertOps[a.Op] {
 		return fmt.Errorf("plan: assert op %q not one of eq/ne/gt/lt/gte/lte/contains/exists", a.Op)
 	}
+	if a.Source == "status" {
+		switch a.Op {
+		case "eq", "ne", "gt", "lt", "gte", "lte":
+		default:
+			return fmt.Errorf("plan: status assert op must be numeric/equality (eq/ne/gt/lt/gte/lte), got %q", a.Op)
+		}
+	}
 	if a.Source == "json" && a.Path == "" {
 		return fmt.Errorf("plan: json assert requires a path")
 	}
@@ -321,6 +331,9 @@ func (c *ScenarioConfig) validate() error {
 		if st.URL == "" {
 			return fmt.Errorf("plan: scenario step %d requires a url", i+1)
 		}
+		if err := validateURL(st.URL, "http", "https"); err != nil {
+			return fmt.Errorf("plan: scenario step %d: %w", i+1, err)
+		}
 		if st.Method == "" {
 			st.Method = "GET"
 		}
@@ -356,6 +369,9 @@ func Parse(data []byte) (*Plan, error) {
 // Validate checks that the plan is internally consistent.
 func (p *Plan) Validate() error {
 	limit := p.maxBodyBytes()
+	if err := p.validateNumerics(); err != nil {
+		return err
+	}
 	switch p.Protocol {
 	case HTTP, HTTPS:
 		if p.HTTP == nil {
@@ -364,8 +380,14 @@ func (p *Plan) Validate() error {
 		if p.HTTP.URL == "" {
 			return fmt.Errorf("plan: http.url is required")
 		}
+		if err := validateURL(p.HTTP.URL, "http", "https"); err != nil {
+			return err
+		}
 		if p.HTTP.Method == "" {
 			p.HTTP.Method = "GET"
+		}
+		if p.HTTP.ExpectStatus != 0 && (p.HTTP.ExpectStatus < 100 || p.HTTP.ExpectStatus > 599) {
+			return fmt.Errorf("plan: http.expect_status %d must be within [100,599]", p.HTTP.ExpectStatus)
 		}
 		if len(p.HTTP.Body) > limit {
 			return fmt.Errorf("plan: http.body %d bytes exceeds limit %d", len(p.HTTP.Body), limit)
@@ -379,6 +401,12 @@ func (p *Plan) Validate() error {
 		if p.GRPC == nil || p.GRPC.Target == "" || p.GRPC.FullMethod == "" {
 			return fmt.Errorf("plan: grpc target and full_method are required")
 		}
+		if err := validateHostPort(p.GRPC.Target); err != nil {
+			return err
+		}
+		if p.GRPC.MaxMessages < 0 {
+			return fmt.Errorf("plan: grpc.max_messages must be >= 0, got %d", p.GRPC.MaxMessages)
+		}
 		if len(p.GRPC.RequestJSON) > limit {
 			return fmt.Errorf("plan: grpc.request_json %d bytes exceeds limit %d", len(p.GRPC.RequestJSON), limit)
 		}
@@ -386,9 +414,15 @@ func (p *Plan) Validate() error {
 		if p.WS == nil || p.WS.URL == "" {
 			return fmt.Errorf("plan: websocket.url is required")
 		}
+		if err := validateURL(p.WS.URL, "ws", "wss", "http", "https"); err != nil {
+			return err
+		}
 	case SSE:
 		if p.SSE == nil || p.SSE.URL == "" {
 			return fmt.Errorf("plan: sse.url is required")
+		}
+		if err := validateURL(p.SSE.URL, "http", "https"); err != nil {
+			return err
 		}
 	case Script:
 		// A script plan carries no protocol target; the script generates traffic.
@@ -403,6 +437,105 @@ func (p *Plan) Validate() error {
 		}
 	default:
 		return fmt.Errorf("plan: unknown protocol %q", p.Protocol)
+	}
+	return nil
+}
+
+// validateNumerics rejects out-of-range tunables at parse time instead of
+// silently clamping or ignoring them at run time. Optional sub-configs are
+// only checked when explicitly set (a nil field means "use defaults").
+func (p *Plan) validateNumerics() error {
+	if p.ThinkTimeMs < 0 {
+		return fmt.Errorf("plan: think_time_ms must be >= 0, got %d", p.ThinkTimeMs)
+	}
+	if p.MaxVUs < 0 {
+		return fmt.Errorf("plan: max_vus must be >= 0, got %d", p.MaxVUs)
+	}
+	if p.ScriptTimeoutMs < 0 {
+		return fmt.Errorf("plan: script_timeout_ms must be >= 0, got %d", p.ScriptTimeoutMs)
+	}
+	if p.MaxRequestBodyBytes < 0 {
+		return fmt.Errorf("plan: max_request_body_bytes must be >= 0, got %d", p.MaxRequestBodyBytes)
+	}
+	if t := p.ThinkTimeCfg; t != nil {
+		if t.MinMs < 0 || t.MaxMs < 0 || t.MeanMs < 0 || t.StddevMs < 0 {
+			return fmt.Errorf("plan: think_time values must be >= 0")
+		}
+		if t.Distribution == "uniform" && t.MaxMs < t.MinMs {
+			return fmt.Errorf("plan: think_time uniform max_ms (%d) must be >= min_ms (%d)", t.MaxMs, t.MinMs)
+		}
+	}
+	if r := p.Rendezvous; r != nil {
+		if r.VUs < 0 {
+			return fmt.Errorf("plan: rendezvous.vus must be >= 0, got %d", r.VUs)
+		}
+		if r.TimeoutMs < 0 {
+			return fmt.Errorf("plan: rendezvous.timeout_ms must be >= 0, got %d", r.TimeoutMs)
+		}
+	}
+	if c := p.AutoStop; c != nil {
+		if err := validateBreakerFields("auto_stop", c.ErrorRatePct, c.WindowSec, c.MinRequests); err != nil {
+			return err
+		}
+	}
+	if c := p.Alert; c != nil {
+		if err := validateBreakerFields("alert", c.ErrorRatePct, c.WindowSec, c.MinRequests); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateBreakerFields checks the shared knobs of the auto-stop and alert
+// circuit breakers.
+func validateBreakerFields(name string, errPct float64, windowSec, minReq int) error {
+	if errPct < 0 || errPct > 100 {
+		return fmt.Errorf("plan: %s.error_rate_pct must be within [0,100], got %g", name, errPct)
+	}
+	if windowSec < 0 {
+		return fmt.Errorf("plan: %s.window_sec must be >= 0, got %d", name, windowSec)
+	}
+	if minReq < 0 {
+		return fmt.Errorf("plan: %s.min_requests must be >= 0, got %d", name, minReq)
+	}
+	return nil
+}
+
+// validateURL checks that raw is a well-formed URL carrying a host and an
+// allowed scheme, turning a run-time transport failure into a clear plan error.
+// URLs carrying a {{template}} placeholder are accepted as-is, since they are
+// only well-formed after per-iteration interpolation.
+func validateURL(raw string, schemes ...string) error {
+	if strings.Contains(raw, "{{") {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("plan: invalid url %q: %w", raw, err)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("plan: url %q must include a host", raw)
+	}
+	for _, s := range schemes {
+		if u.Scheme == s {
+			return nil
+		}
+	}
+	return fmt.Errorf("plan: url %q scheme must be one of %v, got %q", raw, schemes, u.Scheme)
+}
+
+// validateHostPort checks a gRPC dial target of the form host:port. Targets
+// carrying a {{template}} placeholder are accepted as-is.
+func validateHostPort(target string) error {
+	if strings.Contains(target, "{{") {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(target)
+	if err != nil {
+		return fmt.Errorf("plan: grpc.target %q must be host:port: %w", target, err)
+	}
+	if host == "" || port == "" {
+		return fmt.Errorf("plan: grpc.target %q must include host and port", target)
 	}
 	return nil
 }

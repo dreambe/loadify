@@ -30,9 +30,11 @@ func parseCurl(s string) ([]req, error) {
 			r.Method = next()
 		case t == "-H" || t == "--header":
 			h := next()
-			if k, v, ok := strings.Cut(h, ":"); ok {
-				r.Headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
+			k, v, ok := strings.Cut(h, ":")
+			if !ok {
+				return nil, fmt.Errorf("importer: malformed -H header %q (expected \"Name: value\")", h)
 			}
+			r.Headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		case t == "-d" || t == "--data" || t == "--data-raw" || t == "--data-binary" || t == "--data-ascii":
 			r.Body = next()
 			if r.Method == "" {

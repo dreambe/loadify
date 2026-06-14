@@ -14,6 +14,12 @@ import (
 // pacerInterval is how often the arrival executor releases scheduled iterations.
 const pacerInterval = 50 * time.Millisecond
 
+// workerIdleTimeout is how long an arrival worker waits without a job before
+// exiting, so a pool grown for a traffic spike shrinks back when the rate drops
+// instead of pinning peak goroutines for the rest of the run. One worker is
+// always kept warm.
+const workerIdleTimeout = 3 * time.Second
+
 // ArrivalExecutor drives the open (arrival-rate) model: it starts iterations at
 // a target request rate independent of how long each takes, growing a worker
 // pool on demand up to a cap. When the cap can't sustain the rate, excess
@@ -66,11 +72,11 @@ func (e *ArrivalExecutor) Run(ctx context.Context) error {
 
 	jobs := make(chan struct{}, e.maxVUs)
 	var wg sync.WaitGroup
-	pool := 0
+	var pool atomic.Int64
 	spawn := func() {
-		pool++
+		pool.Add(1)
 		wg.Add(1)
-		go e.worker(ctx, jobs, &wg)
+		go e.worker(ctx, jobs, &wg, &pool)
 	}
 	spawn() // start with one worker
 
@@ -104,12 +110,13 @@ func (e *ArrivalExecutor) Run(ctx context.Context) error {
 					e.dropped.Add(1)
 				}
 			}
-			// Grow the pool toward the current in-flight + backlog demand.
+			// Grow the pool toward the current in-flight + backlog demand. Idle
+			// workers self-retire, so this also re-grows after a lull.
 			need := int(e.busy.Load()) + len(jobs) + 1
 			if need > e.maxVUs {
 				need = e.maxVUs
 			}
-			for pool < need {
+			for int(pool.Load()) < need {
 				spawn()
 			}
 			e.sampler.SetActiveVUs(e.busy.Load())
@@ -117,17 +124,34 @@ func (e *ArrivalExecutor) Run(ctx context.Context) error {
 	}
 }
 
-func (e *ArrivalExecutor) worker(ctx context.Context, jobs <-chan struct{}, wg *sync.WaitGroup) {
+func (e *ArrivalExecutor) worker(ctx context.Context, jobs <-chan struct{}, wg *sync.WaitGroup, pool *atomic.Int64) {
 	defer wg.Done()
+	defer pool.Add(-1)
 	vu := &protocols.VU{}
+	idle := time.NewTimer(workerIdleTimeout)
+	defer idle.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-idle.C:
+			// Retire when demand has dried up, but keep one worker warm so the
+			// next job doesn't pay a goroutine-spawn latency.
+			if pool.Load() > 1 {
+				return
+			}
+			idle.Reset(workerIdleTimeout)
 		case _, ok := <-jobs:
 			if !ok {
 				return
 			}
+			if !idle.Stop() {
+				select {
+				case <-idle.C:
+				default:
+				}
+			}
+			idle.Reset(workerIdleTimeout)
 			e.busy.Add(1)
 			if md, ok := e.driver.(protocols.MultiDriver); ok {
 				for _, res := range md.ExecMulti(ctx, vu) {

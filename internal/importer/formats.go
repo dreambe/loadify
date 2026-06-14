@@ -140,6 +140,9 @@ func parseOpenAPI(data []byte) ([]req, error) {
 		}
 		base = scheme + "://" + doc.Host + strings.TrimRight(doc.BasePath, "/")
 	}
+	if base == "" {
+		return nil, fmt.Errorf("importer: OpenAPI document has no server URL (set servers[].url or host); cannot build absolute request URLs")
+	}
 	methods := map[string]bool{"get": true, "post": true, "put": true, "patch": true, "delete": true, "head": true}
 	var out []req
 	for path, ops := range doc.Paths {

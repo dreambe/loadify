@@ -61,3 +61,55 @@ func TestArrivalExecutorHitsTargetRate(t *testing.T) {
 	}
 	t.Logf("hits=%d target=%d dropped=%d", got, want, ex.Dropped())
 }
+
+// TestArrivalExecutorRegrowsAfterIdle drives a spike, then a quiet window long
+// enough for idle workers to retire (workerIdleTimeout is 3s), then a second
+// spike. If the pool failed to re-grow after shrinking, the second spike's
+// throughput would collapse — so a healthy total hit count proves both the
+// idle-retire and the re-grow paths work.
+func TestArrivalExecutorRegrowsAfterIdle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("timing-sensitive; skipped in -short")
+	}
+	var hits int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt64(&hits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p, err := plan.Parse([]byte(`{"protocol":"http","http":{"url":"` + srv.URL + `"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drv, err := protocols.New(loadifyv1.Protocol_PROTOCOL_HTTP, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const rate = 300
+	smp := sampler.New("run", "worker", loadifyv1.Protocol_PROTOCOL_HTTP)
+	stages := []*loadifyv1.RampStage{
+		{DurationMs: 200, TargetRps: rate}, // spike up
+		{DurationMs: 500, TargetRps: rate}, // hold
+		{DurationMs: 100, TargetRps: 0},    // drop to zero
+		{DurationMs: 4000, TargetRps: 0},   // quiet > idle timeout: workers retire
+		{DurationMs: 300, TargetRps: rate}, // spike back up (pool must re-grow)
+		{DurationMs: 1000, TargetRps: rate},
+	}
+	ex := executor.NewArrival(executor.ArrivalConfig{Driver: drv, Ramp: executor.NewRamp(stages), Sampler: smp})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := ex.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	// First spike alone yields ~210 hits; the second spike adds ~345. A total
+	// well above the first-spike ceiling proves the pool re-grew.
+	got := atomic.LoadInt64(&hits)
+	if got < 350 {
+		t.Errorf("hits = %d; second spike did not recover (pool failed to re-grow?)", got)
+	}
+	t.Logf("hits=%d", got)
+}

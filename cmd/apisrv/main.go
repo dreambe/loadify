@@ -25,6 +25,10 @@ func main() {
 	log := obs.NewLogger("apisrv")
 	log.Info("starting", "version", version.String())
 	cfg := config.LoadAPIServer()
+	if err := cfg.Validate(); err != nil {
+		log.Error("invalid configuration", "err", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

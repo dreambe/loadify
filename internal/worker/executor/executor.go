@@ -65,6 +65,11 @@ func New(c Config) *Executor {
 		maxVUs:  maxVUsPerWorker(),
 		log:     log,
 	}
+	// Preallocate the VU slice to the hard ceiling so ramp-up doesn't repeatedly
+	// grow and copy it under the pool lock.
+	if e.maxVUs > 0 {
+		e.vus = make([]*vuHandle, 0, e.maxVUs)
+	}
 	if c.Rendezvous != nil && c.Rendezvous.VUs > 1 {
 		to := time.Duration(c.Rendezvous.TimeoutMs) * time.Millisecond
 		if to <= 0 {

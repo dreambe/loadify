@@ -3,9 +3,16 @@
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 )
+
+// insecureJWTSecret is the development-only default. A production deployment
+// must override LOADIFY_JWT_SECRET; APIServer.Validate refuses to start with
+// this value when LOADIFY_ENV names a production environment.
+const insecureJWTSecret = "dev-insecure-secret-change-me"
 
 // Postgres holds metadata-store connection settings.
 type Postgres struct {
@@ -22,6 +29,7 @@ type ClickHouse struct {
 
 // APIServer configures the public REST/WS plane.
 type APIServer struct {
+	Env               string // deployment environment: dev (default) | prod
 	HTTPAddr          string
 	CoordinatorGRPC   string
 	JWTSecret         string
@@ -58,9 +66,10 @@ type Worker struct {
 // LoadAPIServer builds APIServer config from the environment.
 func LoadAPIServer() APIServer {
 	return APIServer{
+		Env:               env("LOADIFY_ENV", "dev"),
 		HTTPAddr:          env("LOADIFY_API_HTTP_ADDR", ":8080"),
 		CoordinatorGRPC:   env("LOADIFY_COORDINATOR_GRPC", "coordinatord:7070"),
-		JWTSecret:         env("LOADIFY_JWT_SECRET", "dev-insecure-secret-change-me"),
+		JWTSecret:         env("LOADIFY_JWT_SECRET", insecureJWTSecret),
 		JWTTTLHours:       EnvInt("LOADIFY_JWT_TTL_HOURS", 24),
 		FeishuAppID:       env("LOADIFY_FEISHU_APP_ID", ""),
 		FeishuAppSecret:   env("LOADIFY_FEISHU_APP_SECRET", ""),
@@ -118,14 +127,32 @@ func env(key, def string) string {
 	return def
 }
 
-// EnvInt reads an int env var with a default.
+// EnvInt reads an int env var with a default. A set-but-unparsable value is
+// logged (rather than silently swallowed) before falling back to the default.
 func EnvInt(key string, def int) int {
 	if v, ok := os.LookupEnv(key); ok {
-		if n, err := strconv.Atoi(v); err == nil {
+		n, err := strconv.Atoi(v)
+		if err == nil {
 			return n
 		}
+		slog.Warn("ignoring invalid integer env var; using default",
+			"key", key, "value", v, "default", def)
 	}
 	return def
+}
+
+// IsProd reports whether the deployment environment is a production one.
+func (c APIServer) IsProd() bool {
+	return c.Env == "prod" || c.Env == "production"
+}
+
+// Validate fails fast on unsafe production configuration — most importantly a
+// JWT secret left at the insecure development default.
+func (c APIServer) Validate() error {
+	if c.IsProd() && c.JWTSecret == insecureJWTSecret {
+		return fmt.Errorf("config: LOADIFY_JWT_SECRET must be set to a non-default value when LOADIFY_ENV=%s", c.Env)
+	}
+	return nil
 }
 
 func hostnameOr(def string) string {

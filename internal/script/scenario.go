@@ -114,6 +114,21 @@ function _runStep(step, vars, idx) {
     ok = r.status < 400 && !r.error;
     if (!ok) reason = r.error ? r.error : "status " + r.status;
   }
+  // Extraction runs before emit so a broken chain surfaces as a step failure
+  // instead of silently feeding empty {{vars}} into later steps: an extract is
+  // configured but the body is missing/unparsable (extract_failed) or a path
+  // resolves to nothing (extract_missing).
+  if (step.extracts && step.extracts.length) {
+    var parsed = null, parseOK = false;
+    if (r.body) { try { parsed = JSON.parse(r.body); parseOK = true; } catch (e) {} }
+    if (!parseOK && ok) { ok = false; reason = "extract_failed"; }
+    for (var j = 0; j < step.extracts.length; j++) {
+      var ex = step.extracts[j];
+      var val = parseOK ? _get(parsed, ex.path) : undefined;
+      vars[ex["var"]] = val;
+      if (parseOK && val === undefined && ok) { ok = false; reason = "extract_missing"; }
+    }
+  }
   // Emit this step as its own labeled result (per-interface metrics + drill-down).
   __emit__({
     group: label, method: step.method || "GET", url: url,
@@ -121,14 +136,6 @@ function _runStep(step, vars, idx) {
     latency_us: Math.round((r.duration_ms || 0) * 1000), ttfb_us: Math.round((r.duration_ms || 0) * 1000),
     recv_bytes: (r.body || "").length, resp_body: r.body || ""
   });
-  if (step.extracts && step.extracts.length && r.body) {
-    var parsed = null;
-    try { parsed = JSON.parse(r.body); } catch (e) {}
-    for (var j = 0; j < step.extracts.length; j++) {
-      var ex = step.extracts[j];
-      vars[ex["var"]] = parsed !== null ? _get(parsed, ex.path) : undefined;
-    }
-  }
   return { r: r, ok: ok, ms: r.duration_ms || 0 };
 }
 function iteration() {

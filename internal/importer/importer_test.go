@@ -125,3 +125,19 @@ func TestParseUnknownFormat(t *testing.T) {
 		t.Error("expected error for unknown format")
 	}
 }
+
+func TestParseOpenAPINoBaseURLErrors(t *testing.T) {
+	// No servers / host means no absolute URL can be built — fail loudly rather
+	// than emit bare paths that break at run time.
+	oas := `{"paths":{"/users":{"get":{}}}}`
+	if _, err := Parse("openapi", oas); err == nil {
+		t.Error("expected error for OpenAPI document without a server URL")
+	}
+}
+
+func TestParseCurlMalformedHeaderErrors(t *testing.T) {
+	// A -H without a colon is a user mistake; don't silently drop it.
+	if _, err := Parse("curl", `curl https://x/ -H 'BrokenHeader'`); err == nil {
+		t.Error("expected error for malformed -H header")
+	}
+}

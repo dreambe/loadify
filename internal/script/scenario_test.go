@@ -87,6 +87,54 @@ func TestScenarioSequenceChaining(t *testing.T) {
 	}
 }
 
+func TestScenarioExtractFailureSurfaces(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/json":
+			_, _ = w.Write([]byte(`{"data":{"id":1}}`))
+		default: // non-JSON body
+			_, _ = w.Write([]byte(`not json at all`))
+		}
+	}))
+	defer srv.Close()
+
+	// A path that doesn't exist in valid JSON → extract_missing, step fails.
+	missing := runScenario(t, &plan.ScenarioConfig{
+		Mode: "sequence",
+		Steps: []plan.ScenarioStep{{
+			Name: "s", Method: "GET", URL: srv.URL + "/json",
+			Extracts: []plan.ScenarioExtract{{Var: "tok", Path: "data.token"}},
+		}},
+	})
+	if missing[0].OK || missing[0].ErrorKind != "extract_missing" {
+		t.Errorf("missing path: got ok=%v kind=%q, want ok=false kind=extract_missing", missing[0].OK, missing[0].ErrorKind)
+	}
+
+	// A present path still succeeds.
+	present := runScenario(t, &plan.ScenarioConfig{
+		Mode: "sequence",
+		Steps: []plan.ScenarioStep{{
+			Name: "s", Method: "GET", URL: srv.URL + "/json",
+			Extracts: []plan.ScenarioExtract{{Var: "id", Path: "data.id"}},
+		}},
+	})
+	if !present[0].OK {
+		t.Errorf("present path: got ok=false kind=%q, want ok=true", present[0].ErrorKind)
+	}
+
+	// Unparsable body with an extract configured → extract_failed.
+	unparsable := runScenario(t, &plan.ScenarioConfig{
+		Mode: "sequence",
+		Steps: []plan.ScenarioStep{{
+			Name: "s", Method: "GET", URL: srv.URL + "/text",
+			Extracts: []plan.ScenarioExtract{{Var: "x", Path: "a"}},
+		}},
+	})
+	if unparsable[0].OK || unparsable[0].ErrorKind != "extract_failed" {
+		t.Errorf("unparsable body: got ok=%v kind=%q, want ok=false kind=extract_failed", unparsable[0].OK, unparsable[0].ErrorKind)
+	}
+}
+
 func TestScenarioTemplateFunctions(t *testing.T) {
 	var gotPath atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

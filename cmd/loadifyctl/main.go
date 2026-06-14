@@ -114,11 +114,23 @@ type runOpts struct {
 }
 
 func cmdRun(ctx context.Context, c *apiclient.Client, out *printer, o runOpts) {
+	if o.dur <= 0 {
+		usageErr("--duration must be > 0")
+	}
+	if o.rps < 0 {
+		usageErr("--rps must be >= 0")
+	}
+	if o.workers < 0 {
+		usageErr("--workers must be >= 0")
+	}
+	if o.rps == 0 && o.vus <= 0 {
+		usageErr("--vus must be > 0")
+	}
 	proto := "http"
 	var scriptJS string
 	if o.script != "" {
 		proto = "script"
-		b, err := os.ReadFile(o.script)
+		b, err := readFileCapped(o.script)
 		must(err)
 		scriptJS = string(b)
 	}
@@ -145,7 +157,9 @@ func cmdRun(ctx context.Context, c *apiclient.Client, out *printer, o runOpts) {
 	must(err)
 	runID, err := c.StartRun(ctx, testID, o.workers)
 	must(err)
-	wctx, cancel := context.WithTimeout(ctx, o.dur+60*time.Second)
+	// Allow generous headroom over the nominal duration: queueing, ramp tails and
+	// drain can push a run well past o.dur. Ctrl+C still exits early.
+	wctx, cancel := context.WithTimeout(ctx, o.dur*2+5*time.Minute)
 	defer cancel()
 	run, err := c.WaitForRun(wctx, runID, 2*time.Second)
 	must(err)
@@ -261,15 +275,40 @@ func env(k, def string) string {
 	return def
 }
 
+// maxInputBytes caps script and import inputs so a pathological file can't be
+// slurped whole into memory and shipped to the API.
+const maxInputBytes = 10 << 20 // 10 MiB
+
 func readFileOrStdin(path string) string {
-	if path == "-" {
-		b, err := io.ReadAll(os.Stdin)
+	var r io.Reader = os.Stdin
+	if path != "-" {
+		f, err := os.Open(path)
 		must(err)
-		return string(b)
+		defer f.Close()
+		r = f
 	}
-	b, err := os.ReadFile(path)
+	b, err := io.ReadAll(io.LimitReader(r, maxInputBytes+1))
 	must(err)
+	if len(b) > maxInputBytes {
+		fail(fmt.Errorf("input exceeds %d byte limit", maxInputBytes))
+	}
 	return string(b)
+}
+
+func readFileCapped(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxInputBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxInputBytes {
+		return nil, fmt.Errorf("%s exceeds %d byte limit", path, maxInputBytes)
+	}
+	return b, nil
 }
 
 func must(err error) {
