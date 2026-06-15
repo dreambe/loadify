@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, protocolLabel } from "@/lib/i18n";
 import Help from "@/components/Help";
 import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
@@ -570,7 +570,7 @@ export default function TestsPage() {
                     <th>{t("tests.colProtocol")}</th>
                     <th>{t("tests.colCreator")}</th>
                     <th>{t("tests.colCreated")}</th>
-                    {canCreate && <th className="num">{t("tests.colActions")}</th>}
+                    {canCreate && <th>{t("tests.colActions")}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -594,7 +594,7 @@ export default function TestsPage() {
                           </div>
                         )}
                       </td>
-                      <td className="muted">{td.protocol}</td>
+                      <td className="muted">{protocolLabel(t, td.protocol)}</td>
                       <td className="muted">{td.creator_name || "–"}</td>
                       <td className="muted">{new Date(td.created_at).toLocaleString()}</td>
                       {canCreate && (

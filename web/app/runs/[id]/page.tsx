@@ -8,6 +8,7 @@ import { api, exportCSVURL, reportURL } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
+import { useConfirm } from "@/components/Confirm";
 import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
@@ -18,6 +19,8 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   const { t } = useI18n();
   const { user, ready } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
+  const [rerunning, setRerunning] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
@@ -106,12 +109,18 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <>
                 <button
                   className="secondary"
-                  onClick={() =>
+                  disabled={rerunning}
+                  onClick={() => {
+                    if (rerunning) return;
+                    setRerunning(true);
                     api
                       .startRun(run.test_def_id, Math.max(1, run.desired_workers), "")
                       .then((res) => (window.location.href = `/runs/${res.run_id}`))
-                      .catch((e: any) => toast.error(e.message))
-                  }
+                      .catch((e: any) => {
+                        toast.error(e.message);
+                        setRerunning(false);
+                      });
+                  }}
                 >
                   <Icon name="rerun" /> {t("runs.rerun")}
                 </button>
@@ -175,7 +184,11 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             className="secondary"
             disabled={!ownsOrAdmin(user, run?.created_by)}
             title={ownsOrAdmin(user, run?.created_by) ? undefined : t("common.ownerOnly")}
-            onClick={() => api.stopRun(runId).then(() => api.getRun(runId).then(setRun))}
+            onClick={async () => {
+              if (!(await confirm({ title: t("run.stop"), danger: true, confirmLabel: t("run.stop") }))) return;
+              await api.stopRun(runId);
+              api.getRun(runId).then(setRun);
+            }}
           >
             {t("run.stop")}
           </button>

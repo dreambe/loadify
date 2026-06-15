@@ -147,11 +147,24 @@ export default function ScenarioBuilder({
   const setStep = (i: number, patch: Partial<ScenarioStep>) =>
     onChange({ ...value, steps: value.steps.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) });
 
-  // removeStep drops the step and clears cached debug results, whose numeric
-  // keys would otherwise drift onto the wrong steps after the indices shift.
+  // remapAfterRemove shifts an index-keyed record down past a removed index, so
+  // cached results stay attached to the right steps instead of being wiped.
+  function remapAfterRemove<T>(rec: Record<number, T>, removed: number): Record<number, T> {
+    const out: Record<number, T> = {};
+    for (const k of Object.keys(rec)) {
+      const idx = Number(k);
+      if (idx === removed) continue;
+      out[idx > removed ? idx - 1 : idx] = rec[idx];
+    }
+    return out;
+  }
+
+  // removeStep drops the step but keeps the other steps' cached debug/raw-view
+  // state, re-keyed for the shifted indices.
   const removeStep = (i: number) => {
     onChange({ ...value, steps: value.steps.filter((_, idx) => idx !== i) });
-    setDebug({});
+    setDebug((d) => remapAfterRemove(d, i));
+    setRawView((r) => remapAfterRemove(r, i));
   };
 
   // payloadStep serializes a builder step into the debug-scenario wire shape.

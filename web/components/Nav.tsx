@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { clearSession, getToken, getUser } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, roleLabel } from "@/lib/i18n";
 import Icon from "./Icon";
 import type { User } from "@/lib/types";
 
@@ -157,7 +157,7 @@ function AccountMenu({ user }: { user: User | null }) {
               <div className="menu-name">{user.name || user.email}</div>
               {user.name && <div className="menu-mail">{user.email}</div>}
               <span className="badge completed" style={{ marginTop: 4 }}>
-                {user.role}
+                {roleLabel(t, user.role)}
               </span>
             </div>
           </div>

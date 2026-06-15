@@ -127,7 +127,7 @@ export default function SchedulesPage() {
                     <th>{t("sched.colInterval")}</th>
                     <th>{t("sched.colNext")}</th>
                     <th>{t("sched.colLast")}</th>
-                    {canEdit && <th className="num">{t("tests.colActions")}</th>}
+                    {canEdit && <th>{t("tests.colActions")}</th>}
                   </tr>
                 </thead>
                 <tbody>

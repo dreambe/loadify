@@ -155,7 +155,7 @@ export default function EnvironmentsPage() {
                     <th>{t("env.name")}</th>
                     <th>{t("env.colVars")}</th>
                     <th>{t("env.colCreator")}</th>
-                    {canEdit && <th className="num">{t("tests.colActions")}</th>}
+                    {canEdit && <th>{t("tests.colActions")}</th>}
                   </tr>
                 </thead>
                 <tbody>

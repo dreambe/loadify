@@ -147,6 +147,17 @@ const messages: Record<Lang, Record<string, string>> = {
     "status.healthy": "正常",
     "status.unhealthy": "异常",
     "status.offline": "离线",
+    "role.viewer": "观察者",
+    "role.operator": "操作员",
+    "role.admin": "管理员",
+    "protocol.http": "HTTP",
+    "protocol.https": "HTTPS",
+    "protocol.grpc": "gRPC",
+    "protocol.ws": "WebSocket",
+    "protocol.websocket": "WebSocket",
+    "protocol.sse": "SSE",
+    "protocol.scenario": "场景",
+    "protocol.script": "脚本",
     "runs.colCreator": "创建人",
     "runs.colWorkers": "节点数",
     "runs.colStarted": "开始时间",
@@ -571,6 +582,17 @@ const messages: Record<Lang, Record<string, string>> = {
     "status.healthy": "healthy",
     "status.unhealthy": "unhealthy",
     "status.offline": "offline",
+    "role.viewer": "Viewer",
+    "role.operator": "Operator",
+    "role.admin": "Admin",
+    "protocol.http": "HTTP",
+    "protocol.https": "HTTPS",
+    "protocol.grpc": "gRPC",
+    "protocol.ws": "WebSocket",
+    "protocol.websocket": "WebSocket",
+    "protocol.sse": "SSE",
+    "protocol.scenario": "Scenario",
+    "protocol.script": "Script",
     "runs.colCreator": "Creator",
     "runs.colWorkers": "Workers",
     "runs.colStarted": "Started",
@@ -903,4 +925,16 @@ export function statusLabel(t: (k: string) => string, status: string): string {
   const key = `status.${status}`;
   const out = t(key);
   return out === key ? status : out;
+}
+
+// roleLabel / protocolLabel localize their enum, falling back to the raw value.
+export function roleLabel(t: (k: string) => string, role: string): string {
+  const key = `role.${role}`;
+  const out = t(key);
+  return out === key ? role : out;
+}
+export function protocolLabel(t: (k: string) => string, p: string): string {
+  const key = `protocol.${p}`;
+  const out = t(key);
+  return out === key ? p : out;
 }

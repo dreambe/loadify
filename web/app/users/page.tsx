@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, roleLabel } from "@/lib/i18n";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
@@ -69,6 +69,13 @@ export default function UsersPage() {
   }
 
   async function toggleDisabled(u: User) {
+    // Disabling locks the user out — confirm. Enabling is harmless, no prompt.
+    if (
+      !u.disabled &&
+      !(await confirm({ title: t("users.disable") + " · " + u.email, danger: true, confirmLabel: t("users.disable") }))
+    ) {
+      return;
+    }
     try {
       await api.updateUser(u.id, { disabled: !u.disabled });
       refresh();
@@ -125,7 +132,7 @@ export default function UsersPage() {
                   <label>{t("users.role")}</label>
                   <select value={role} onChange={(e) => setRole(e.target.value)}>
                     {["viewer", "operator", "admin"].map((r) => (
-                      <option key={r}>{r}</option>
+                      <option key={r} value={r}>{roleLabel(t, r)}</option>
                     ))}
                   </select>
                 </div>
@@ -172,8 +179,8 @@ export default function UsersPage() {
                             onChange={(e) => changeRole(u, e.target.value)}
                           >
                             {["viewer", "operator", "admin"].map((r) => (
-                              <option key={r}>{r}</option>
-                            ))}
+                      <option key={r} value={r}>{roleLabel(t, r)}</option>
+                    ))}
                           </select>
                         </td>
                         <td>
@@ -322,7 +329,7 @@ function ProfileCard() {
             {me.email}
           </div>
         </div>
-        <span className="badge completed">{me.role}</span>
+        <span className="badge completed">{roleLabel(t, me.role)}</span>
         <div className="muted" style={{ fontSize: 12.5, textAlign: "right" }}>
           <div>
             {t("users.profileCreated")}:{" "}

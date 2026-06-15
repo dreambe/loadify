@@ -81,6 +81,7 @@ export default function RunsPage() {
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [err, setErr] = useState("");
   const [runFilter, setRunFilter] = useState("");
+  const [busy, setBusy] = useState(false); // guards against double-starting runs
 
   async function refresh() {
     try {
@@ -113,25 +114,30 @@ export default function RunsPage() {
   const clampWorkers = (raw: string) => Math.max(1, Math.min(maxWorkers || 1, parseInt(raw, 10) || 1));
 
   async function start() {
-    if (!testId) return;
+    if (!testId || busy) return;
     setErr("");
+    setBusy(true);
     try {
       const res = await api.startRun(testId, clampWorkers(workers), runName, envId);
       window.location.href = `/runs/${res.run_id}`;
     } catch (e: any) {
       setErr(e.message);
+      setBusy(false);
     }
   }
 
   // rerun fires the same test again with the same worker count; the run name
   // defaults server-side to "<test> @ <time>".
   async function rerun(r: Run) {
+    if (busy) return;
     setErr("");
+    setBusy(true);
     try {
       const res = await api.startRun(r.test_def_id, Math.max(1, r.desired_workers), "");
       window.location.href = `/runs/${res.run_id}`;
     } catch (e: any) {
       setErr(e.message);
+      setBusy(false);
     }
   }
 
@@ -210,7 +216,7 @@ export default function RunsPage() {
                   </select>
                 </div>
               )}
-              <button onClick={start} disabled={!testId || maxWorkers === 0}>
+              <button onClick={start} disabled={!testId || maxWorkers === 0 || busy}>
                 {t("runs.startBtn")}
               </button>
             </div>
@@ -261,7 +267,7 @@ export default function RunsPage() {
                   {canRun && (
                     <td>
                       <div className="actions">
-                        <button className="ghost sm" onClick={() => rerun(r)}>
+                        <button className="ghost sm" onClick={() => rerun(r)} disabled={busy}>
                           <Icon name="rerun" /> {t("runs.rerun")}
                         </button>
                       </div>
