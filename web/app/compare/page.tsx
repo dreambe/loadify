@@ -5,7 +5,7 @@ import Nav from "@/components/Nav";
 import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, statusLabel } from "@/lib/i18n";
 import { compareColors } from "@/lib/colors";
 import type { Run, SeriesPoint } from "@/lib/types";
 
@@ -108,7 +108,7 @@ function CompareInner() {
           <option value="">{t("compare.select")}</option>
           {opts.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.name || r.id.slice(0, 8)} · {r.status} · {new Date(r.created_at).toLocaleString()}
+              {r.name || r.id.slice(0, 8)} · {statusLabel(t, r.status)} · {new Date(r.created_at).toLocaleString()}
             </option>
           ))}
         </select>

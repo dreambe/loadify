@@ -8,7 +8,7 @@ import Icon from "@/components/Icon";
 import { Pager, usePager } from "@/components/Pager";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, statusLabel } from "@/lib/i18n";
 import type { Environment, Run, TestDefinition } from "@/lib/types";
 
 // TestPicker is a searchable test selector: type to filter, pick from the
@@ -249,7 +249,7 @@ export default function RunsPage() {
                   </td>
                   <td className="muted">{testName(r.test_def_id)}</td>
                   <td>
-                    <span className={`badge ${r.status}`}>{r.status}</span>
+                    <span className={`badge ${r.status}`}>{statusLabel(t, r.status)}</span>
                   </td>
                   <td className="muted">
                     {r.creator_name || t("run.creatorSystem")}

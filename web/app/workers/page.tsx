@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, statusLabel } from "@/lib/i18n";
 import type { WorkerInfo } from "@/lib/types";
 
 export default function WorkersPage() {
@@ -57,7 +57,7 @@ export default function WorkersPage() {
                   <td>{w.region}</td>
                   <td>
                     <span className={`badge ${w.status === "healthy" ? "running" : "failed"}`}>
-                      {w.status}
+                      {statusLabel(t, w.status)}
                     </span>
                   </td>
                   <td>

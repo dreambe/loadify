@@ -341,7 +341,7 @@ th.num {
 td .actions {
   display: flex;
   gap: var(--s2);
-  justify-content: flex-end;
+  justify-content: flex-start; /* line up with the left-aligned column header */
   flex-wrap: nowrap;
 }
 tbody tr {

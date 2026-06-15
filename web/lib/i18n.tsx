@@ -138,6 +138,15 @@ const messages: Record<Lang, Record<string, string>> = {
     "runs.colName": "任务名",
     "runs.colTest": "用例",
     "runs.colStatus": "状态",
+    "status.pending": "等待中",
+    "status.queued": "排队中",
+    "status.running": "运行中",
+    "status.completed": "已完成",
+    "status.failed": "失败",
+    "status.stopped": "已停止",
+    "status.healthy": "正常",
+    "status.unhealthy": "异常",
+    "status.offline": "离线",
     "runs.colCreator": "创建人",
     "runs.colWorkers": "节点数",
     "runs.colStarted": "开始时间",
@@ -553,6 +562,15 @@ const messages: Record<Lang, Record<string, string>> = {
     "runs.colName": "Name",
     "runs.colTest": "Test",
     "runs.colStatus": "Status",
+    "status.pending": "pending",
+    "status.queued": "queued",
+    "status.running": "running",
+    "status.completed": "completed",
+    "status.failed": "failed",
+    "status.stopped": "stopped",
+    "status.healthy": "healthy",
+    "status.unhealthy": "unhealthy",
+    "status.offline": "offline",
     "runs.colCreator": "Creator",
     "runs.colWorkers": "Workers",
     "runs.colStarted": "Started",
@@ -876,4 +894,13 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
 
 export function useI18n() {
   return useContext(I18nContext);
+}
+
+// statusLabel localizes a run/worker status via the status.* keys, falling back
+// to the raw value for any status without a translation, so an unexpected
+// status never renders as a leaked i18n key.
+export function statusLabel(t: (k: string) => string, status: string): string {
+  const key = `status.${status}`;
+  const out = t(key);
+  return out === key ? status : out;
 }
