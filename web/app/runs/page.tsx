@@ -55,6 +55,19 @@ function TestPicker({
   );
 }
 
+// runsEqual reports whether two run lists are the same for display purposes, so
+// an unchanged 4s poll doesn't replace the array — which would re-render and
+// re-trigger the table's row entrance animation, making the list flicker.
+function runsEqual(a: Run[], b: Run[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || a[i].status !== b[i].status || a[i].started_at !== b[i].started_at) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default function RunsPage() {
   const { t } = useI18n();
   const { user, ready } = useAuth();
@@ -62,7 +75,8 @@ export default function RunsPage() {
   const [tests, setTests] = useState<TestDefinition[]>([]);
   const [testId, setTestId] = useState("");
   const [runName, setRunName] = useState("");
-  const [workers, setWorkers] = useState(1);
+  const [workers, setWorkers] = useState("1");
+  const [maxWorkers, setMaxWorkers] = useState(0);
   const [envId, setEnvId] = useState("");
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [err, setErr] = useState("");
@@ -70,7 +84,8 @@ export default function RunsPage() {
 
   async function refresh() {
     try {
-      setRuns(await api.listRuns());
+      const next = await api.listRuns();
+      setRuns((prev) => (runsEqual(prev, next) ? prev : next));
     } catch (e: any) {
       setErr(e.message);
     }
@@ -81,17 +96,30 @@ export default function RunsPage() {
     refresh();
     api.listTests().then(setTests).catch(() => {});
     api.listEnvironments().then(setEnvs).catch(() => {});
-    const t = setInterval(refresh, 4000);
+    const loadWorkers = () =>
+      api
+        .listWorkers()
+        .then((ws) => setMaxWorkers(ws.filter((w) => w.status === "healthy").length))
+        .catch(() => {});
+    loadWorkers();
+    const t = setInterval(() => {
+      refresh();
+      loadWorkers();
+    }, 4000);
     return () => clearInterval(t);
   }, [ready]);
 
   const testName = (id: string) => tests.find((td) => td.id === id)?.name || id.slice(0, 8);
 
+  // clampWorkers keeps the count within [1, online nodes] — you can't shard
+  // across more workers than are connected.
+  const clampWorkers = (raw: string) => Math.max(1, Math.min(maxWorkers || 1, parseInt(raw, 10) || 1));
+
   async function start() {
     if (!testId) return;
     setErr("");
     try {
-      const res = await api.startRun(testId, workers, runName, envId);
+      const res = await api.startRun(testId, clampWorkers(workers), runName, envId);
       window.location.href = `/runs/${res.run_id}`;
     } catch (e: any) {
       setErr(e.message);
@@ -162,10 +190,15 @@ export default function RunsPage() {
                 <input
                   type="number"
                   min={1}
+                  max={maxWorkers || undefined}
                   value={workers}
-                  onChange={(e) => setWorkers(parseInt(e.target.value || "1", 10))}
+                  onChange={(e) => setWorkers(e.target.value)}
+                  onBlur={() => setWorkers(String(clampWorkers(workers)))}
                   style={{ width: 90 }}
                 />
+                <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                  {t("runs.workersAvail")}: {maxWorkers}
+                </div>
               </div>
               {envs.length > 0 && (
                 <div>
@@ -183,17 +216,16 @@ export default function RunsPage() {
                   </select>
                 </div>
               )}
-              <button onClick={start} disabled={!testId}>
+              <button onClick={start} disabled={!testId || maxWorkers === 0}>
                 {t("runs.startBtn")}
               </button>
             </div>
+            {maxWorkers === 0 && (
+              <p className="muted" style={{ marginTop: 8, color: "var(--yellow)" }}>
+                {t("runs.workersNone")}
+              </p>
+            )}
           </div>
-        )}
-
-        {canRun && (
-          <p className="muted" style={{ marginTop: -4 }}>
-            {t("sched.movedHint")} <Link href="/schedules">{t("nav.schedules")}</Link>
-          </p>
         )}
 
         {err && <div className="error">{err}</div>}

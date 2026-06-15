@@ -20,6 +20,8 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   const [ticks, setTicks] = useState<LiveTick[]>([]);
   const [samples, setSamples] = useState<KeyedSample[]>([]);
   const [connected, setConnected] = useState(false);
+  const [everConnected, setEverConnected] = useState(false);
+  const [closeInfo, setCloseInfo] = useState("");
   const [showLog, setShowLog] = useState(true);
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
@@ -44,10 +46,16 @@ export default function LiveRunChart({ runId }: { runId: string }) {
       wsRef.current = ws;
       ws.onopen = () => {
         setConnected(true);
+        setEverConnected(true);
+        setCloseInfo("");
         retries = 0;
       };
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         setConnected(false);
+        // Surface the server's close reason (e.g. "run is queued",
+        // "stream unavailable") so a stalled live view is diagnosable instead
+        // of an opaque "disconnected".
+        if (ev && (ev.reason || ev.code)) setCloseInfo(ev.reason || `code ${ev.code}`);
         if (stopped) return;
         const delay = Math.min(1000 * 2 ** retries, 10000);
         retries++;
@@ -86,10 +94,20 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   const base = startRef.current ?? ticks[0]?.ts_unix_ms ?? 0;
   const xLabels = ticks.map((tk) => formatElapsed((tk.ts_unix_ms - base) / 1000));
 
+  // Distinguish connecting (never opened yet) / live (open, data flowing) /
+  // waiting (open, no ticks yet — e.g. no workers reporting) / closed.
+  const statusValue = connected
+    ? ticks.length > 0
+      ? t("live.live")
+      : t("live.waiting")
+    : everConnected
+      ? t("live.closed")
+      : t("live.connecting");
+
   return (
     <div>
       <div className="metrics-grid">
-        <Metric label={t("live.status")} value={connected ? t("live.live") : t("live.closed")} />
+        <Metric label={t("live.status")} value={statusValue} />
         <Metric label={t("live.qps")} value={fmt(last?.rps)} />
         <Metric label={t("live.activeVus")} value={last ? String(last.active_vus) : "–"} />
         <Metric
@@ -101,6 +119,12 @@ export default function LiveRunChart({ runId }: { runId: string }) {
         <Metric label="p95" value={fmt(last?.p95_ms) + " ms"} />
         <Metric label="p99" value={fmt(last?.p99_ms) + " ms"} />
       </div>
+
+      {!connected && everConnected && closeInfo && (
+        <p className="muted" style={{ marginTop: 4, fontSize: 12, color: "var(--yellow)" }}>
+          {t("live.closedReason")}: {closeInfo}
+        </p>
+      )}
 
       <div className="panel" style={{ marginTop: 16 }}>
         <h2>{t("run.throughput")}</h2>

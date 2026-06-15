@@ -79,7 +79,7 @@ export default function Nav() {
   return (
     <nav className="nav">
       <Link className="brand" href="/runs">
-        <PulseMark />
+        <PulseMark size={24} />
         Loadify
       </Link>
       <span className="nav-sep" aria-hidden />
@@ -163,7 +163,14 @@ function AccountMenu({ user }: { user: User | null }) {
           {user.role === "admin" && (
             <>
               <div className="menu-sep" />
-              <Link role="menuitem" className="menu-item" href="/users" onClick={() => setOpen(false)}>
+              <Link
+                role="menuitem"
+                className="menu-item"
+                href="/users"
+                onClick={() => setOpen(false)}
+                style={{ justifyContent: "flex-start" }}
+              >
+                <Icon name="settings" size={14} />
                 {t("nav.users")}
               </Link>
             </>

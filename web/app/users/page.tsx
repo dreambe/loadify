@@ -343,21 +343,29 @@ function ProfileCard() {
 // (Feishu/Lark bot URLs get a formatted card).
 function WebhooksPanel({ onError, onDone }: { onError: (m: string) => void; onDone: () => void }) {
   const { t } = useI18n();
-  const [urls, setUrls] = useState<string[]>([]);
+  const [urls, setUrls] = useState<string[]>([]); // saved
+  const [draft, setDraft] = useState<string[]>([]); // being edited
+  const [editing, setEditing] = useState(false);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     api
       .getWebhooks()
-      .then((r) => setUrls(r.webhook_urls.length ? r.webhook_urls : [""]))
-      .catch(() => setUrls([""]))
+      .then((r) => setUrls(r.webhook_urls ?? []))
+      .catch(() => setUrls([]))
       .finally(() => setLoaded(true));
   }, []);
   if (!loaded) return null;
 
+  const startEdit = () => {
+    setDraft(urls.length ? urls : [""]);
+    setEditing(true);
+  };
+
   async function save() {
     try {
-      const cleaned = await api.setWebhooks(urls.map((u) => u.trim()).filter(Boolean));
-      setUrls(cleaned.webhook_urls.length ? cleaned.webhook_urls : [""]);
+      const cleaned = await api.setWebhooks(draft.map((u) => u.trim()).filter(Boolean));
+      setUrls(cleaned.webhook_urls ?? []);
+      setEditing(false);
       onDone();
     } catch (e: any) {
       onError(e.message);
@@ -370,31 +378,72 @@ function WebhooksPanel({ onError, onDone }: { onError: (m: string) => void; onDo
         {t("users.webhooks")}
         <Help tip={t("users.webhooksHelp")} />
       </h2>
-      {urls.map((u, i) => (
-        <div className="row" key={i} style={{ marginBottom: 6 }}>
-          <input
-            value={u}
-            placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"
-            onChange={(e) => setUrls(urls.map((x, idx) => (idx === i ? e.target.value : x)))}
-            style={{ flex: 1, fontFamily: "var(--font-mono)" }}
-          />
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => setUrls(urls.filter((_, idx) => idx !== i).length ? urls.filter((_, idx) => idx !== i) : [""])}
-          >
-            {t("ramp.remove")}
-          </button>
-        </div>
-      ))}
-      <div className="row" style={{ marginTop: 8 }}>
-        <button type="button" className="secondary" onClick={() => setUrls([...urls, ""])}>
-          + {t("users.webhookAdd")}
-        </button>
-        <button type="button" onClick={save}>
-          {t("users.webhookSave")}
-        </button>
-      </div>
+      {!editing ? (
+        // Saved state: read-only display, not raw inputs, so it's obvious the
+        // value is persisted. Editing is an explicit, opt-in action.
+        <>
+          {urls.length === 0 ? (
+            <p className="muted">{t("users.webhookNone")}</p>
+          ) : (
+            urls.map((u, i) => (
+              <div
+                key={i}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13,
+                  padding: "8px 10px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  marginBottom: 6,
+                  wordBreak: "break-all",
+                  background: "var(--panel-2, transparent)",
+                }}
+              >
+                {u}
+              </div>
+            ))
+          )}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" className="secondary" onClick={startEdit}>
+              {t("users.webhookEdit")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {draft.map((u, i) => (
+            <div className="row" key={i} style={{ marginBottom: 6 }}>
+              <input
+                value={u}
+                placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"
+                onChange={(e) => setDraft(draft.map((x, idx) => (idx === i ? e.target.value : x)))}
+                style={{ flex: 1, fontFamily: "var(--font-mono)" }}
+              />
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const next = draft.filter((_, idx) => idx !== i);
+                  setDraft(next.length ? next : [""]);
+                }}
+              >
+                {t("ramp.remove")}
+              </button>
+            </div>
+          ))}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" className="secondary" onClick={() => setDraft([...draft, ""])}>
+              + {t("users.webhookAdd")}
+            </button>
+            <button type="button" onClick={save}>
+              {t("users.webhookSave")}
+            </button>
+            <button type="button" className="ghost" onClick={() => setEditing(false)}>
+              {t("users.webhookCancel")}
+            </button>
+          </div>
+        </>
+      )}
       <p className="muted" style={{ fontSize: 12.5 }}>
         {t("users.webhookDefault")}
       </p>
