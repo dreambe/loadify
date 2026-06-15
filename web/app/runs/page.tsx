@@ -81,6 +81,11 @@ export default function RunsPage() {
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [err, setErr] = useState("");
   const [runFilter, setRunFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sort, setSort] = useState<{ key: "name" | "status" | "started"; dir: "asc" | "desc" }>({
+    key: "started",
+    dir: "desc",
+  });
   const [busy, setBusy] = useState(false); // guards against double-starting runs
   const [loaded, setLoaded] = useState(false);
 
@@ -147,14 +152,32 @@ export default function RunsPage() {
   // Filter the run history so it stays navigable at scale (by run name, test
   // name, status or creator), then paginate.
   const rq = runFilter.trim().toLowerCase();
-  const filteredRuns = rq
-    ? runs.filter((r) =>
-        `${r.name ?? ""} ${testName(r.test_def_id)} ${r.status} ${r.creator_name ?? ""}`
-          .toLowerCase()
-          .includes(rq)
-      )
-    : runs;
-  const runPager = usePager(filteredRuns, 10);
+  const filteredRuns = runs
+    .filter((r) =>
+      rq
+        ? `${r.name ?? ""} ${testName(r.test_def_id)} ${r.status} ${r.creator_name ?? ""}`.toLowerCase().includes(rq)
+        : true
+    )
+    .filter((r) => (statusFilter ? r.status === statusFilter : true));
+  // Sort a copy by the active column; ties fall back to creation order.
+  const sortedRuns = [...filteredRuns].sort((a, b) => {
+    const key = (r: Run) =>
+      sort.key === "name"
+        ? (r.name || r.id).toLowerCase()
+        : sort.key === "status"
+          ? r.status
+          : r.started_at || r.created_at;
+    const av = key(a);
+    const bv = key(b);
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+  const runPager = usePager(sortedRuns, 10);
+  // Statuses present in the data, for the filter dropdown.
+  const statuses = Array.from(new Set(runs.map((r) => r.status)));
+  const toggleSort = (k: "name" | "status" | "started") =>
+    setSort((s) => ({ key: k, dir: s.key === k && s.dir === "desc" ? "asc" : "desc" }));
+  const sortMark = (k: string) => (sort.key === k ? (sort.dir === "desc" ? " ▼" : " ▲") : "");
 
   if (!ready) return null;
   const canRun = roleAtLeast(user?.role, "operator");
@@ -232,21 +255,40 @@ export default function RunsPage() {
         {err && <div className="error">{err}</div>}
 
         <div className="panel">
-          <div className="field" style={{ maxWidth: 320, marginBottom: 12 }}>
-            <input
-              value={runFilter}
-              onChange={(e) => setRunFilter(e.target.value)}
-              placeholder={t("runs.filterPh")}
-            />
+          <div className="row" style={{ marginBottom: 12, alignItems: "center" }}>
+            <div className="field" style={{ maxWidth: 320, flex: 1 }}>
+              <input
+                value={runFilter}
+                onChange={(e) => setRunFilter(e.target.value)}
+                placeholder={t("runs.filterPh")}
+              />
+            </div>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 150 }}>
+              <option value="">{t("runs.allStatuses")}</option>
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {statusLabel(t, s)}
+                </option>
+              ))}
+            </select>
           </div>
           <table>
             <thead>
               <tr>
-                <th>{t("runs.colName")}</th>
+                <th onClick={() => toggleSort("name")} style={{ cursor: "pointer", userSelect: "none" }}>
+                  {t("runs.colName")}
+                  {sortMark("name")}
+                </th>
                 <th>{t("runs.colTest")}</th>
-                <th>{t("runs.colStatus")}</th>
+                <th onClick={() => toggleSort("status")} style={{ cursor: "pointer", userSelect: "none" }}>
+                  {t("runs.colStatus")}
+                  {sortMark("status")}
+                </th>
                 <th>{t("runs.colCreator")}</th>
-                <th>{t("runs.colStarted")}</th>
+                <th onClick={() => toggleSort("started")} style={{ cursor: "pointer", userSelect: "none" }}>
+                  {t("runs.colStarted")}
+                  {sortMark("started")}
+                </th>
                 {canRun && <th>{t("runs.colActions")}</th>}
               </tr>
             </thead>
