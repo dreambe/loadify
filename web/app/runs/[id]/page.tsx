@@ -110,6 +110,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                     api
                       .startRun(run.test_def_id, Math.max(1, run.desired_workers), "")
                       .then((res) => (window.location.href = `/runs/${res.run_id}`))
+                      .catch((e: any) => toast.error(e.message))
                   }
                 >
                   <Icon name="rerun" /> {t("runs.rerun")}

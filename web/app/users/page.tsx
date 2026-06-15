@@ -355,7 +355,6 @@ function WebhooksPanel({ onError, onDone }: { onError: (m: string) => void; onDo
   if (!loaded) return null;
 
   async function save() {
-    onError("");
     try {
       const cleaned = await api.setWebhooks(urls.map((u) => u.trim()).filter(Boolean));
       setUrls(cleaned.webhook_urls.length ? cleaned.webhook_urls : [""]);
@@ -417,7 +416,6 @@ function ChangePasswordPanel({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    onError("");
     try {
       await api.changePassword(oldPw, newPw);
       setOldPw("");

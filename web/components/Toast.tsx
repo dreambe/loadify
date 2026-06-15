@@ -32,6 +32,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const show = useCallback(
     (message: string, kind: ToastKind = "info") => {
+      // Guard against empty messages — callers sometimes "clear" by passing ""
+      // which would otherwise flash an empty (dot-only) toast.
+      if (!message) return;
       const id = Date.now() + Math.random();
       setToasts((cur) => [...cur, { id, kind, message }]);
       setTimeout(() => remove(id), kind === "error" ? 6000 : 3500);

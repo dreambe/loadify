@@ -17,6 +17,9 @@ interface Side {
 function metricsOf(r?: Run) {
   const s = r?.summary?.summary;
   return {
+    // A run only has final metrics once it finishes; a still-running run has no
+    // summary, so its column shows "—" rather than misleading zeros.
+    has: !!s,
     total: r?.summary?.total_requests ?? 0,
     error_rate: (s?.error_rate ?? 0) * 100,
     p50: s?.p50_ms ?? 0,
@@ -64,12 +67,16 @@ function CompareInner() {
 
   // For latency/error metrics, lower is better; for total/qps, higher is better.
   function delta(metric: string, av: number, bv: number) {
-    if (!a.run || !b.run) return null;
+    // Only meaningful when both runs have final metrics to compare.
+    if (!a.run || !b.run || !ma.has || !mb.has) return null;
     const lowerBetter = metric !== "total";
     const diff = bv - av;
     if (diff === 0) return <span className="muted"> (=)</span>;
+    // A percentage change needs a non-zero baseline; with av==0 there's nothing
+    // to divide by, so show a neutral "new" marker instead of "+—%".
+    if (av === 0) return <span className="muted"> ({t("compare.new")})</span>;
     const better = lowerBetter ? diff < 0 : diff > 0;
-    const pct = av !== 0 ? ((diff / av) * 100).toFixed(1) : "—";
+    const pct = ((diff / av) * 100).toFixed(1);
     return (
       <span style={{ color: better ? "var(--green)" : "var(--red)" }}>
         {" "}
@@ -153,9 +160,9 @@ function CompareInner() {
                   {rows.map((r) => (
                     <tr key={r.key}>
                       <td>{r.label}</td>
-                      <td>{r.fmt(r.av)}</td>
+                      <td>{ma.has ? r.fmt(r.av) : "—"}</td>
                       <td>
-                        {r.fmt(r.bv)}
+                        {mb.has ? r.fmt(r.bv) : "—"}
                         {delta(r.key, r.av, r.bv)}
                       </td>
                     </tr>
@@ -165,6 +172,11 @@ function CompareInner() {
               <p className="muted" style={{ marginTop: 8 }}>
                 {t("compare.hint")}
               </p>
+              {(!ma.has || !mb.has) && (
+                <p className="muted" style={{ marginTop: 4 }}>
+                  {t("compare.running")}
+                </p>
+              )}
             </div>
 
             <div className="panel">

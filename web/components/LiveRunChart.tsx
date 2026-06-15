@@ -29,26 +29,53 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   const seqRef = useRef(0);
 
   useEffect(() => {
-    const ws = new WebSocket(liveSocketURL(runId));
-    wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onmessage = (ev) => {
-      try {
-        const tick = JSON.parse(ev.data) as LiveTick;
-        if (startRef.current === null) startRef.current = tick.ts_unix_ms;
-        setTicks((prev) => [...prev.slice(-(MAX_POINTS - 1)), tick]);
-        if (tick.samples && tick.samples.length > 0) {
-          // Stable per-sample ids keep row expansion anchored as new samples
-          // are prepended.
-          const keyed = tick.samples.map((s) => ({ ...s, _id: seqRef.current++ }));
-          setSamples((prev) => [...keyed, ...prev].slice(0, MAX_LOG));
+    // Reconnect on close with exponential backoff (capped). A live run's stream
+    // can drop transiently (coordinator failover, brief network blip); without
+    // this the status would stick on "closed" and stop updating until reload.
+    // This component is only mounted while the run is non-terminal, so retries
+    // stop naturally once the run finishes and the parent unmounts it.
+    let stopped = false;
+    let retries = 0;
+    let retryTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      if (stopped) return;
+      const ws = new WebSocket(liveSocketURL(runId));
+      wsRef.current = ws;
+      ws.onopen = () => {
+        setConnected(true);
+        retries = 0;
+      };
+      ws.onclose = () => {
+        setConnected(false);
+        if (stopped) return;
+        const delay = Math.min(1000 * 2 ** retries, 10000);
+        retries++;
+        retryTimer = setTimeout(connect, delay);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const tick = JSON.parse(ev.data) as LiveTick;
+          if (startRef.current === null) startRef.current = tick.ts_unix_ms;
+          setTicks((prev) => [...prev.slice(-(MAX_POINTS - 1)), tick]);
+          if (tick.samples && tick.samples.length > 0) {
+            // Stable per-sample ids keep row expansion anchored as new samples
+            // are prepended.
+            const keyed = tick.samples.map((s) => ({ ...s, _id: seqRef.current++ }));
+            setSamples((prev) => [...keyed, ...prev].slice(0, MAX_LOG));
+          }
+        } catch {
+          /* ignore malformed frame */
         }
-      } catch {
-        /* ignore malformed frame */
-      }
+      };
     };
-    return () => ws.close();
+
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      wsRef.current?.close();
+    };
   }, [runId]);
 
   const last = ticks[ticks.length - 1];
