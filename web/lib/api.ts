@@ -64,6 +64,24 @@ export interface DebugResponse {
   error?: string;
 }
 
+// DebugScenarioStep is one step's resolved request/response from a chained
+// scenario debug run.
+export interface DebugScenarioStep {
+  group: string;
+  method: string;
+  url: string; // resolved after {{var}} interpolation
+  status: number;
+  ok: boolean;
+  error_kind?: string;
+  latency_ms: number;
+  body: string;
+}
+
+export interface DebugScenarioResponse {
+  steps: DebugScenarioStep[];
+  error?: string;
+}
+
 export const api = {
   login: (email: string, password: string) =>
     req<LoginResponse>("/api/v1/auth/login", {
@@ -107,6 +125,11 @@ export const api = {
     body?: string;
     insecure_skip_verify?: boolean;
   }) => req<DebugResponse>("/api/v1/tests/debug", { method: "POST", body: JSON.stringify(body) }),
+  debugScenario: (steps: unknown[]) =>
+    req<DebugScenarioResponse>("/api/v1/tests/debug-scenario", {
+      method: "POST",
+      body: JSON.stringify({ steps }),
+    }),
   testTrend: (id: string, n = 20) => reqList<TrendPoint>(`/api/v1/tests/${id}/trend?n=${n}`),
   setBaseline: (testId: string, runId: string) =>
     req<void>(`/api/v1/tests/${testId}/baseline`, { method: "POST", body: JSON.stringify({ run_id: runId }) }),

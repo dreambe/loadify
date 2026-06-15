@@ -1,12 +1,18 @@
 package apisrv
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/script"
+	"github.com/dreambe/loadify/internal/worker/protocols"
 )
 
 // debugBodyCap bounds how much of the response body a debug call returns.
@@ -106,4 +112,96 @@ func (s *Server) handleDebugRequest(w http.ResponseWriter, r *http.Request) {
 		BodyTruncated: rest > 0,
 		RecvBytes:     int64(hn) + rest,
 	})
+}
+
+// debugMaxSteps bounds how many steps a scenario debug call will execute.
+const debugMaxSteps = 20
+
+type debugScenarioRequest struct {
+	Steps []plan.ScenarioStep `json:"steps"`
+}
+
+type debugScenarioStep struct {
+	Group     string  `json:"group"`
+	Method    string  `json:"method"`
+	URL       string  `json:"url"` // resolved (after {{var}} interpolation)
+	Status    int     `json:"status"`
+	OK        bool    `json:"ok"`
+	ErrorKind string  `json:"error_kind,omitempty"`
+	LatencyMs float64 `json:"latency_ms"`
+	Body      string  `json:"body"`
+}
+
+type debugScenarioResp struct {
+	Steps []debugScenarioStep `json:"steps"`
+	Error string              `json:"error,omitempty"`
+}
+
+// handleDebugScenario runs steps 1..N through the real scenario engine in order,
+// performing {{var}} interpolation and extraction between steps, so a step that
+// depends on an upstream value resolves correctly instead of firing the literal
+// template (which otherwise looks like a spurious 404). It returns each step's
+// resolved request and response. Single source of truth: it reuses the same
+// goja harness as a live run, so debug behavior can't drift from production.
+func (s *Server) handleDebugScenario(w http.ResponseWriter, r *http.Request) {
+	var req debugScenarioRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if len(req.Steps) == 0 {
+		writeErr(w, http.StatusBadRequest, "at least one step is required")
+		return
+	}
+	if len(req.Steps) > debugMaxSteps {
+		writeErr(w, http.StatusBadRequest, "too many steps to debug")
+		return
+	}
+	// Force sequence mode: debug runs every step in order so the chain resolves.
+	sc := &plan.ScenarioConfig{Mode: "sequence", Steps: req.Steps}
+	js, err := script.CompileScenario(sc)
+	if err != nil {
+		writeJSON(w, http.StatusOK, debugScenarioResp{Error: err.Error()})
+		return
+	}
+	drv, err := script.New(&loadifyv1.ScriptBundle{MainJs: js}, &plan.Plan{}, loadifyv1.Protocol_PROTOCOL_UNSPECIFIED)
+	if err != nil {
+		writeJSON(w, http.StatusOK, debugScenarioResp{Error: err.Error()})
+		return
+	}
+	md, ok := drv.(protocols.MultiDriver)
+	if !ok {
+		writeJSON(w, http.StatusOK, debugScenarioResp{Error: "scenario driver unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := drv.Prepare(ctx); err != nil {
+		writeJSON(w, http.StatusOK, debugScenarioResp{Error: err.Error()})
+		return
+	}
+	defer func() { _ = drv.Teardown(context.Background()) }()
+
+	out := debugScenarioResp{Steps: make([]debugScenarioStep, 0, len(req.Steps))}
+	for _, res := range md.ExecMulti(ctx, &protocols.VU{ID: 1}) {
+		// Skip the synthetic transaction-total row a multi-step sequence emits.
+		if strings.HasPrefix(res.Group, "txn:") {
+			continue
+		}
+		body := res.RespBody
+		if len(body) > debugBodyCap {
+			body = body[:debugBodyCap]
+		}
+		out.Steps = append(out.Steps, debugScenarioStep{
+			Group:     res.Group,
+			Method:    res.Method,
+			URL:       res.URL,
+			Status:    int(res.Status),
+			OK:        res.OK,
+			ErrorKind: res.ErrorKind,
+			LatencyMs: float64(res.LatencyUs) / 1000.0,
+			Body:      body,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }

@@ -135,6 +135,7 @@ func (s *Server) routes() {
 		r.With(operator).Put("/tests/{id}", s.handleUpdateTest)
 		r.With(operator).Delete("/tests/{id}", s.handleDeleteTest)
 		r.With(operator).Post("/tests/debug", s.handleDebugRequest)
+		r.With(operator).Post("/tests/debug-scenario", s.handleDebugScenario)
 		r.With(operator).Post("/tests/import", s.handleImport)
 
 		// Environments: viewer reads, operator manages.

@@ -128,6 +128,12 @@ export default function ScenarioBuilder({
     setDebug({});
   };
 
+  const stepHeaders = (st: ScenarioStep): Record<string, string> => {
+    const h: Record<string, string> = {};
+    for (const hd of st.headers) if (hd.key) h[hd.key] = hd.value;
+    return h;
+  };
+
   async function runDebug(i: number) {
     const st = value.steps[i];
     if (!st.url) return;
@@ -137,11 +143,39 @@ export default function ScenarioBuilder({
       delete n[i];
       return n;
     });
-    const headers: Record<string, string> = {};
-    for (const h of st.headers) if (h.key) headers[h.key] = h.value;
     try {
-      const r = await api.debugRequest({ method: st.method, url: st.url, headers, body: st.body || undefined });
-      setDebug((d) => ({ ...d, [i]: r }));
+      let res: DebugResponse;
+      if (weighted) {
+        // Weighted steps are independent — fire just this one.
+        res = await api.debugRequest({ method: st.method, url: st.url, headers: stepHeaders(st), body: st.body || undefined });
+      } else {
+        // Sequence: run steps 1..i in order so {{vars}} extracted upstream are
+        // resolved, then surface this step's (now correctly chained) response.
+        const steps = value.steps.slice(0, i + 1).map((s) => ({
+          name: s.name,
+          method: s.method,
+          url: s.url,
+          headers: stepHeaders(s),
+          body: s.body || undefined,
+          extracts: s.extracts.filter((e) => e.var && e.path),
+        }));
+        const chain = await api.debugScenario(steps);
+        if (chain.error) {
+          res = { status: 0, status_text: "", latency_ms: 0, headers: {}, body: "", body_truncated: false, recv_bytes: 0, error: chain.error };
+        } else {
+          const last = chain.steps[chain.steps.length - 1];
+          res = {
+            status: last?.status ?? 0,
+            status_text: last ? (last.ok ? "OK" : last.error_kind || "FAILED") : "",
+            latency_ms: last?.latency_ms ?? 0,
+            headers: {},
+            body: last?.body ?? "",
+            body_truncated: false,
+            recv_bytes: 0,
+          };
+        }
+      }
+      setDebug((d) => ({ ...d, [i]: res }));
     } catch (e: any) {
       setDebug((d) => ({
         ...d,

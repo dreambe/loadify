@@ -340,6 +340,63 @@ paths:
                   body_truncated: { type: boolean }
                   recv_bytes: { type: integer }
                   error: { type: string }
+  /api/v1/tests/debug-scenario:
+    post:
+      tags: [tests]
+      summary: Debug a scenario chain — run steps 1..N in order, resolving variables (role operator+)
+      description: >
+        Runs the given sequence steps through the real scenario engine,
+        performing {{var}} interpolation and extraction between steps, so a step
+        that depends on an upstream value resolves correctly instead of firing
+        the literal template. Returns each step's resolved request and response.
+        Capped at 20 steps; each body is truncated to 64 KiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [steps]
+              properties:
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      method: { type: string, default: GET }
+                      url: { type: string }
+                      headers: { type: object, additionalProperties: { type: string } }
+                      body: { type: string }
+                      extracts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            var: { type: string }
+                            path: { type: string }
+      responses:
+        "200":
+          description: per-step resolved requests and responses (or an error field)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group: { type: string }
+                        method: { type: string }
+                        url: { type: string }
+                        status: { type: integer }
+                        ok: { type: boolean }
+                        error_kind: { type: string }
+                        latency_ms: { type: number }
+                        body: { type: string }
   /api/v1/runs:
     get:
       tags: [runs]
