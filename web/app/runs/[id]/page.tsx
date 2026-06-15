@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
@@ -102,6 +103,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     <>
       <Nav />
       <div className="container">
+        <Link href="/runs" className="muted" style={{ fontSize: 13, display: "inline-block", marginBottom: 4 }}>
+          ← {t("run.backToRuns")}
+        </Link>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h1>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
           <div className="row" style={{ alignItems: "center" }}>

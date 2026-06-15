@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 // LineChart is a dependency-free SVG line chart for one or more series sharing
 // the same x-axis. `xLabels` gives each point an x-axis label (e.g. elapsed
@@ -28,8 +29,47 @@ export default function LineChart({
   hoverIndex?: number | null;
   onHover?: (i: number | null) => void;
 }) {
+  const { t } = useI18n();
+  const svgRef = useRef<SVGSVGElement>(null);
   const width = 760;
   const pad = { top: 10, right: 12, bottom: 22, left: 48 };
+
+  // exportPNG rasterizes the chart SVG to a PNG download. CSS variables don't
+  // resolve inside a standalone SVG image, so concrete values are inlined first.
+  function exportPNG() {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const cs = getComputedStyle(document.documentElement);
+    const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    let s = new XMLSerializer().serializeToString(clone);
+    s = s
+      .replace(/var\(--chart-grid\)/g, v("--chart-grid", "#1d293d"))
+      .replace(/var\(--muted\)/g, v("--muted", "#6f7d96"))
+      .replace(/var\(--accent\)/g, v("--accent", "#36d6e7"))
+      .replace(/var\(--bg\)/g, v("--bg", "#070b12"));
+    const bg = v("--panel", "#0e1522");
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, width, height);
+      const a = document.createElement("a");
+      a.download = "loadify-chart.png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(s)));
+  }
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
@@ -132,6 +172,7 @@ export default function LineChart({
   return (
     <div style={{ position: "relative" }}>
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
         height={height}
@@ -293,7 +334,7 @@ export default function LineChart({
                   return n;
                 })
               }
-              title={off ? "显示 / show" : "隐藏 / hide"}
+              title={off ? t("chart.show") : t("chart.hide")}
               style={{
                 background: "transparent",
                 border: "none",
@@ -311,16 +352,16 @@ export default function LineChart({
             </button>
           );
         })}
-        {zoom && (
-          <button
-            type="button"
-            className="ghost sm"
-            onClick={() => setZoom(null)}
-            style={{ marginLeft: "auto" }}
-          >
-            ⤢ 复位 / reset zoom
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          {zoom && (
+            <button type="button" className="ghost sm" onClick={() => setZoom(null)}>
+              ⤢ {t("chart.resetZoom")}
+            </button>
+          )}
+          <button type="button" className="ghost sm" onClick={exportPNG} title={t("chart.exportPng")}>
+            ↓ {t("chart.exportPng")}
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
