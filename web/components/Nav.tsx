@@ -82,7 +82,8 @@ export default function Nav() {
         <PulseMark size={24} />
         Loadify
       </Link>
-      <span className="nav-sep" aria-hidden />
+      {/* Spacers on both sides center the primary tab group in the bar. */}
+      <span className="spacer" />
       {/* Primary loop: run → author → analyze. */}
       {item("/runs", t("nav.runs"))}
       {item("/tests", t("nav.tests"))}
@@ -163,14 +164,7 @@ function AccountMenu({ user }: { user: User | null }) {
           {user.role === "admin" && (
             <>
               <div className="menu-sep" />
-              <Link
-                role="menuitem"
-                className="menu-item"
-                href="/users"
-                onClick={() => setOpen(false)}
-                style={{ justifyContent: "flex-start" }}
-              >
-                <Icon name="settings" size={14} />
+              <Link role="menuitem" className="menu-item" href="/users" onClick={() => setOpen(false)}>
                 {t("nav.users")}
               </Link>
             </>

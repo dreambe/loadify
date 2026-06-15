@@ -196,9 +196,6 @@ export default function RunsPage() {
                   onBlur={() => setWorkers(String(clampWorkers(workers)))}
                   style={{ width: 90 }}
                 />
-                <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                  {t("runs.workersAvail")}: {maxWorkers}
-                </div>
               </div>
               {envs.length > 0 && (
                 <div>
@@ -220,11 +217,9 @@ export default function RunsPage() {
                 {t("runs.startBtn")}
               </button>
             </div>
-            {maxWorkers === 0 && (
-              <p className="muted" style={{ marginTop: 8, color: "var(--yellow)" }}>
-                {t("runs.workersNone")}
-              </p>
-            )}
+            <p className="muted" style={{ marginTop: 8, color: maxWorkers === 0 ? "var(--yellow)" : undefined }}>
+              {maxWorkers === 0 ? t("runs.workersNone") : `${t("runs.workersAvail")}: ${maxWorkers}`}
+            </p>
           </div>
         )}
 
