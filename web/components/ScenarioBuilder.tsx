@@ -372,10 +372,11 @@ export default function ScenarioBuilder({
           </div>
 
           {/* Headers */}
+          <label style={{ display: "block", marginTop: 4 }}>{t("http.headers")}</label>
           {st.headers.map((h, hi) => (
             <div className="row" key={hi} style={{ marginBottom: 6 }}>
               <input
-                placeholder="Header"
+                placeholder={t("kv.key")}
                 value={h.key}
                 onChange={(e) =>
                   setStep(i, { headers: st.headers.map((x, xi) => (xi === hi ? { ...x, key: e.target.value } : x)) })
@@ -477,7 +478,7 @@ export default function ScenarioBuilder({
                     <span className="row" style={{ alignItems: "center", gap: 8 }}>
                       <span className="muted" style={{ fontSize: 11 }}>{t("debug.response")}</span>
                       <span className={`badge ${debug[i].ok ? "completed" : "failed"}`}>
-                        {debug[i].status} {debug[i].ok ? "OK" : debug[i].errorKind || "FAILED"}
+                        {debug[i].status} {debug[i].ok ? t("debug.ok") : debug[i].errorKind || t("debug.fail")}
                       </span>
                       <span className="muted" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
                         {debug[i].latencyMs.toFixed(1)} ms

@@ -98,6 +98,7 @@ export default function TestsPage() {
   const [importing, setImporting] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const isHTTP = protocol === "http";
@@ -222,6 +223,7 @@ export default function TestsPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setErr("");
     setOk("");
     // Required-field validation with a human message (HTML required attrs
@@ -302,6 +304,7 @@ export default function TestsPage() {
       dataset: datasetObj,
       tags: tags.split(",").map((s) => s.trim()).filter(Boolean),
     };
+    setSubmitting(true);
     try {
       if (editingId) {
         await api.updateTest(editingId, body);
@@ -315,6 +318,8 @@ export default function TestsPage() {
       refresh();
     } catch (e: any) {
       setErr(e.message);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -527,7 +532,7 @@ export default function TestsPage() {
               </div>
             )}
             <div className="row" style={{ marginTop: 12 }}>
-              <button type="submit">{editingId ? t("tests.save") : t("tests.create")}</button>
+              <button type="submit" disabled={submitting}>{editingId ? t("tests.save") : t("tests.create")}</button>
               <button
                 type="button"
                 className="secondary"

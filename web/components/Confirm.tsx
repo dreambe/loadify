@@ -41,10 +41,13 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             <h2>{opts.title}</h2>
             {opts.body && <p className="muted" style={{ marginTop: 0 }}>{opts.body}</p>}
             <div className="modal-actions">
-              <button className="ghost" onClick={() => close(false)}>
+              {/* On a danger dialog focus Cancel so a stray Enter doesn't
+                  immediately trigger the destructive action; otherwise focus
+                  Confirm for quick keyboard acceptance. */}
+              <button className="ghost" onClick={() => close(false)} autoFocus={opts.danger}>
                 {t("common.cancel")}
               </button>
-              <button className={opts.danger ? "danger" : ""} onClick={() => close(true)} autoFocus>
+              <button className={opts.danger ? "danger" : ""} onClick={() => close(true)} autoFocus={!opts.danger}>
                 {opts.confirmLabel || t("common.confirm")}
               </button>
             </div>

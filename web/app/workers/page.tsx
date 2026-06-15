@@ -11,10 +11,16 @@ export default function WorkersPage() {
   const { t } = useI18n();
   const { ready } = useAuth();
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
-    const load = () => api.listWorkers().then(setWorkers).catch(() => {});
+    const load = () =>
+      api
+        .listWorkers()
+        .then(setWorkers)
+        .catch(() => {})
+        .finally(() => setLoaded(true));
     load();
     const id = setInterval(load, 3000);
     return () => clearInterval(id);
@@ -71,10 +77,17 @@ export default function WorkersPage() {
                   </td>
                 </tr>
               ))}
-              {workers.length === 0 && (
+              {loaded && workers.length === 0 && (
                 <tr>
                   <td colSpan={8} className="muted">
                     {t("workers.empty")}
+                  </td>
+                </tr>
+              )}
+              {!loaded && (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    {t("common.loading")}
                   </td>
                 </tr>
               )}

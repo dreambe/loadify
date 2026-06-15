@@ -24,6 +24,7 @@ export default function SchedulesPage() {
   const [testId, setTestId] = useState("");
   const [interval, setInterval] = useState(60);
   const [workers, setWorkers] = useState(1);
+  const [creating, setCreating] = useState(false);
 
   const canEdit = roleAtLeast(user?.role, "operator");
   const testName = (id: string) => tests.find((td) => td.id === id)?.name || id.slice(0, 8);
@@ -39,6 +40,8 @@ export default function SchedulesPage() {
   }, [ready]);
 
   async function create() {
+    if (creating) return;
+    setCreating(true);
     try {
       await api.createSchedule(testId, interval, workers);
       toast.success(t("sched.created"));
@@ -46,6 +49,8 @@ export default function SchedulesPage() {
       refresh();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setCreating(false);
     }
   }
   async function toggle(sc: Schedule) {
@@ -106,7 +111,7 @@ export default function SchedulesPage() {
                 <label>{t("runs.workers")}</label>
                 <input type="number" min={1} value={workers} onChange={(e) => setWorkers(parseInt(e.target.value || "1", 10))} style={{ width: 90 }} />
               </div>
-              <button onClick={create} disabled={!testId}>
+              <button onClick={create} disabled={!testId || creating}>
                 {t("sched.create")}
               </button>
             </div>
@@ -138,7 +143,7 @@ export default function SchedulesPage() {
                         {canEdit ? (
                           <ScheduleEditor sc={sc} onSave={saveInterval} t={t} disabled={!ownsOrAdmin(user, sc.created_by)} />
                         ) : (
-                          `${sc.interval_minutes} min · ${sc.desired_workers}w`
+                          `${sc.interval_minutes} ${t("sched.minShort")} · ${sc.desired_workers} ${t("sched.workerShort")}`
                         )}
                       </td>
                       <td className="muted">{new Date(sc.next_run_at).toLocaleString()}</td>
@@ -197,7 +202,7 @@ function ScheduleEditor({
   return (
     <div className="row" style={{ gap: 6, alignItems: "center" }} title={why}>
       <input type="number" min={1} disabled={disabled} value={min} onChange={(e) => setMin(parseInt(e.target.value || "1", 10))} style={{ width: 70 }} />
-      <span className="muted">min ·</span>
+      <span className="muted">{t("sched.minShort")} ·</span>
       <input type="number" min={1} disabled={disabled} value={w} onChange={(e) => setW(parseInt(e.target.value || "1", 10))} style={{ width: 56 }} />
       <span className="muted">w</span>
       {dirty && (

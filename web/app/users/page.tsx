@@ -20,6 +20,7 @@ export default function UsersPage() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("viewer");
   const [password, setPassword] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const isAdmin = roleAtLeast(user?.role, "admin");
 
@@ -36,6 +37,8 @@ export default function UsersPage() {
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
+    if (creating) return;
+    setCreating(true);
     try {
       await api.createUser({ email, name, role, password });
       setEmail("");
@@ -45,6 +48,8 @@ export default function UsersPage() {
       refresh();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -146,7 +151,7 @@ export default function UsersPage() {
                     required
                   />
                 </div>
-                <button type="submit">{t("users.create")}</button>
+                <button type="submit" disabled={creating}>{t("users.create")}</button>
               </div>
             </form>
 
@@ -253,7 +258,9 @@ function AuditPanel({ onError }: { onError: (m: string) => void }) {
       : e.method === "DELETE" ? t("audit.delete")
       : e.method;
     const resource = e.path.replace(/^\/api\/v1\//, "").replace(/\/[0-9a-f-]{8,}/gi, "");
-    return `${verb} ${resource}${ok ? "" : ` (${e.status})`}`;
+    const key = `audit.res.${resource}`;
+    const label = t(key) === key ? resource : t(key); // localize known resources
+    return `${verb} ${label}${ok ? "" : ` (${e.status})`}`;
   }
 
   return (

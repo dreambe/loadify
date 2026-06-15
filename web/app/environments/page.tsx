@@ -24,6 +24,7 @@ export default function EnvironmentsPage() {
   const [editing, setEditing] = useState<Environment | "new" | null>(null);
   const [name, setName] = useState("");
   const [pairs, setPairs] = useState<Pair[]>([{ key: "", value: "" }]);
+  const [saving, setSaving] = useState(false);
 
   const canEdit = roleAtLeast(user?.role, "operator");
 
@@ -51,8 +52,10 @@ export default function EnvironmentsPage() {
       toast.error(t("env.errName"));
       return;
     }
+    if (saving) return;
     const vars: Record<string, string> = {};
     for (const p of pairs) if (p.key.trim()) vars[p.key.trim()] = p.value;
+    setSaving(true);
     try {
       if (editing === "new") {
         await api.createEnvironment(name, vars);
@@ -65,6 +68,8 @@ export default function EnvironmentsPage() {
       refresh();
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -99,19 +104,19 @@ export default function EnvironmentsPage() {
             <h2>{editing === "new" ? t("env.new") : t("env.editTitle")}</h2>
             <div className="field" style={{ maxWidth: 360 }}>
               <label className="req">{t("env.name")}</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="dev / prod / …" />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("env.namePh")} />
             </div>
             <label>{t("env.vars")}</label>
             {pairs.map((p, i) => (
               <div className="row" key={i} style={{ marginBottom: 6 }}>
                 <input
-                  placeholder="KEY (如 base_url)"
+                  placeholder={t("env.keyPh")}
                   value={p.key}
                   onChange={(e) => setPairs(pairs.map((x, idx) => (idx === i ? { ...x, key: e.target.value } : x)))}
                   style={{ width: 220, fontFamily: "var(--font-mono)" }}
                 />
                 <input
-                  placeholder="value"
+                  placeholder={t("kv.value")}
                   value={p.value}
                   onChange={(e) => setPairs(pairs.map((x, idx) => (idx === i ? { ...x, value: e.target.value } : x)))}
                   style={{ flex: 1, fontFamily: "var(--font-mono)" }}
@@ -134,7 +139,7 @@ export default function EnvironmentsPage() {
               {t("env.usageHint")}
             </p>
             <div className="row" style={{ marginTop: 8 }}>
-              <button onClick={save}>{t("tests.save")}</button>
+              <button onClick={save} disabled={saving}>{t("tests.save")}</button>
               <button className="ghost" onClick={() => setEditing(null)}>
                 {t("common.cancel")}
               </button>

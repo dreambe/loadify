@@ -223,13 +223,13 @@ export default function HttpRequestBuilder({
       {value.headers.map((h, i) => (
         <div className="row" key={i} style={{ marginBottom: 6 }}>
           <input
-            placeholder="Header"
+            placeholder={t("kv.key")}
             value={h.key}
             onChange={(e) => setHeader(i, { key: e.target.value })}
             style={{ width: 220 }}
           />
           <input
-            placeholder="Value"
+            placeholder={t("kv.value")}
             value={h.value}
             onChange={(e) => setHeader(i, { value: e.target.value })}
             style={{ flex: 1 }}

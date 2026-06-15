@@ -82,6 +82,7 @@ export default function RunsPage() {
   const [err, setErr] = useState("");
   const [runFilter, setRunFilter] = useState("");
   const [busy, setBusy] = useState(false); // guards against double-starting runs
+  const [loaded, setLoaded] = useState(false);
 
   async function refresh() {
     try {
@@ -89,6 +90,8 @@ export default function RunsPage() {
       setRuns((prev) => (runsEqual(prev, next) ? prev : next));
     } catch (e: any) {
       setErr(e.message);
+    } finally {
+      setLoaded(true);
     }
   }
 
@@ -275,10 +278,17 @@ export default function RunsPage() {
                   )}
                 </tr>
               ))}
-              {filteredRuns.length === 0 && (
+              {loaded && filteredRuns.length === 0 && (
                 <tr>
                   <td colSpan={canRun ? 6 : 5} className="muted">
                     {runs.length === 0 ? t("runs.empty") : t("runs.noMatch")}
+                  </td>
+                </tr>
+              )}
+              {!loaded && (
+                <tr>
+                  <td colSpan={canRun ? 6 : 5} className="muted">
+                    {t("common.loading")}
                   </td>
                 </tr>
               )}
