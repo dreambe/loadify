@@ -78,24 +78,25 @@ export default function Nav() {
 
   return (
     <nav className="nav">
+      {/* 3-column grid: brand left, tabs truly centered in the viewport,
+          account menu right — independent of the brand/account widths. */}
       <Link className="brand" href="/runs">
         <PulseMark size={24} />
         Loadify
       </Link>
-      {/* Spacers on both sides center the primary tab group in the bar. */}
-      <span className="spacer" />
-      {/* Primary loop: run → author → analyze. */}
-      {item("/runs", t("nav.runs"))}
-      {item("/tests", t("nav.tests"))}
-      {item("/compare", t("nav.compare"))}
-      <span className="nav-sep" aria-hidden />
-      {/* Configuration & automation. */}
-      {item("/environments", t("nav.environments"))}
-      {item("/schedules", t("nav.schedules"))}
-      <span className="nav-sep" aria-hidden />
-      {/* Ops. */}
-      {item("/workers", t("nav.workers"))}
-      <span className="spacer" />
+      <div className="nav-tabs">
+        {/* Primary loop: run → author → analyze. */}
+        {item("/runs", t("nav.runs"))}
+        {item("/tests", t("nav.tests"))}
+        {item("/compare", t("nav.compare"))}
+        <span className="nav-sep" aria-hidden />
+        {/* Configuration & automation. */}
+        {item("/environments", t("nav.environments"))}
+        {item("/schedules", t("nav.schedules"))}
+        <span className="nav-sep" aria-hidden />
+        {/* Ops. */}
+        {item("/workers", t("nav.workers"))}
+      </div>
       <AccountMenu user={user} />
     </nav>
   );

@@ -135,7 +135,8 @@ a:hover {
   position: sticky;
   top: 0;
   z-index: 20;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* brand | centered tabs | account */
   align-items: center;
   gap: 22px;
   padding: 13px 22px;
@@ -143,6 +144,19 @@ a:hover {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
+}
+.nav .brand {
+  justify-self: start;
+}
+/* Centered primary tab group (middle grid column). */
+.nav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  justify-self: center;
+}
+.nav .user-menu {
+  justify-self: end;
 }
 .nav .brand {
   display: inline-flex;
