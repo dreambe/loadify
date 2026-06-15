@@ -91,6 +91,7 @@ export default function ErrorDrilldown({
                     onToggle={() => setExpanded(expanded === i ? null : i)}
                     emptyBody={t("log.bodyEmpty")}
                     bodyLabel={t("log.colBody")}
+                    reqBodyLabel={t("log.reqBody")}
                   />
                 ))}
               </tbody>
@@ -108,12 +109,14 @@ function RowWithBody({
   onToggle,
   emptyBody,
   bodyLabel,
+  reqBodyLabel,
 }: {
   s: DrillSample;
   open: boolean;
   onToggle: () => void;
   emptyBody: string;
   bodyLabel: string;
+  reqBodyLabel: string;
 }) {
   return (
     <>
@@ -129,6 +132,14 @@ function RowWithBody({
       {open && (
         <tr>
           <td colSpan={5}>
+            {s.req_body && (
+              <>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{reqBodyLabel}</div>
+                <pre style={{ margin: "0 0 8px", maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12 }}>
+                  {s.req_body}
+                </pre>
+              </>
+            )}
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{bodyLabel}</div>
             <pre style={{ margin: 0, maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12 }}>
               {s.resp_body || emptyBody}

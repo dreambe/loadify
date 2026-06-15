@@ -176,6 +176,25 @@ export default function LiveRunChart({ runId }: { runId: string }) {
                     {expanded === s._id && (
                       <tr>
                         <td colSpan={5}>
+                          {s.req_body && (
+                            <>
+                              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+                                {t("log.reqBody")}
+                              </div>
+                              <pre
+                                style={{
+                                  margin: "0 0 8px",
+                                  maxHeight: 160,
+                                  overflow: "auto",
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-all",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {s.req_body}
+                              </pre>
+                            </>
+                          )}
                           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
                             {t("log.colBody")}
                           </div>

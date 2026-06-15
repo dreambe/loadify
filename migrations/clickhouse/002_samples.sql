@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS samples (
   url String,
   latency_us Int64,
   recv_bytes Int64,
-  resp_body String
+  resp_body String,
+  req_body String
 ) ENGINE = MergeTree
 ORDER BY (run_id, ts)
 TTL toDateTime(ts) + INTERVAL 7 DAY

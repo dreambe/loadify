@@ -143,6 +143,7 @@ export interface LogSample {
   sent_bytes: number;
   recv_bytes: number;
   error_kind?: string;
+  req_body?: string;
   resp_body?: string;
 }
 
@@ -178,6 +179,7 @@ export interface DrillSample {
   url: string;
   latency_us: number;
   recv_bytes: number;
+  req_body: string;
   resp_body: string;
 }
 

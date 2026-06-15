@@ -64,6 +64,7 @@ type Sample struct {
 	URL         string    `json:"url"`
 	LatencyUs   int64     `json:"latency_us"`
 	RecvBytes   int64     `json:"recv_bytes"`
+	ReqBody     string    `json:"req_body"`
 	RespBody    string    `json:"resp_body"`
 }
 

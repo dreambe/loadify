@@ -23,6 +23,7 @@ message Sample {
   string method = 15;    // request verb/operation (e.g. GET, grpc method)
   string url = 16;       // request target
   string resp_body = 17; // truncated response body snippet for the live log
+  string req_body = 18;  // truncated request body snippet (what was sent)
 }
 
 // AggSlice is a mergeable per-second rollup for one (group, status_class) key.

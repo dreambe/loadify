@@ -39,6 +39,7 @@ type logSample struct {
 	SentBytes int64   `json:"sent_bytes"`
 	RecvBytes int64   `json:"recv_bytes"`
 	ErrorKind string  `json:"error_kind,omitempty"`
+	ReqBody   string  `json:"req_body,omitempty"`
 	RespBody  string  `json:"resp_body,omitempty"`
 }
 
@@ -111,6 +112,7 @@ func toLiveTick(t *loadifyv1.LiveTick) liveTick {
 				SentBytes: s.SentBytes,
 				RecvBytes: s.RecvBytes,
 				ErrorKind: s.ErrorKind,
+				ReqBody:   s.ReqBody,
 				RespBody:  s.RespBody,
 			})
 		}

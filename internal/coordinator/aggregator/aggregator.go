@@ -61,6 +61,7 @@ func sampleToStore(runID string, s *loadifyv1.Sample) store.Sample {
 		URL:         s.Url,
 		LatencyUs:   s.LatencyUs,
 		RecvBytes:   s.RecvBytes,
+		ReqBody:     s.ReqBody,
 		RespBody:    s.RespBody,
 	}
 }

@@ -77,6 +77,7 @@ func (s *Sampler) maybeSampleLocked(r protocols.Result) {
 		ErrorKind: r.ErrorKind,
 		Method:    r.Method,
 		Url:       r.URL,
+		ReqBody:   r.ReqBody,
 		RespBody:  r.RespBody,
 	})
 }
