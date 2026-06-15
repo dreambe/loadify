@@ -6,6 +6,7 @@ import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
+import { fmtMs } from "@/lib/format";
 import { compareColors } from "@/lib/colors";
 import type { Run, SeriesPoint } from "@/lib/types";
 
@@ -119,10 +120,10 @@ function CompareInner() {
   const rows: { key: string; label: string; av: number; bv: number; fmt: (n: number) => string }[] = [
     { key: "total", label: t("compare.total"), av: ma.total, bv: mb.total, fmt: (n) => n.toLocaleString() },
     { key: "error", label: t("compare.errorRate"), av: ma.error_rate, bv: mb.error_rate, fmt: (n) => n.toFixed(2) + "%" },
-    { key: "p50", label: "p50", av: ma.p50, bv: mb.p50, fmt: (n) => n.toFixed(1) + " ms" },
-    { key: "p90", label: "p90", av: ma.p90, bv: mb.p90, fmt: (n) => n.toFixed(1) + " ms" },
-    { key: "p95", label: "p95", av: ma.p95, bv: mb.p95, fmt: (n) => n.toFixed(1) + " ms" },
-    { key: "p99", label: "p99", av: ma.p99, bv: mb.p99, fmt: (n) => n.toFixed(1) + " ms" },
+    { key: "p50", label: "p50", av: ma.p50, bv: mb.p50, fmt: fmtMs },
+    { key: "p90", label: "p90", av: ma.p90, bv: mb.p90, fmt: fmtMs },
+    { key: "p95", label: "p95", av: ma.p95, bv: mb.p95, fmt: fmtMs },
+    { key: "p99", label: "p99", av: ma.p99, bv: mb.p99, fmt: fmtMs },
   ];
 
   return (

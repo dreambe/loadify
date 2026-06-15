@@ -1066,11 +1066,23 @@ label.req::after {
   .container {
     padding: var(--s4) var(--s3) var(--s6);
   }
-  /* Nav scrolls horizontally instead of wrapping into a tall block. */
+  /* Nav: drop the 3-column grid (which would squeeze) and scroll horizontally
+     so brand · tabs · account stay readable on a phone. */
   .nav {
+    display: flex;
+    grid-template-columns: none;
+    align-items: center;
     gap: var(--s4);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+  .nav .brand,
+  .nav-tabs,
+  .nav .user-menu {
+    justify-self: auto;
+  }
+  .nav-tabs {
+    gap: 16px;
   }
   .nav .me {
     display: none;

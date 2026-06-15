@@ -8,6 +8,7 @@ import LineChart from "@/components/LineChart";
 import { api } from "@/lib/api";
 import { getToken, useAuth } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
+import { fmtMs } from "@/lib/format";
 import { latencyColors } from "@/lib/colors";
 import type { Run, WorkerInfo } from "@/lib/types";
 
@@ -107,7 +108,7 @@ export default function DashboardPage() {
                       <span className={`badge ${r.status}`}>{statusLabel(t, r.status)}</span>
                     </td>
                     <td className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {r.summary?.summary?.p95_ms != null ? `p95 ${r.summary.summary.p95_ms.toFixed(0)} ms` : "—"}
+                      {r.summary?.summary?.p95_ms != null ? `p95 ${fmtMs(r.summary.summary.p95_ms)}` : "—"}
                     </td>
                     <td>{slaBadge(r, t)}</td>
                     <td className="muted" style={{ textAlign: "right" }}>

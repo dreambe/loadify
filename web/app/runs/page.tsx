@@ -6,6 +6,8 @@ import Nav from "@/components/Nav";
 import Help from "@/components/Help";
 import Icon from "@/components/Icon";
 import { Pager, usePager } from "@/components/Pager";
+import EmptyState from "@/components/EmptyState";
+import TableSkeleton from "@/components/TableSkeleton";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
@@ -272,76 +274,73 @@ export default function RunsPage() {
               ))}
             </select>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th onClick={() => toggleSort("name")} style={{ cursor: "pointer", userSelect: "none" }}>
-                  {t("runs.colName")}
-                  {sortMark("name")}
-                </th>
-                <th>{t("runs.colTest")}</th>
-                <th onClick={() => toggleSort("status")} style={{ cursor: "pointer", userSelect: "none" }}>
-                  {t("runs.colStatus")}
-                  {sortMark("status")}
-                </th>
-                <th>{t("runs.colCreator")}</th>
-                <th onClick={() => toggleSort("started")} style={{ cursor: "pointer", userSelect: "none" }}>
-                  {t("runs.colStarted")}
-                  {sortMark("started")}
-                </th>
-                {canRun && <th>{t("runs.colActions")}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {runPager.slice.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <Link href={`/runs/${r.id}`}>{r.name || r.id.slice(0, 8)}</Link>
-                  </td>
-                  <td className="muted">{testName(r.test_def_id)}</td>
-                  <td>
-                    <span className={`badge ${r.status}`}>{statusLabel(t, r.status)}</span>
-                  </td>
-                  <td className="muted">
-                    {r.creator_name || t("run.creatorSystem")}
-                    {r.source === "schedule" ? ` · ${t("run.scheduled")}` : ""}
-                  </td>
-                  <td className="muted">
-                    {r.started_at ? new Date(r.started_at).toLocaleString() : "–"}
-                  </td>
-                  {canRun && (
-                    <td>
-                      <div className="actions">
-                        <button className="ghost sm" onClick={() => rerun(r)} disabled={busy}>
-                          <Icon name="rerun" /> {t("runs.rerun")}
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {loaded && filteredRuns.length === 0 && (
-                <tr>
-                  <td colSpan={canRun ? 6 : 5} className="muted">
-                    {runs.length === 0 ? t("runs.empty") : t("runs.noMatch")}
-                  </td>
-                </tr>
-              )}
-              {!loaded && (
-                <tr>
-                  <td colSpan={canRun ? 6 : 5} className="muted">
-                    {t("common.loading")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          <Pager
-            page={runPager.page}
-            pages={runPager.pages}
-            total={runPager.total}
-            onPage={runPager.setPage}
-          />
+          {!loaded ? (
+            <TableSkeleton cols={canRun ? 6 : 5} />
+          ) : sortedRuns.length === 0 ? (
+            <EmptyState
+              title={runs.length === 0 ? t("runs.empty") : t("runs.noMatch")}
+              hint={runs.length === 0 && canRun ? t("runs.emptyHint") : undefined}
+              action={
+                runs.length === 0 && canRun ? (
+                  <Link className="badge" href="/tests">
+                    + {t("runs.emptyCta")}
+                  </Link>
+                ) : undefined
+              }
+            />
+          ) : (
+            <>
+              <table>
+                <thead>
+                  <tr>
+                    <th onClick={() => toggleSort("name")} style={{ cursor: "pointer", userSelect: "none" }}>
+                      {t("runs.colName")}
+                      {sortMark("name")}
+                    </th>
+                    <th>{t("runs.colTest")}</th>
+                    <th onClick={() => toggleSort("status")} style={{ cursor: "pointer", userSelect: "none" }}>
+                      {t("runs.colStatus")}
+                      {sortMark("status")}
+                    </th>
+                    <th>{t("runs.colCreator")}</th>
+                    <th onClick={() => toggleSort("started")} style={{ cursor: "pointer", userSelect: "none" }}>
+                      {t("runs.colStarted")}
+                      {sortMark("started")}
+                    </th>
+                    {canRun && <th>{t("runs.colActions")}</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {runPager.slice.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <Link href={`/runs/${r.id}`}>{r.name || r.id.slice(0, 8)}</Link>
+                      </td>
+                      <td className="muted">{testName(r.test_def_id)}</td>
+                      <td>
+                        <span className={`badge ${r.status}`}>{statusLabel(t, r.status)}</span>
+                      </td>
+                      <td className="muted">
+                        {r.creator_name || t("run.creatorSystem")}
+                        {r.source === "schedule" ? ` · ${t("run.scheduled")}` : ""}
+                      </td>
+                      <td className="muted">{r.started_at ? new Date(r.started_at).toLocaleString() : "–"}</td>
+                      {canRun && (
+                        <td>
+                          <div className="actions">
+                            <button className="ghost sm" onClick={() => rerun(r)} disabled={busy}>
+                              <Icon name="rerun" /> {t("runs.rerun")}
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <Pager page={runPager.page} pages={runPager.pages} total={runPager.total} onPage={runPager.setPage} />
+            </>
+          )}
         </div>
       </div>
     </>

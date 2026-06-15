@@ -565,6 +565,11 @@ export default function TestsPage() {
             <EmptyState
               title={t("tests.empty")}
               hint={canCreate ? t("tests.emptyHint") : undefined}
+              action={
+                canCreate && !showForm ? (
+                  <button onClick={() => setShowForm(true)}>+ {t("tests.new")}</button>
+                ) : undefined
+              }
             />
           ) : (
             <div className="table-scroll">
