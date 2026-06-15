@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -186,6 +187,11 @@ func (a *Aggregator) finalize(now time.Time) {
 			ready = append(ready, sec)
 		}
 	}
+	// Emit in chronological order: the lastEmitted guard below treats any second
+	// <= lastEmitted as already-past, so processing a higher second before a
+	// lower one (map iteration is unordered) would wrongly drop the lower one's
+	// tick. This only bites when several buckets finalize at once (drain, catch-up).
+	sort.Slice(ready, func(i, j int) bool { return ready[i] < ready[j] })
 	var rows []store.Rollup
 	var ticks []*loadifyv1.LiveTick
 	var sampleRows []store.Sample
