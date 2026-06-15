@@ -21,15 +21,16 @@ import (
 // --- fakes ---
 
 type fakeMeta struct {
-	users      map[string]*postgres.User // by email
-	usersByID  map[string]*postgres.User // by id (for revocation checks)
-	activeRuns []postgres.Run
-	finished   map[string]string // runID -> status
+	users            map[string]*postgres.User // by email
+	usersByID        map[string]*postgres.User // by id (for revocation checks)
+	activeRuns       []postgres.Run
+	finished         map[string]string // runID -> status
 	dueOnce          []postgres.Schedule
 	scheduleRun      map[string]string // scheduleID -> runID
 	owner            *string           // CreatedBy returned for tests/runs/environments
 	lastRunCreatedBy *string           // captured from the most recent CreateRun
 	lastRunSource    string
+	testPlan         json.RawMessage // overrides the plan returned by GetTestDefinition
 }
 
 func newFakeMeta() *fakeMeta {
@@ -44,7 +45,13 @@ func (f *fakeMeta) UpdateTestDefinition(_ context.Context, _ *postgres.TestDefin
 }
 func (f *fakeMeta) ArchiveTestDefinition(_ context.Context, _ string) error { return nil }
 func (f *fakeMeta) GetTestDefinition(_ context.Context, id string) (*postgres.TestDefinition, error) {
-	return &postgres.TestDefinition{ID: id, Protocol: "http", CreatedBy: f.owner, PlanJSON: json.RawMessage(`{"protocol":"http","http":{"url":"http://x"}}`)}, nil
+	planJSON := json.RawMessage(`{"protocol":"http","http":{"url":"http://x"}}`)
+	protocol := "http"
+	if len(f.testPlan) > 0 {
+		planJSON = f.testPlan
+		protocol = "scenario"
+	}
+	return &postgres.TestDefinition{ID: id, Protocol: protocol, CreatedBy: f.owner, PlanJSON: planJSON}, nil
 }
 func (f *fakeMeta) ListTestDefinitions(_ context.Context, _ int) ([]postgres.TestDefinition, error) {
 	return nil, nil
@@ -54,8 +61,8 @@ func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, creat
 	f.lastRunSource = source
 	return "run-1", nil
 }
-func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error              { return nil }
-func (f *fakeMeta) SetRunStatus(_ context.Context, _, _ string) error            { return nil }
+func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error   { return nil }
+func (f *fakeMeta) SetRunStatus(_ context.Context, _, _ string) error { return nil }
 func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage) (bool, error) {
 	if _, done := f.finished[id]; done {
 		return false, nil
@@ -66,12 +73,14 @@ func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage
 func (f *fakeMeta) GetRun(_ context.Context, id string) (*postgres.Run, error) {
 	return &postgres.Run{ID: id, TestDefID: "test-1", Status: "running", CreatedBy: f.owner}, nil
 }
-func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error)      { return nil, nil }
+func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error) { return nil, nil }
 func (f *fakeMeta) ListRunsByTest(_ context.Context, _ string, _ int) ([]postgres.Run, error) {
 	return nil, nil
 }
 func (f *fakeMeta) SetBaseline(_ context.Context, _, _ string) error { return nil }
-func (f *fakeMeta) ListActiveRuns(_ context.Context) ([]postgres.Run, error)       { return f.activeRuns, nil }
+func (f *fakeMeta) ListActiveRuns(_ context.Context) ([]postgres.Run, error) {
+	return f.activeRuns, nil
+}
 func (f *fakeMeta) GetUserByEmail(_ context.Context, email string) (*postgres.User, error) {
 	if u, ok := f.users[email]; ok {
 		return u, nil
@@ -87,13 +96,13 @@ func (f *fakeMeta) GetUserByID(_ context.Context, id string) (*postgres.User, er
 func (f *fakeMeta) UpsertFeishuUser(_ context.Context, _, _, _, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "u", Role: "viewer"}, nil
 }
-func (f *fakeMeta) TouchLogin(_ context.Context, _ string) error { return nil }
-func (f *fakeMeta) UpdateUserRole(_ context.Context, _, _ string) error       { return nil }
-func (f *fakeMeta) SetUserPassword(_ context.Context, _, _ string) error      { return nil }
-func (f *fakeMeta) SetUserDisabled(_ context.Context, _ string, _ bool) error { return nil }
-func (f *fakeMeta) DeleteUser(_ context.Context, _ string) error              { return nil }
+func (f *fakeMeta) TouchLogin(_ context.Context, _ string) error                  { return nil }
+func (f *fakeMeta) UpdateUserRole(_ context.Context, _, _ string) error           { return nil }
+func (f *fakeMeta) SetUserPassword(_ context.Context, _, _ string) error          { return nil }
+func (f *fakeMeta) SetUserDisabled(_ context.Context, _ string, _ bool) error     { return nil }
+func (f *fakeMeta) DeleteUser(_ context.Context, _ string) error                  { return nil }
 func (f *fakeMeta) SetUserWebhooks(_ context.Context, _ string, _ []string) error { return nil }
-func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error) { return nil, nil }
+func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error)   { return nil, nil }
 func (f *fakeMeta) CreateUser(_ context.Context, email, name, role, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "new", Email: email, Name: name, Role: role}, nil
 }
@@ -106,20 +115,26 @@ func (f *fakeMeta) GetEnvironment(_ context.Context, id string) (*postgres.Envir
 func (f *fakeMeta) CreateEnvironment(_ context.Context, _ string, _ map[string]string, _ *string) (string, error) {
 	return "env-1", nil
 }
-func (f *fakeMeta) UpdateEnvironment(_ context.Context, _, _ string, _ map[string]string) error { return nil }
-func (f *fakeMeta) DeleteEnvironment(_ context.Context, _ string) error                          { return nil }
-func (f *fakeMeta) WriteAudit(_ context.Context, _ postgres.AuditEntry) error                    { return nil }
-func (f *fakeMeta) ListAudit(_ context.Context, _ int) ([]postgres.AuditEntry, error)            { return nil, nil }
+func (f *fakeMeta) UpdateEnvironment(_ context.Context, _, _ string, _ map[string]string) error {
+	return nil
+}
+func (f *fakeMeta) DeleteEnvironment(_ context.Context, _ string) error       { return nil }
+func (f *fakeMeta) WriteAudit(_ context.Context, _ postgres.AuditEntry) error { return nil }
+func (f *fakeMeta) ListAudit(_ context.Context, _ int) ([]postgres.AuditEntry, error) {
+	return nil, nil
+}
 func (f *fakeMeta) CreateSchedule(_ context.Context, _ string, _, _ int, _ *string) (string, error) {
 	return "sched-1", nil
 }
 func (f *fakeMeta) GetSchedule(_ context.Context, id string) (*postgres.Schedule, error) {
 	return &postgres.Schedule{ID: id, TestDefID: "test-1", CreatedBy: f.owner}, nil
 }
-func (f *fakeMeta) ListSchedules(_ context.Context, _ int) ([]postgres.Schedule, error) { return nil, nil }
-func (f *fakeMeta) SetScheduleEnabled(_ context.Context, _ string, _ bool) error        { return nil }
-func (f *fakeMeta) UpdateSchedule(_ context.Context, _ string, _, _ int) error          { return nil }
-func (f *fakeMeta) DeleteSchedule(_ context.Context, _ string) error                    { return nil }
+func (f *fakeMeta) ListSchedules(_ context.Context, _ int) ([]postgres.Schedule, error) {
+	return nil, nil
+}
+func (f *fakeMeta) SetScheduleEnabled(_ context.Context, _ string, _ bool) error { return nil }
+func (f *fakeMeta) UpdateSchedule(_ context.Context, _ string, _, _ int) error   { return nil }
+func (f *fakeMeta) DeleteSchedule(_ context.Context, _ string) error             { return nil }
 func (f *fakeMeta) ClaimDueSchedule(_ context.Context) (*postgres.Schedule, error) {
 	if len(f.dueOnce) == 0 {
 		return nil, nil
@@ -236,7 +251,7 @@ func TestOwnershipGating(t *testing.T) {
 		return rr.Code
 	}
 	validPlan := `{"name":"t","protocol":"http","plan":{"protocol":"http","http":{"url":"http://x"}},"ramp":[]}`
-	opTok := token(t, auth.RoleOperator)   // Subject "u"
+	opTok := token(t, auth.RoleOperator) // Subject "u"
 	adminTok := token(t, auth.RoleAdmin)
 
 	cases := []struct{ method, path, body string }{
@@ -344,7 +359,7 @@ func TestReaperFinalizesOrphans(t *testing.T) {
 	old := time.Now().Add(-2 * time.Minute)
 	fresh := time.Now()
 	meta.activeRuns = []postgres.Run{
-		{ID: "orphan", Status: "running", CreatedAt: old},   // coordinator unknown -> finalize
+		{ID: "orphan", Status: "running", CreatedAt: old},     // coordinator unknown -> finalize
 		{ID: "brandnew", Status: "running", CreatedAt: fresh}, // too fresh -> skip
 	}
 	// Coordinator doesn't know either run.

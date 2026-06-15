@@ -158,7 +158,12 @@ func (s *Server) handleDebugScenario(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "too many steps to debug")
 		return
 	}
-	// Force sequence mode: debug runs every step in order so the chain resolves.
+	// Force sequence mode and clear setup scopes: debug runs every posted step
+	// once, in order, so the chain resolves and the user sees each step's
+	// request — a setup step (once_per_vu/once_global) must not be skipped here.
+	for i := range req.Steps {
+		req.Steps[i].Scope = plan.ScopeEachIteration
+	}
 	sc := &plan.ScenarioConfig{Mode: "sequence", Steps: req.Steps}
 	js, err := script.CompileScenario(sc)
 	if err != nil {

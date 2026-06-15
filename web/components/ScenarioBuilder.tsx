@@ -13,11 +13,15 @@ export interface ScenarioExtract {
   var: string;
   path: string;
 }
+// ScopeValue mirrors plan.Scope* — "" runs every iteration (workload), the
+// others are run-once setup steps used to extract values for later steps.
+export type ScopeValue = "" | "once_per_vu" | "once_global";
 export interface ScenarioStep {
   name: string;
   weight: number;
   method: string;
   url: string;
+  scope: ScopeValue;
   params: { key: string; value: string }[];
   headers: { key: string; value: string }[];
   body: string;
@@ -46,6 +50,7 @@ const emptyStep = (): ScenarioStep => ({
   weight: 1,
   method: "GET",
   url: "",
+  scope: "",
   params: [],
   headers: [],
   body: "",
@@ -69,6 +74,7 @@ export function scenarioToPlan(s: ScenarioSpec): unknown {
           ...(s.mode === "weighted" ? { weight: st.weight || 1 } : {}),
           method: st.method,
           url: st.url,
+          ...(st.scope ? { scope: st.scope } : {}),
           ...(params.length ? { params } : {}),
           ...(Object.keys(headers).length ? { headers } : {}),
           ...(st.body ? { body: st.body } : {}),
@@ -89,6 +95,7 @@ export function planToScenario(plan: any): ScenarioSpec {
     weight: st.weight ?? 1,
     method: st.method ?? "GET",
     url: st.url ?? "",
+    scope: (st.scope ?? "") as ScopeValue,
     params: (st.params ?? []).map((p: any) => ({ key: p.key ?? "", value: String(p.value ?? "") })),
     headers: Object.entries(st.headers ?? {}).map(([key, value]) => ({ key, value: String(value) })),
     body: st.body ?? "",
@@ -267,6 +274,17 @@ export default function ScenarioBuilder({
                 {METHODS.map((m) => (
                   <option key={m}>{m}</option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label>
+                {t("scenario.scope")}
+                <Help tip={t("scenario.scopeHelp")} />
+              </label>
+              <select value={st.scope} onChange={(e) => setStep(i, { scope: e.target.value as ScopeValue })}>
+                <option value="">{t("scenario.scopeEach")}</option>
+                <option value="once_per_vu">{t("scenario.scopePerVu")}</option>
+                <option value="once_global">{t("scenario.scopeGlobal")}</option>
               </select>
             </div>
             <div style={{ flex: 1 }}>

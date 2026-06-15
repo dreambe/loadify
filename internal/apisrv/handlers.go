@@ -30,8 +30,8 @@ type apiError struct {
 
 func (e apiError) Error() string { return e.msg }
 
-func errNotFound(m string) error   { return apiError{http.StatusNotFound, m} }
-func errBadRequest(m string) error { return apiError{http.StatusBadRequest, m} }
+func errNotFound(m string) error    { return apiError{http.StatusNotFound, m} }
+func errBadRequest(m string) error  { return apiError{http.StatusBadRequest, m} }
 func errUnavailable(m string) error { return apiError{http.StatusServiceUnavailable, m} }
 
 func statusCodeFor(err error) int {
@@ -399,6 +399,28 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 		return "", "", errBadRequest(err.Error())
 	}
 
+	// Global once-setup: run the scenario's once_global steps a single time at
+	// launch and fold the values they extract into the substitution map, so
+	// {{var}} references resolve to literals for every worker (no per-iteration
+	// login). Done before the run is created so a setup failure aborts cleanly
+	// without a dangling run. The snapshot keeps the pre-setup plan (templates
+	// intact) so a transient setup token is not persisted.
+	snapPlanJSON := planJSON
+	if p.Protocol == plan.Scenario {
+		if gsteps := scriptpkg.GlobalSetupSteps(p.Scenario); len(gsteps) > 0 {
+			vars, serr := scriptpkg.RunGlobalSetup(ctx, gsteps)
+			if serr != nil {
+				return "", "", errBadRequest("global setup failed: " + serr.Error())
+			}
+			if len(vars) > 0 {
+				planJSON = json.RawMessage(substituteEnv(string(planJSON), vars))
+				if p, err = plan.Parse(planJSON); err != nil {
+					return "", "", errBadRequest(err.Error())
+				}
+			}
+		}
+	}
+
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = td.Name + " @ " + time.Now().Format("01-02 15:04")
@@ -407,7 +429,7 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	// environment used — so the run stays reproducible even after the test or
 	// environment is later edited (the original template alone wouldn't reveal
 	// which target this run hit).
-	snapshot := buildRunSnapshot(td, planJSON, scriptJS, envName, envVars)
+	snapshot := buildRunSnapshot(td, snapPlanJSON, scriptJS, envName, envVars)
 	runID, err := s.pg.CreateRun(ctx, td.ID, workers, name, createdBy, source, snapshot)
 	if err != nil {
 		return "", "", err

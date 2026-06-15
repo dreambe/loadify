@@ -33,12 +33,12 @@ const (
 
 // Plan is the top-level test definition.
 type Plan struct {
-	Protocol Protocol    `json:"protocol"`
-	Name     string      `json:"name,omitempty"`
-	HTTP     *HTTPConfig `json:"http,omitempty"`
-	GRPC     *GRPCConfig `json:"grpc,omitempty"`
-	WS       *WSConfig   `json:"websocket,omitempty"`
-	SSE      *SSEConfig  `json:"sse,omitempty"`
+	Protocol Protocol        `json:"protocol"`
+	Name     string          `json:"name,omitempty"`
+	HTTP     *HTTPConfig     `json:"http,omitempty"`
+	GRPC     *GRPCConfig     `json:"grpc,omitempty"`
+	WS       *WSConfig       `json:"websocket,omitempty"`
+	SSE      *SSEConfig      `json:"sse,omitempty"`
 	Scenario *ScenarioConfig `json:"scenario,omitempty"`
 	// ThinkTimeMs is the per-iteration pause applied after each request (fixed).
 	ThinkTimeMs int64 `json:"think_time_ms,omitempty"`
@@ -311,7 +311,23 @@ type ScenarioStep struct {
 	Body     string            `json:"body,omitempty"`
 	Extracts []ScenarioExtract `json:"extracts,omitempty"`
 	Asserts  []HTTPAssert      `json:"asserts,omitempty"`
+	// Scope controls how often a step runs. Empty (the default) means it runs
+	// every iteration as part of the workload. Setup steps run once to extract
+	// values (e.g. a login token) referenced by later steps via {{var}}:
+	//   ScopeOncePerVU  — once per virtual user, before its first iteration;
+	//   ScopeOnceGlobal — once for the whole test, at launch (the extracted
+	//                     values are folded into the run env so every worker
+	//                     sees the resolved literals).
+	Scope string `json:"scope,omitempty"`
 }
+
+// Scope values for a ScenarioStep. The empty string is the default
+// (each-iteration workload) step.
+const (
+	ScopeEachIteration = ""
+	ScopeOncePerVU     = "once_per_vu"
+	ScopeOnceGlobal    = "once_global"
+)
 
 // ScenarioParam is one query-string parameter appended to a step's URL. The
 // value is {{var}}-interpolated and then URL-encoded at request time, so a
@@ -349,6 +365,11 @@ func (c *ScenarioConfig) validate() error {
 		}
 		if c.Mode == "weighted" && st.Weight <= 0 {
 			st.Weight = 1
+		}
+		switch st.Scope {
+		case ScopeEachIteration, ScopeOncePerVU, ScopeOnceGlobal:
+		default:
+			return fmt.Errorf("plan: scenario step %d has invalid scope %q", i+1, st.Scope)
 		}
 		for j := range st.Asserts {
 			if err := st.Asserts[j].Validate(); err != nil {
