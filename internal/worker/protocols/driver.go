@@ -25,6 +25,7 @@ type Result struct {
 	TTFBUs    int64
 	SentBytes int64
 	RecvBytes int64
+	ReqBody   string // truncated request body snippet (what was actually sent)
 	RespBody  string // truncated response body snippet for the live log
 }
 

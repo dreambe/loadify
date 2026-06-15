@@ -366,6 +366,13 @@ paths:
                       name: { type: string }
                       method: { type: string, default: GET }
                       url: { type: string }
+                      params:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            key: { type: string }
+                            value: { type: string }
                       headers: { type: object, additionalProperties: { type: string } }
                       body: { type: string }
                       extracts:
@@ -392,6 +399,7 @@ paths:
                         group: { type: string }
                         method: { type: string }
                         url: { type: string }
+                        req_body: { type: string }
                         status: { type: integer }
                         ok: { type: boolean }
                         error_kind: { type: string }

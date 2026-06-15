@@ -306,10 +306,20 @@ type ScenarioStep struct {
 	Weight   int               `json:"weight,omitempty"`
 	Method   string            `json:"method"`
 	URL      string            `json:"url"`
+	Params   []ScenarioParam   `json:"params,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
 	Body     string            `json:"body,omitempty"`
 	Extracts []ScenarioExtract `json:"extracts,omitempty"`
 	Asserts  []HTTPAssert      `json:"asserts,omitempty"`
+}
+
+// ScenarioParam is one query-string parameter appended to a step's URL. The
+// value is {{var}}-interpolated and then URL-encoded at request time, so a
+// templated value like {{userId}} resolves correctly instead of being encoded
+// as a literal before substitution.
+type ScenarioParam struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // ScenarioExtract saves a JSON field from a step's response into a variable

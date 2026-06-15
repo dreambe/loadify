@@ -69,7 +69,8 @@ export interface DebugResponse {
 export interface DebugScenarioStep {
   group: string;
   method: string;
-  url: string; // resolved after {{var}} interpolation
+  url: string; // resolved after {{var}} interpolation + query params
+  req_body?: string; // resolved request body (what was actually sent)
   status: number;
   ok: boolean;
   error_kind?: string;

@@ -86,6 +86,12 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 		req.Header.Set(k, v)
 	}
 	res.SentBytes = int64(len(d.cfg.Body))
+	if reqBody := d.cfg.Body; reqBody != "" {
+		if len(reqBody) > protocols.RespBodyCap {
+			reqBody = reqBody[:protocols.RespBodyCap]
+		}
+		res.ReqBody = reqBody
+	}
 
 	// Phase timings are populated from httptrace callbacks, which the transport
 	// may invoke on background dial goroutines (including losing parallel dials)

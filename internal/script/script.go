@@ -424,6 +424,10 @@ func bindEmit(rt *goja.Runtime, em *emitter) {
 		if len(body) > protocols.RespBodyCap {
 			body = body[:protocols.RespBodyCap]
 		}
+		reqBody := str("req_body")
+		if len(reqBody) > protocols.RespBodyCap {
+			reqBody = reqBody[:protocols.RespBodyCap]
+		}
 		em.results = append(em.results, protocols.Result{
 			Group:     str("group"),
 			Method:    str("method"),
@@ -435,6 +439,7 @@ func bindEmit(rt *goja.Runtime, em *emitter) {
 			TTFBUs:    i64("ttfb_us"),
 			SentBytes: i64("sent_bytes"),
 			RecvBytes: i64("recv_bytes"),
+			ReqBody:   reqBody,
 			RespBody:  body,
 		})
 		return goja.Undefined()

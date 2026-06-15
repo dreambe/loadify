@@ -124,7 +124,8 @@ type debugScenarioRequest struct {
 type debugScenarioStep struct {
 	Group     string  `json:"group"`
 	Method    string  `json:"method"`
-	URL       string  `json:"url"` // resolved (after {{var}} interpolation)
+	URL       string  `json:"url"` // resolved (after {{var}} interpolation + query params)
+	ReqBody   string  `json:"req_body,omitempty"`
 	Status    int     `json:"status"`
 	OK        bool    `json:"ok"`
 	ErrorKind string  `json:"error_kind,omitempty"`
@@ -196,6 +197,7 @@ func (s *Server) handleDebugScenario(w http.ResponseWriter, r *http.Request) {
 			Group:     res.Group,
 			Method:    res.Method,
 			URL:       res.URL,
+			ReqBody:   res.ReqBody,
 			Status:    int(res.Status),
 			OK:        res.OK,
 			ErrorKind: res.ErrorKind,

@@ -100,6 +100,17 @@ function _runStep(step, vars, idx) {
   var headers = {};
   if (step.headers) for (var k in step.headers) headers[k] = _interp(step.headers[k], vars);
   var url = _interp(step.url, vars);
+  if (step.params && step.params.length) {
+    // Interpolate each value, THEN URL-encode, so {{var}} resolves before
+    // escaping (encoding first would turn "{{" into "%7B%7B" and break it).
+    var _qs = [];
+    for (var _pi = 0; _pi < step.params.length; _pi++) {
+      var _p = step.params[_pi];
+      if (!_p.key) continue;
+      _qs.push(encodeURIComponent(_p.key) + "=" + encodeURIComponent(_interp(_p.value, vars)));
+    }
+    if (_qs.length) url += (url.indexOf("?") >= 0 ? "&" : "?") + _qs.join("&");
+  }
   var body = step.body ? _interp(step.body, vars) : "";
   var r = http.request(step.method || "GET", url, body, { headers: headers });
   var label = step.name || ("step" + (idx + 1));
@@ -134,7 +145,8 @@ function _runStep(step, vars, idx) {
     group: label, method: step.method || "GET", url: url,
     status: r.status, ok: ok, error_kind: ok ? "" : reason,
     latency_us: Math.round((r.duration_ms || 0) * 1000), ttfb_us: Math.round((r.duration_ms || 0) * 1000),
-    recv_bytes: (r.body || "").length, resp_body: r.body || ""
+    sent_bytes: body.length, recv_bytes: (r.body || "").length,
+    req_body: body, resp_body: r.body || ""
   });
   return { r: r, ok: ok, ms: r.duration_ms || 0 };
 }

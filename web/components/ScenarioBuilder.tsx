@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, type DebugResponse } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 import Icon from "./Icon";
@@ -18,6 +18,7 @@ export interface ScenarioStep {
   weight: number;
   method: string;
   url: string;
+  params: { key: string; value: string }[];
   headers: { key: string; value: string }[];
   body: string;
   extracts: ScenarioExtract[];
@@ -27,11 +28,25 @@ export interface ScenarioSpec {
   steps: ScenarioStep[];
 }
 
+// StepDebug is the resolved request + response shown after "send test request".
+type StepDebug = {
+  error?: string;
+  method: string;
+  url: string; // resolved (interpolation + query params)
+  reqBody: string; // resolved request body
+  status: number;
+  ok: boolean;
+  errorKind: string;
+  latencyMs: number;
+  body: string;
+};
+
 const emptyStep = (): ScenarioStep => ({
   name: "",
   weight: 1,
   method: "GET",
   url: "",
+  params: [],
   headers: [],
   body: "",
   extracts: [],
@@ -48,11 +63,13 @@ export function scenarioToPlan(s: ScenarioSpec): unknown {
       steps: s.steps.map((st) => {
         const headers: Record<string, string> = {};
         for (const h of st.headers) if (h.key) headers[h.key] = h.value;
+        const params = st.params.filter((p) => p.key);
         return {
           ...(st.name ? { name: st.name } : {}),
           ...(s.mode === "weighted" ? { weight: st.weight || 1 } : {}),
           method: st.method,
           url: st.url,
+          ...(params.length ? { params } : {}),
           ...(Object.keys(headers).length ? { headers } : {}),
           ...(st.body ? { body: st.body } : {}),
           ...(s.mode === "sequence" && st.extracts.length
@@ -72,6 +89,7 @@ export function planToScenario(plan: any): ScenarioSpec {
     weight: st.weight ?? 1,
     method: st.method ?? "GET",
     url: st.url ?? "",
+    params: (st.params ?? []).map((p: any) => ({ key: p.key ?? "", value: String(p.value ?? "") })),
     headers: Object.entries(st.headers ?? {}).map(([key, value]) => ({ key, value: String(value) })),
     body: st.body ?? "",
     extracts: (st.extracts ?? []).map((e: any) => ({ var: e.var ?? "", path: e.path ?? "" })),
@@ -111,10 +129,11 @@ export default function ScenarioBuilder({
   const weighted = value.mode === "weighted";
   const totalWeight = value.steps.reduce((sum, s) => sum + (s.weight || 1), 0);
 
-  // Per-step debug responses, keyed by step index. A step's "send test request"
-  // fires its literal request (no {{var}} resolution) so the user can inspect
-  // the response and click fields to build extract rows.
-  const [debug, setDebug] = useState<Record<number, DebugResponse>>({});
+  // Per-step debug result, keyed by step index. "Send test request" runs the
+  // step through the real scenario engine so {{var}} interpolation and query
+  // params resolve, and surfaces the *resolved* request (method, URL, body)
+  // next to the response — so the user can trust exactly what was sent.
+  const [debug, setDebug] = useState<Record<number, StepDebug>>({});
   const [debugging, setDebugging] = useState<number | null>(null);
   const [rawView, setRawView] = useState<Record<number, boolean>>({});
 
@@ -128,10 +147,19 @@ export default function ScenarioBuilder({
     setDebug({});
   };
 
-  const stepHeaders = (st: ScenarioStep): Record<string, string> => {
-    const h: Record<string, string> = {};
-    for (const hd of st.headers) if (hd.key) h[hd.key] = hd.value;
-    return h;
+  // payloadStep serializes a builder step into the debug-scenario wire shape.
+  const payloadStep = (s: ScenarioStep) => {
+    const headers: Record<string, string> = {};
+    for (const h of s.headers) if (h.key) headers[h.key] = h.value;
+    return {
+      name: s.name,
+      method: s.method,
+      url: s.url,
+      params: s.params.filter((p) => p.key),
+      headers,
+      body: s.body || undefined,
+      extracts: s.extracts.filter((e) => e.var && e.path),
+    };
   };
 
   async function runDebug(i: number) {
@@ -144,42 +172,32 @@ export default function ScenarioBuilder({
       return n;
     });
     try {
-      let res: DebugResponse;
-      if (weighted) {
-        // Weighted steps are independent — fire just this one.
-        res = await api.debugRequest({ method: st.method, url: st.url, headers: stepHeaders(st), body: st.body || undefined });
+      // Sequence: run steps 1..i so upstream {{vars}} resolve. Weighted steps are
+      // independent, so debug just this one — but still via the engine so its
+      // params and template functions resolve.
+      const steps = weighted ? [payloadStep(st)] : value.steps.slice(0, i + 1).map(payloadStep);
+      const chain = await api.debugScenario(steps);
+      let res: StepDebug;
+      if (chain.error) {
+        res = { error: chain.error, method: st.method, url: st.url, reqBody: "", status: 0, ok: false, errorKind: "", latencyMs: 0, body: "" };
       } else {
-        // Sequence: run steps 1..i in order so {{vars}} extracted upstream are
-        // resolved, then surface this step's (now correctly chained) response.
-        const steps = value.steps.slice(0, i + 1).map((s) => ({
-          name: s.name,
-          method: s.method,
-          url: s.url,
-          headers: stepHeaders(s),
-          body: s.body || undefined,
-          extracts: s.extracts.filter((e) => e.var && e.path),
-        }));
-        const chain = await api.debugScenario(steps);
-        if (chain.error) {
-          res = { status: 0, status_text: "", latency_ms: 0, headers: {}, body: "", body_truncated: false, recv_bytes: 0, error: chain.error };
-        } else {
-          const last = chain.steps[chain.steps.length - 1];
-          res = {
-            status: last?.status ?? 0,
-            status_text: last ? (last.ok ? "OK" : last.error_kind || "FAILED") : "",
-            latency_ms: last?.latency_ms ?? 0,
-            headers: {},
-            body: last?.body ?? "",
-            body_truncated: false,
-            recv_bytes: 0,
-          };
-        }
+        const last = chain.steps[chain.steps.length - 1];
+        res = {
+          method: last?.method ?? st.method,
+          url: last?.url ?? st.url,
+          reqBody: last?.req_body ?? "",
+          status: last?.status ?? 0,
+          ok: last?.ok ?? false,
+          errorKind: last?.error_kind ?? "",
+          latencyMs: last?.latency_ms ?? 0,
+          body: last?.body ?? "",
+        };
       }
       setDebug((d) => ({ ...d, [i]: res }));
     } catch (e: any) {
       setDebug((d) => ({
         ...d,
-        [i]: { status: 0, status_text: "", latency_ms: 0, headers: {}, body: "", body_truncated: false, recv_bytes: 0, error: e.message },
+        [i]: { error: e.message, method: st.method, url: st.url, reqBody: "", status: 0, ok: false, errorKind: "", latencyMs: 0, body: "" },
       }));
     } finally {
       setDebugging(null);
@@ -280,6 +298,48 @@ export default function ScenarioBuilder({
             )}
           </div>
 
+          {/* Query parameters: appended to the URL, interpolated then encoded. */}
+          <label>
+            {t("scenario.params")}
+            <Help tip={t("scenario.paramsHelp")} />
+          </label>
+          {st.params.map((p, pi) => (
+            <div className="row" key={pi} style={{ marginBottom: 6 }}>
+              <input
+                placeholder={t("scenario.paramKeyPh")}
+                value={p.key}
+                onChange={(e) =>
+                  setStep(i, { params: st.params.map((x, xi) => (xi === pi ? { ...x, key: e.target.value } : x)) })
+                }
+                style={{ width: 200 }}
+              />
+              <input
+                placeholder={t("scenario.valuePh")}
+                value={p.value}
+                onChange={(e) =>
+                  setStep(i, { params: st.params.map((x, xi) => (xi === pi ? { ...x, value: e.target.value } : x)) })
+                }
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setStep(i, { params: st.params.filter((_, xi) => xi !== pi) })}
+              >
+                {t("ramp.remove")}
+              </button>
+            </div>
+          ))}
+          <div className="row">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setStep(i, { params: [...st.params, { key: "", value: "" }] })}
+            >
+              + {t("scenario.addParam")}
+            </button>
+          </div>
+
           {/* Headers */}
           {st.headers.map((h, hi) => (
             <div className="row" key={hi} style={{ marginBottom: 6 }}>
@@ -360,13 +420,36 @@ export default function ScenarioBuilder({
                 </div>
               ) : (
                 <>
+                  {/* Resolved request — the exact method, URL and body sent. */}
+                  <div style={{ marginBottom: 8 }}>
+                    <div className="muted" style={{ fontSize: 11, marginBottom: 2 }}>{t("debug.sentRequest")}</div>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
+                      <span className="badge" style={{ marginRight: 6 }}>{debug[i].method}</span>
+                      {debug[i].url}
+                    </div>
+                    {debug[i].reqBody && (
+                      <pre
+                        style={{
+                          margin: "4px 0 0",
+                          maxHeight: 120,
+                          overflow: "auto",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-all",
+                          fontSize: 12,
+                        }}
+                      >
+                        {prettyBody(debug[i].reqBody)}
+                      </pre>
+                    )}
+                  </div>
                   <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <span className="row" style={{ alignItems: "center", gap: 8 }}>
-                      <span className={`badge ${debug[i].status < 400 ? "completed" : "failed"}`}>
-                        {debug[i].status} {debug[i].status_text}
+                      <span className="muted" style={{ fontSize: 11 }}>{t("debug.response")}</span>
+                      <span className={`badge ${debug[i].ok ? "completed" : "failed"}`}>
+                        {debug[i].status} {debug[i].ok ? "OK" : debug[i].errorKind || "FAILED"}
                       </span>
                       <span className="muted" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                        {debug[i].latency_ms.toFixed(1)} ms
+                        {debug[i].latencyMs.toFixed(1)} ms
                       </span>
                     </span>
                     {!weighted && isJson(debug[i].body) && (
