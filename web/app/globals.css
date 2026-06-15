@@ -342,6 +342,10 @@ td .actions {
   display: flex;
   gap: var(--s2);
   justify-content: flex-start; /* line up with the left-aligned column header */
+  /* Ghost/sm buttons carry 9px left padding; pull the row left by that much so
+     the first button's icon/text lands on the same 10px column line as the
+     header text (and every other cell's content). */
+  margin-left: -9px;
   flex-wrap: nowrap;
 }
 tbody tr {
