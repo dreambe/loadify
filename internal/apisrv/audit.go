@@ -29,6 +29,10 @@ func (a *auditRecorder) Write(b []byte) (int, error) {
 	return a.ResponseWriter.Write(b)
 }
 
+// Unwrap exposes the underlying ResponseWriter so http.ResponseController can
+// reach its Hijacker (WebSocket upgrades) and Flusher.
+func (a *auditRecorder) Unwrap() http.ResponseWriter { return a.ResponseWriter }
+
 // auditMiddleware records mutating actions (who, when, what, outcome) to the
 // audit log. Reads are not recorded — only POST/PUT/PATCH/DELETE. The write is
 // best-effort and asynchronous so the request path is never blocked by it.

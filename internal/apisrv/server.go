@@ -125,9 +125,9 @@ func (s *Server) routes() {
 		r.With(viewer).Get("/runs/{id}", s.handleGetRun)
 		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)
 		r.With(viewer).Get("/runs/{id}/samples", s.handleRunSamples)
-		r.With(viewer).Get("/runs/{id}/export.csv", s.handleRunExport) // token via ?token= works too
+		r.With(viewer).Get("/runs/{id}/export.csv", s.handleRunExport)  // token via ?token= works too
 		r.With(viewer).Get("/runs/{id}/report.html", s.handleRunReport) // token via ?token= works too
-		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
+		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive)          // websocket (token via ?token=)
 		r.With(viewer).Get("/workers", s.handleListWorkers)
 
 		// Mutations require an operator (or higher).
@@ -205,6 +205,12 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap exposes the underlying ResponseWriter so http.ResponseController can
+// reach its Hijacker/Flusher — without this, wrapping the writer here breaks
+// the WebSocket upgrade on /runs/{id}/live (Accept fails with 501) and the
+// live view never connects.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func statusClass(code int) string {
 	switch {
