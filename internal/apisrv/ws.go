@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc/status"
 )
 
 // liveTick is the JSON shape pushed to the browser.
@@ -66,7 +67,12 @@ func (s *Server) handleRunLive(w http.ResponseWriter, r *http.Request) {
 
 	stream, err := s.coord.StreamLive(ctx, &loadifyv1.LiveRequest{RunId: runID})
 	if err != nil {
-		conn.Close(websocket.StatusInternalError, "stream unavailable")
+		// Surface the real cause (run not found / queued / coordinator
+		// unreachable) to the client and the log, instead of an opaque
+		// "stream unavailable", so a stalled live view is diagnosable.
+		reason := liveCloseReason(err)
+		s.log.Warn("live stream unavailable", "run", runID, "reason", reason, "err", err)
+		conn.Close(websocket.StatusInternalError, reason)
 		return
 	}
 
@@ -89,6 +95,19 @@ func (s *Server) handleRunLive(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// liveCloseReason maps a StreamLive error to a short, human-readable WebSocket
+// close reason (capped at the 123-byte close-frame limit).
+func liveCloseReason(err error) string {
+	reason := "live stream unavailable"
+	if st, ok := status.FromError(err); ok && st.Message() != "" {
+		reason = st.Message()
+	}
+	if len(reason) > 100 {
+		reason = reason[:100]
+	}
+	return reason
 }
 
 func toLiveTick(t *loadifyv1.LiveTick) liveTick {
