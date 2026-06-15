@@ -70,21 +70,26 @@ export default function Nav() {
     }
   }, []);
 
-  const item = (href: string, label: string) => (
-    <Link href={href} className={pathname?.startsWith(href) ? "active" : undefined}>
-      {label}
-    </Link>
-  );
+  const item = (href: string, label: string) => {
+    // "/" must match exactly (it's a prefix of everything); others match by prefix.
+    const active = href === "/" ? pathname === "/" : pathname?.startsWith(href);
+    return (
+      <Link href={href} className={active ? "active" : undefined}>
+        {label}
+      </Link>
+    );
+  };
 
   return (
     <nav className="nav">
       {/* 3-column grid: brand left, tabs truly centered in the viewport,
           account menu right — independent of the brand/account widths. */}
-      <Link className="brand" href="/runs">
+      <Link className="brand" href="/">
         <PulseMark size={24} />
         Loadify
       </Link>
       <div className="nav-tabs">
+        {item("/", t("nav.dashboard"))}
         {/* Primary loop: run → author → analyze. */}
         {item("/runs", t("nav.runs"))}
         {item("/tests", t("nav.tests"))}
