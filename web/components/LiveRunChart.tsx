@@ -29,6 +29,29 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   const wsRef = useRef<WebSocket | null>(null);
   const startRef = useRef<number | null>(null);
   const seqRef = useRef(0);
+  // While a log row is expanded, hold incoming samples in a buffer instead of
+  // prepending them — otherwise each tick pushes the row being read down out of
+  // view. The buffer is flushed when the row is collapsed. A ref mirrors the
+  // expanded state so the WS onmessage closure reads the current value.
+  const expandedRef = useRef<number | null>(null);
+  const bufferRef = useRef<KeyedSample[]>([]);
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
+
+  // toggleRow expands/collapses a sample, flushing buffered samples on collapse.
+  const toggleRow = (id: number) => {
+    if (expanded === id) {
+      setExpanded(null);
+      if (bufferRef.current.length > 0) {
+        const buffered = bufferRef.current;
+        bufferRef.current = [];
+        setSamples((prev) => [...buffered, ...prev].slice(0, MAX_LOG));
+      }
+    } else {
+      setExpanded(id);
+    }
+  };
 
   useEffect(() => {
     // Reconnect on close with exponential backoff (capped). A live run's stream
@@ -70,7 +93,12 @@ export default function LiveRunChart({ runId }: { runId: string }) {
             // Stable per-sample ids keep row expansion anchored as new samples
             // are prepended.
             const keyed = tick.samples.map((s) => ({ ...s, _id: seqRef.current++ }));
-            setSamples((prev) => [...keyed, ...prev].slice(0, MAX_LOG));
+            if (expandedRef.current !== null) {
+              // A row is being inspected — buffer so the view doesn't jump.
+              bufferRef.current = [...keyed, ...bufferRef.current].slice(0, MAX_LOG);
+            } else {
+              setSamples((prev) => [...keyed, ...prev].slice(0, MAX_LOG));
+            }
           }
         } catch {
           /* ignore malformed frame */
@@ -200,7 +228,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
                   <Fragment key={s._id}>
                     <tr
                       style={{ color: s.ok ? undefined : "var(--red)", cursor: "pointer" }}
-                      onClick={() => setExpanded(expanded === s._id ? null : s._id)}
+                      onClick={() => toggleRow(s._id)}
                       title={t("log.expandHint")}
                     >
                       <td className="muted">{new Date(s.ts_unix_ms).toLocaleTimeString()}</td>

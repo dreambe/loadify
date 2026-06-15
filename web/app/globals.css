@@ -332,21 +332,11 @@ td .actions {
 }
 tbody tr {
   transition: background 0.12s ease;
-  animation: row-in 0.32s var(--ease) both;
 }
-/* Stagger the first rows in for a quick "results landing" feel. */
-tbody tr:nth-child(1) { animation-delay: 0.02s; }
-tbody tr:nth-child(2) { animation-delay: 0.05s; }
-tbody tr:nth-child(3) { animation-delay: 0.08s; }
-tbody tr:nth-child(4) { animation-delay: 0.11s; }
-tbody tr:nth-child(5) { animation-delay: 0.14s; }
-tbody tr:nth-child(6) { animation-delay: 0.17s; }
+/* No per-row entrance animation: on an auto-refreshing list it makes the first
+   rows fade/stagger on every update, which reads as a glitch. Rows just appear. */
 tbody tr:hover {
   background: rgba(54, 214, 231, 0.05);
-}
-@keyframes row-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 tbody tr:last-child td {
   border-bottom: none;

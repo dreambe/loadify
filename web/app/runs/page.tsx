@@ -96,16 +96,13 @@ export default function RunsPage() {
     refresh();
     api.listTests().then(setTests).catch(() => {});
     api.listEnvironments().then(setEnvs).catch(() => {});
-    const loadWorkers = () =>
-      api
-        .listWorkers()
-        .then((ws) => setMaxWorkers(ws.filter((w) => w.status === "healthy").length))
-        .catch(() => {});
-    loadWorkers();
-    const t = setInterval(() => {
-      refresh();
-      loadWorkers();
-    }, 4000);
+    // Worker count is only for the input cap — fetch once on mount (the Workers
+    // page shows live node status). Avoids a recurring /workers poll here.
+    api
+      .listWorkers()
+      .then((ws) => setMaxWorkers(ws.filter((w) => w.status === "healthy").length))
+      .catch(() => {});
+    const t = setInterval(refresh, 4000);
     return () => clearInterval(t);
   }, [ready]);
 
