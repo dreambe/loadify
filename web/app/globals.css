@@ -174,21 +174,21 @@ a:hover {
 .nav .brand svg {
   color: var(--accent);
 }
-.nav a:not(.brand) {
+.nav-tabs a {
   position: relative;
   color: var(--muted);
   font-weight: 500;
   padding: 4px 0;
   transition: color 0.15s ease;
 }
-.nav a:not(.brand):hover {
+.nav-tabs a:hover {
   color: var(--text);
   text-decoration: none;
 }
-.nav a.active {
+.nav-tabs a.active {
   color: var(--text);
 }
-.nav a.active::after {
+.nav-tabs a.active::after {
   content: "";
   position: absolute;
   left: 0;
@@ -817,13 +817,14 @@ label.req::after {
   gap: 6px;
   color: var(--muted);
 }
-/* A preference row with a segmented (two-option) toggle on the right. */
+/* A preference row with a segmented (two-option) toggle on the right.
+   Same padding as .menu-item so labels share one left edge and rhythm. */
 .menu-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 10px;
+  padding: 8px 10px;
   font-size: 13px;
 }
 .seg {
