@@ -20,19 +20,31 @@ export interface Assert {
 export interface HttpRequest {
   method: string;
   url: string;
+  params: { key: string; value: string }[];
   headers: { key: string; value: string }[];
   body: string;
   asserts: Assert[];
   insecureSkipVerify: boolean;
+  followRedirects: boolean;
+  cookieJar: boolean;
+  traceHeader: boolean;
+  clientCertPEM: string;
+  clientKeyPEM: string;
 }
 
 export const emptyHttpRequest: HttpRequest = {
   method: "GET",
   url: "",
+  params: [],
   headers: [],
   body: "",
   asserts: [{ source: "status", path: "", op: "eq", value: "200" }],
   insecureSkipVerify: false,
+  followRedirects: false,
+  cookieJar: false,
+  traceHeader: false,
+  clientCertPEM: "",
+  clientKeyPEM: "",
 };
 
 const OPS = ["eq", "ne", "gt", "lt", "gte", "lte", "contains", "exists"];
@@ -41,6 +53,7 @@ const OPS = ["eq", "ne", "gt", "lt", "gte", "lte", "contains", "exists"];
 export function httpRequestToPlan(protocol: string, r: HttpRequest): unknown {
   const headers: Record<string, string> = {};
   for (const h of r.headers) if (h.key) headers[h.key] = h.value;
+  const params = r.params.filter((p) => p.key);
   const asserts = r.asserts
     .filter((a) => a.op === "exists" || a.value !== "" || a.source === "body")
     .map((a) => ({
@@ -54,10 +67,16 @@ export function httpRequestToPlan(protocol: string, r: HttpRequest): unknown {
     http: {
       method: r.method,
       url: r.url,
+      ...(params.length ? { params } : {}),
       ...(Object.keys(headers).length ? { headers } : {}),
       ...(r.body ? { body: r.body } : {}),
       ...(asserts.length ? { asserts } : {}),
       ...(r.insecureSkipVerify ? { insecure_skip_verify: true } : {}),
+      ...(r.followRedirects ? { follow_redirects: true } : {}),
+      ...(r.cookieJar ? { cookie_jar: true } : {}),
+      ...(r.traceHeader ? { trace_header: true } : {}),
+      ...(r.clientCertPEM ? { client_cert_pem: r.clientCertPEM } : {}),
+      ...(r.clientKeyPEM ? { client_key_pem: r.clientKeyPEM } : {}),
     },
   };
 }
@@ -81,6 +100,7 @@ export function planToHttpRequest(plan: any): HttpRequest {
   return {
     method: h.method || "GET",
     url: h.url || "",
+    params: (h.params ?? []).map((p: any) => ({ key: p.key ?? "", value: String(p.value ?? "") })),
     headers: Object.entries(h.headers ?? {}).map(([key, value]) => ({
       key,
       value: String(value),
@@ -88,6 +108,11 @@ export function planToHttpRequest(plan: any): HttpRequest {
     body: h.body || "",
     asserts,
     insecureSkipVerify: !!h.insecure_skip_verify,
+    followRedirects: !!h.follow_redirects,
+    cookieJar: !!h.cookie_jar,
+    traceHeader: !!h.trace_header,
+    clientCertPEM: h.client_cert_pem || "",
+    clientKeyPEM: h.client_key_pem || "",
   };
 }
 
@@ -219,6 +244,38 @@ export default function HttpRequestBuilder({
         </button>
       </div>
 
+      <label>{t("http.params")}</label>
+      {value.params.map((p, i) => (
+        <div className="row" key={i} style={{ marginBottom: 6 }}>
+          <input
+            placeholder={t("kv.key")}
+            value={p.key}
+            onChange={(e) => onChange({ ...value, params: value.params.map((x, idx) => (idx === i ? { ...x, key: e.target.value } : x)) })}
+            style={{ width: 220 }}
+          />
+          <input
+            placeholder={t("kv.value")}
+            value={p.value}
+            onChange={(e) => onChange({ ...value, params: value.params.map((x, idx) => (idx === i ? { ...x, value: e.target.value } : x)) })}
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => onChange({ ...value, params: value.params.filter((_, idx) => idx !== i) })}
+          >
+            {t("ramp.remove")}
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="secondary"
+        onClick={() => onChange({ ...value, params: [...value.params, { key: "", value: "" }] })}
+      >
+        + {t("http.addParam")}
+      </button>
+
       <label>{t("http.headers")}</label>
       {value.headers.map((h, i) => (
         <div className="row" key={i} style={{ marginBottom: 6 }}>
@@ -325,14 +382,48 @@ export default function HttpRequestBuilder({
         + {t("assert.add")}
       </button>
 
-      <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
-        <input
-          type="checkbox"
-          checked={value.insecureSkipVerify}
-          onChange={(e) => onChange({ ...value, insecureSkipVerify: e.target.checked })}
-        />
-        {t("http.insecure")}
+      <label style={{ display: "block", marginTop: 12, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        {t("http.advanced")}
       </label>
+      {(
+        [
+          ["followRedirects", "http.followRedirects"],
+          ["cookieJar", "http.cookieJar"],
+          ["traceHeader", "http.traceHeader"],
+          ["insecureSkipVerify", "http.insecure"],
+        ] as const
+      ).map(([k, label]) => (
+        <label key={k} style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+          <input
+            type="checkbox"
+            checked={value[k]}
+            onChange={(e) => onChange({ ...value, [k]: e.target.checked })}
+          />
+          {t(label)}
+        </label>
+      ))}
+      <div className="row" style={{ marginTop: 8 }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 12 }}>{t("http.clientCert")}</label>
+          <textarea
+            rows={3}
+            value={value.clientCertPEM}
+            onChange={(e) => onChange({ ...value, clientCertPEM: e.target.value })}
+            placeholder="-----BEGIN CERTIFICATE-----"
+            style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 12 }}>{t("http.clientKey")}</label>
+          <textarea
+            rows={3}
+            value={value.clientKeyPEM}
+            onChange={(e) => onChange({ ...value, clientKeyPEM: e.target.value })}
+            placeholder="-----BEGIN PRIVATE KEY-----"
+            style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
+          />
+        </div>
+      </div>
 
       {debug && (
         <div
