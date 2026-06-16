@@ -514,6 +514,14 @@ paths:
         - { name: token, in: query, schema: { type: string } }
         - { name: share, in: query, schema: { type: string } }
       responses: { "200": { description: text/html } }
+  /api/v1/runs/{id}/metrics:
+    get:
+      tags: [runs]
+      summary: Run metrics in Prometheus text format (role viewer+; scrape via ?token=)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, schema: { type: string } }
+      responses: { "200": { description: text/plain Prometheus exposition } }
   /api/v1/runs/{id}/share:
     post:
       tags: [runs]

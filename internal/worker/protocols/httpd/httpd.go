@@ -3,7 +3,9 @@ package httpd
 
 import (
 	"context"
+	crand "crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,6 +50,14 @@ type Driver struct {
 	// Per-VU clients (own cookie jar, shared transport) when CookieJar is on,
 	// so each virtual user keeps its own session.
 	jars sync.Map // vuID(int) -> *http.Client
+}
+
+// newTraceparent builds a W3C traceparent: version 00, random 16-byte trace id,
+// random 8-byte span id, sampled flag (01).
+func newTraceparent() string {
+	var b [24]byte
+	_, _ = crand.Read(b[:])
+	return "00-" + hex.EncodeToString(b[:16]) + "-" + hex.EncodeToString(b[16:24]) + "-01"
 }
 
 // redirectPolicy returns the CheckRedirect for the configured follow behavior.
@@ -142,6 +152,11 @@ func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
 	}
 	for k, v := range d.cfg.Headers {
 		req.Header.Set(k, v)
+	}
+	// OTel: a fresh sampled W3C trace context per request so the target's APM
+	// can correlate these calls (a header the user explicitly set still wins).
+	if d.cfg.TraceHeader && req.Header.Get("traceparent") == "" {
+		req.Header.Set("traceparent", newTraceparent())
 	}
 	res.SentBytes = int64(len(d.cfg.Body))
 	if reqBody := d.cfg.Body; reqBody != "" {

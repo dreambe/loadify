@@ -200,6 +200,9 @@ type HTTPConfig struct {
 	// CookieJar gives each VU its own cookie jar so session cookies persist
 	// across that VU's iterations (login → authenticated calls).
 	CookieJar bool `json:"cookie_jar,omitempty"`
+	// TraceHeader injects a fresh W3C traceparent on every request so the load
+	// test's calls show up as distributed traces in the target's APM (OTel).
+	TraceHeader bool `json:"trace_header,omitempty"`
 	// ClientCertPEM / ClientKeyPEM enable mutual TLS (client certificate).
 	ClientCertPEM string `json:"client_cert_pem,omitempty"`
 	ClientKeyPEM  string `json:"client_key_pem,omitempty"`

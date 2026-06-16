@@ -126,6 +126,7 @@ func (s *Server) routes() {
 		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)
 		r.With(viewer).Get("/runs/{id}/samples", s.handleRunSamples)
 		r.With(viewer).Get("/runs/{id}/export.csv", s.handleRunExport)  // token via ?token= works too
+		r.With(viewer).Get("/runs/{id}/metrics", s.handleRunMetrics)    // Prometheus text (token via ?token=)
 		r.Get("/runs/{id}/report.html", s.handleRunReport) // self-authorized: session token (?token=) or ?share= link
 		r.With(operator).Post("/runs/{id}/share", s.handleShareRun)
 		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive)          // websocket (token via ?token=)
