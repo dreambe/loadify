@@ -59,6 +59,20 @@ func (m Middleware) claimsFrom(r *http.Request) (*Claims, bool) {
 	return c, true
 }
 
+// ClaimsFrom verifies the request's session token (Authorization header or
+// ?token=) and returns its claims, for handlers that authorize themselves
+// (e.g. a report route that also accepts a public share token).
+func (m Middleware) ClaimsFrom(r *http.Request) (*Claims, bool) {
+	c, ok := m.claimsFrom(r)
+	if !ok {
+		return nil, false
+	}
+	if m.Validate != nil && !m.Validate(c) {
+		return nil, false
+	}
+	return c, true
+}
+
 // Require returns middleware that rejects requests lacking a valid token whose
 // role meets min.
 func (m Middleware) Require(min Role) func(http.Handler) http.Handler {

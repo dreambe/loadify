@@ -5,7 +5,7 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
-import { api, exportCSVURL, reportURL } from "@/lib/api";
+import { api, exportCSVURL, reportURL, shareReportURL } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
@@ -65,6 +65,16 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
       api.testTrend(run.test_def_id, 20).then(setTrend).catch(() => {});
     }
   }, [terminal, run?.test_def_id]);
+
+  async function shareLink() {
+    try {
+      const { token } = await api.shareRun(runId);
+      await navigator.clipboard.writeText(shareReportURL(runId, token));
+      toast.success(t("run.shareCopied"));
+    } catch {
+      toast.error(t("run.shareFailed"));
+    }
+  }
 
   async function setAsBaseline() {
     if (!run) return;
@@ -137,6 +147,11 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <a className="badge" href={reportURL(runId)} target="_blank" rel="noreferrer">
                 <Icon name="report" /> {t("run.report")}
               </a>
+            )}
+            {terminal && canStop && (
+              <button className="badge" onClick={shareLink}>
+                <Icon name="upload" /> {t("run.share")}
+              </button>
             )}
             {terminal && (
               <a className="badge" href={exportCSVURL(runId)} download>

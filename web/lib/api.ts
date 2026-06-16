@@ -156,6 +156,8 @@ export const api = {
     }),
   stopRun: (id: string) =>
     req<{ run_id: string; status: string }>(`/api/v1/runs/${id}/stop`, { method: "POST" }),
+  shareRun: (id: string) =>
+    req<{ token: string; expires_at: string }>(`/api/v1/runs/${id}/share`, { method: "POST" }),
   runSeries: (id: string, group = "*", res = 1) =>
     reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
   runSamples: (id: string, filter: { status_class?: string; error_kind?: string; group?: string; limit?: number } = {}) => {
@@ -217,6 +219,11 @@ export const api = {
 export function reportURL(runId: string): string {
   const token = getToken() || "";
   return `${API_BASE}/api/v1/runs/${runId}/report.html?token=${encodeURIComponent(token)}`;
+}
+
+// shareReportURL builds the public (no-login) report link from a share token.
+export function shareReportURL(runId: string, shareToken: string): string {
+  return `${API_BASE}/api/v1/runs/${runId}/report.html?share=${encodeURIComponent(shareToken)}`;
 }
 
 // liveSocketURL builds the WebSocket URL for a run's live stream, carrying the

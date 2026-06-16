@@ -505,10 +505,31 @@ paths:
     get:
       tags: [runs]
       summary: Self-contained HTML report (print to PDF in the browser)
+      description: >
+        Authorized by a normal session (Authorization header or ?token=) OR a
+        public share token (?share=) scoped to this run, so the link can be
+        sent to someone without an account.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: token, in: query, schema: { type: string } }
+        - { name: share, in: query, schema: { type: string } }
       responses: { "200": { description: text/html } }
+  /api/v1/runs/{id}/share:
+    post:
+      tags: [runs]
+      summary: Mint a public, expiring share token for a run's report (role operator+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: share token + expiry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string }
   /api/v1/schedules:
     get:
       tags: [schedules]

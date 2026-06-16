@@ -17,6 +17,12 @@ import (
 // snapshot and the per-second series — no external assets or PDF dependency.
 func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
+	// Authorize via a normal session OR a public share token scoped to this run
+	// (this route isn't behind the viewer middleware, so share links work).
+	if !s.reportAuthorized(r, runID) {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 
@@ -41,9 +47,9 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 			P95ms     float64 `json:"p95_ms"`
 			P99ms     float64 `json:"p99_ms"`
 		} `json:"summary"`
-		Passed   *bool  `json:"passed"`
-		Reason   string `json:"reason"`
-		Stopped  bool   `json:"auto_stopped"`
+		Passed    *bool           `json:"passed"`
+		Reason    string          `json:"reason"`
+		Stopped   bool            `json:"auto_stopped"`
 		RawChecks json.RawMessage `json:"checks"`
 	}
 	_ = json.Unmarshal(run.Summary, &summary)
@@ -66,8 +72,12 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 		avgQPS = float64(summary.Total) / durationS
 	}
 
+	shortID := runID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
 	data := reportData{
-		Name:        orDefault(run.Name, runID[:8]),
+		Name:        orDefault(run.Name, shortID),
 		RunID:       runID,
 		Status:      run.Status,
 		Creator:     run.CreatorName,
@@ -111,13 +121,13 @@ type reportCheck struct {
 
 type reportData struct {
 	Name, RunID, Status, Creator, Started, Ended string
-	DurationS, AvgQPS, ErrorPct                   float64
-	P50, P90, P95, P99                            float64
-	Total                                         int64
-	AutoStopped                                   bool
-	Reason, Snapshot                              string
-	QPSPath, P95Path                              template.HTML
-	Checks                                        []reportCheck
+	DurationS, AvgQPS, ErrorPct                  float64
+	P50, P90, P95, P99                           float64
+	Total                                        int64
+	AutoStopped                                  bool
+	Reason, Snapshot                             string
+	QPSPath, P95Path                             template.HTML
+	Checks                                       []reportCheck
 }
 
 func orDefault(s, d string) string {
@@ -187,11 +197,13 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!doctype html>
   pre{background:#0b1220;border:1px solid var(--bd);border-radius:8px;padding:12px;overflow:auto;font-size:12px}
   svg{width:100%;height:120px}
   .warn{background:rgba(255,93,115,.12);border:1px solid var(--rd);color:var(--rd);border-radius:8px;padding:10px 12px}
-  @media print{body{background:#fff;color:#000}.panel,.cell{background:#fff;border-color:#ccc}.mut{color:#555}}
+  .btn{display:inline-block;cursor:pointer;background:var(--ac);color:#04222a;border:none;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;margin-top:12px}
+  @media print{body{background:#fff;color:#000}.panel,.cell{background:#fff;border-color:#ccc}.mut{color:#555}.no-print{display:none}}
 </style></head>
 <body><div class="wrap">
   <h1>{{.Name}}</h1>
   <div class="mut">{{.RunID}} · <span class="badge">{{.Status}}</span> · {{.Creator}} · {{.Started}} → {{.Ended}}</div>
+  <button class="btn no-print" onclick="window.print()">打印 / 存为 PDF · Print / Save PDF</button>
   {{if .AutoStopped}}<div class="warn" style="margin-top:12px">⚠ {{.Reason}}</div>{{end}}
 
   <div class="panel"><div class="grid">
