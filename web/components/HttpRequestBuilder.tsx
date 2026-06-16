@@ -244,7 +244,10 @@ export default function HttpRequestBuilder({
         </button>
       </div>
 
-      <label>{t("http.params")}</label>
+      <label>
+        {t("http.params")}
+        <Help tip={t("http.paramsHelp")} />
+      </label>
       {value.params.map((p, i) => (
         <div className="row" key={i} style={{ marginBottom: 6 }}>
           <input
@@ -387,12 +390,12 @@ export default function HttpRequestBuilder({
       </label>
       {(
         [
-          ["followRedirects", "http.followRedirects"],
-          ["cookieJar", "http.cookieJar"],
-          ["traceHeader", "http.traceHeader"],
-          ["insecureSkipVerify", "http.insecure"],
+          ["followRedirects", "http.followRedirects", "http.followRedirectsHelp"],
+          ["cookieJar", "http.cookieJar", "http.cookieJarHelp"],
+          ["traceHeader", "http.traceHeader", "http.traceHeaderHelp"],
+          ["insecureSkipVerify", "http.insecure", "http.insecureHelp"],
         ] as const
-      ).map(([k, label]) => (
+      ).map(([k, label, help]) => (
         <label key={k} style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
           <input
             type="checkbox"
@@ -400,9 +403,14 @@ export default function HttpRequestBuilder({
             onChange={(e) => onChange({ ...value, [k]: e.target.checked })}
           />
           {t(label)}
+          <Help tip={t(help)} />
         </label>
       ))}
-      <div className="row" style={{ marginTop: 8 }}>
+      <label style={{ display: "block", marginTop: 10, fontSize: 12 }}>
+        {t("http.mtls")}
+        <Help tip={t("http.mtlsHelp")} />
+      </label>
+      <div className="row" style={{ marginTop: 4 }}>
         <div style={{ flex: 1 }}>
           <label style={{ fontSize: 12 }}>{t("http.clientCert")}</label>
           <textarea
