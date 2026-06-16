@@ -186,13 +186,23 @@ func (c AlertConfig) AlertEnabled() bool { return c.Enabled == nil || *c.Enabled
 
 // HTTPConfig describes a single HTTP/HTTPS request template.
 type HTTPConfig struct {
-	Method    string            `json:"method"`
-	URL       string            `json:"url"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Body      string            `json:"body,omitempty"`
-	TimeoutMs int64             `json:"timeout_ms,omitempty"`
+	Method  string            `json:"method"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    string            `json:"body,omitempty"`
+	// Params are structured query parameters appended (URL-encoded) to URL.
+	Params    []ScenarioParam `json:"params,omitempty"`
+	TimeoutMs int64           `json:"timeout_ms,omitempty"`
 	// DisableKeepAlive forces a fresh connection per request (cold-connection test).
 	DisableKeepAlive bool `json:"disable_keepalive,omitempty"`
+	// FollowRedirects follows 3xx responses instead of returning the redirect.
+	FollowRedirects bool `json:"follow_redirects,omitempty"`
+	// CookieJar gives each VU its own cookie jar so session cookies persist
+	// across that VU's iterations (login → authenticated calls).
+	CookieJar bool `json:"cookie_jar,omitempty"`
+	// ClientCertPEM / ClientKeyPEM enable mutual TLS (client certificate).
+	ClientCertPEM string `json:"client_cert_pem,omitempty"`
+	ClientKeyPEM  string `json:"client_key_pem,omitempty"`
 	// InsecureSkipVerify disables TLS certificate verification (default: verify).
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
 	// ExpectStatus, when set, marks any other status as a failure.

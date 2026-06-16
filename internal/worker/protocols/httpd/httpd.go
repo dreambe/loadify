@@ -4,10 +4,14 @@ package httpd
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptrace"
+	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,9 +38,39 @@ func factory(p *plan.Plan) (protocols.Driver, error) {
 
 // Driver is an HTTP/HTTPS load driver backed by a tuned shared transport.
 type Driver struct {
-	cfg    *plan.HTTPConfig
-	client *http.Client
-	group  string
+	cfg     *plan.HTTPConfig
+	client  *http.Client
+	tr      *http.Transport
+	timeout time.Duration
+	group   string
+	url     string // cfg.URL with structured query params appended
+
+	// Per-VU clients (own cookie jar, shared transport) when CookieJar is on,
+	// so each virtual user keeps its own session.
+	jars sync.Map // vuID(int) -> *http.Client
+}
+
+// redirectPolicy returns the CheckRedirect for the configured follow behavior.
+func (d *Driver) redirectPolicy() func(*http.Request, []*http.Request) error {
+	if d.cfg.FollowRedirects {
+		return nil // default Go behavior: follow up to 10 redirects
+	}
+	return func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+}
+
+// clientFor returns the request client for a VU: a per-VU cookie-jar client
+// when CookieJar is enabled, else the shared client.
+func (d *Driver) clientFor(vuID int) *http.Client {
+	if !d.cfg.CookieJar {
+		return d.client
+	}
+	if c, ok := d.jars.Load(vuID); ok {
+		return c.(*http.Client)
+	}
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Transport: d.tr, Timeout: d.timeout, Jar: jar, CheckRedirect: d.redirectPolicy()}
+	actual, _ := d.jars.LoadOrStore(vuID, c)
+	return actual.(*http.Client)
 }
 
 // Prepare builds the shared http.Client/Transport for the run.
@@ -45,6 +79,15 @@ func (d *Driver) Prepare(_ context.Context) error {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
+	tlsCfg := &tls.Config{InsecureSkipVerify: d.cfg.InsecureSkipVerify} //nolint:gosec // opt-in only, defaults to verifying
+	// Mutual TLS: present a client certificate when configured.
+	if d.cfg.ClientCertPEM != "" || d.cfg.ClientKeyPEM != "" {
+		cert, err := tls.X509KeyPair([]byte(d.cfg.ClientCertPEM), []byte(d.cfg.ClientKeyPEM))
+		if err != nil {
+			return fmt.Errorf("httpd: invalid client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
 	tr := &http.Transport{
 		MaxIdleConns:          0, // unlimited
 		MaxIdleConnsPerHost:   1024,
@@ -52,16 +95,31 @@ func (d *Driver) Prepare(_ context.Context) error {
 		IdleConnTimeout:       90 * time.Second,
 		ForceAttemptHTTP2:     true,
 		DisableKeepAlives:     d.cfg.DisableKeepAlive,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: d.cfg.InsecureSkipVerify}, //nolint:gosec // opt-in only, defaults to verifying
+		TLSClientConfig:       tlsCfg,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-	d.client = &http.Client{
-		Transport: tr,
-		Timeout:   timeout,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	d.tr = tr
+	d.timeout = timeout
+	d.client = &http.Client{Transport: tr, Timeout: timeout, CheckRedirect: d.redirectPolicy()}
+
+	// Resolve structured query params once (values are static post env-substitution).
+	d.url = d.cfg.URL
+	if len(d.cfg.Params) > 0 {
+		qs := url.Values{}
+		for _, p := range d.cfg.Params {
+			if p.Key != "" {
+				qs.Add(p.Key, p.Value)
+			}
+		}
+		if enc := qs.Encode(); enc != "" {
+			sep := "?"
+			if strings.Contains(d.url, "?") {
+				sep = "&"
+			}
+			d.url += sep + enc
+		}
 	}
+
 	d.group = d.cfg.Group
 	if d.group == "" {
 		d.group = "default"
@@ -70,14 +128,14 @@ func (d *Driver) Prepare(_ context.Context) error {
 }
 
 // Exec performs one HTTP request and captures phase timings via httptrace.
-func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
-	res := protocols.Result{Group: d.group, Method: d.cfg.Method, URL: d.cfg.URL}
+func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
+	res := protocols.Result{Group: d.group, Method: d.cfg.Method, URL: d.url}
 
 	var body io.Reader
 	if d.cfg.Body != "" {
 		body = strings.NewReader(d.cfg.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, d.cfg.Method, d.cfg.URL, body)
+	req, err := http.NewRequestWithContext(ctx, d.cfg.Method, d.url, body)
 	if err != nil {
 		res.ErrorKind = "build_request"
 		return res
@@ -109,8 +167,12 @@ func (d *Driver) Exec(ctx context.Context, _ *protocols.VU) protocols.Result {
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
+	vuID := 0
+	if vu != nil {
+		vuID = vu.ID
+	}
 	start := time.Now()
-	resp, err := d.client.Do(req)
+	resp, err := d.clientFor(vuID).Do(req)
 	if err != nil {
 		res.LatencyUs = sinceUs(start)
 		res.ErrorKind = classifyErr(err)
