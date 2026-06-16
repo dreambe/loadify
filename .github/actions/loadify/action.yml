@@ -1,0 +1,90 @@
+name: "Loadify load test"
+description: "Run a loadify test, wait for it to finish, summarize results, and fail the job on an SLA breach."
+author: "loadify"
+inputs:
+  api-url:
+    description: "Base URL of the loadify API server, e.g. https://loadify.example.com"
+    required: true
+  token:
+    description: "A loadify API token (operator+). Store it as a secret."
+    required: true
+  test-id:
+    description: "The test definition id to run."
+    required: true
+  workers:
+    description: "Number of worker nodes to shard across."
+    required: false
+    default: "1"
+  name:
+    description: "Optional run name (defaults to <test> @ <time>)."
+    required: false
+    default: ""
+  timeout-seconds:
+    description: "Max seconds to wait for the run to finish."
+    required: false
+    default: "1800"
+outputs:
+  run-id:
+    description: "The id of the run that was started."
+    value: ${{ steps.run.outputs.run_id }}
+  passed:
+    description: "true if the run passed its SLA thresholds."
+    value: ${{ steps.run.outputs.passed }}
+runs:
+  using: "composite"
+  steps:
+    - id: run
+      shell: bash
+      env:
+        API: ${{ inputs.api-url }}
+        TOKEN: ${{ inputs.token }}
+        TEST_ID: ${{ inputs.test-id }}
+        WORKERS: ${{ inputs.workers }}
+        RUN_NAME: ${{ inputs.name }}
+        DEADLINE: ${{ inputs.timeout-seconds }}
+      run: |
+        set -euo pipefail
+        auth=(-H "Authorization: Bearer ${TOKEN}")
+
+        # Start the run.
+        body=$(jq -nc --arg t "$TEST_ID" --argjson w "${WORKERS:-1}" --arg n "$RUN_NAME" \
+          '{test_id:$t, desired_workers:$w, name:$n}')
+        resp=$(curl -fsS "${auth[@]}" -H "Content-Type: application/json" -d "$body" "${API}/api/v1/runs")
+        run_id=$(echo "$resp" | jq -r '.run_id')
+        echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+        echo "Started run $run_id"
+
+        # Poll until terminal or deadline.
+        start=$(date +%s); status="running"; summary="{}"
+        while :; do
+          run=$(curl -fsS "${auth[@]}" "${API}/api/v1/runs/${run_id}")
+          status=$(echo "$run" | jq -r '.status')
+          case "$status" in
+            completed|failed|stopped) summary=$(echo "$run" | jq -c '.summary // {}'); break ;;
+          esac
+          if [ $(( $(date +%s) - start )) -ge "${DEADLINE:-1800}" ]; then
+            echo "::error::Timed out waiting for run $run_id (last status: $status)"; exit 1
+          fi
+          sleep 5
+        done
+
+        # Summarize into the job summary (shows on the PR check).
+        passed=$(echo "$summary" | jq -r 'if .passed == null then "n/a" else (.passed|tostring) end')
+        p95=$(echo "$summary" | jq -r '.summary.p95_ms // "n/a"')
+        errp=$(echo "$summary" | jq -r 'if .summary.error_rate == null then "n/a" else (.summary.error_rate*100|tostring) end')
+        total=$(echo "$summary" | jq -r '.total_requests // "n/a"')
+        bdelta=$(echo "$summary" | jq -r 'if .baseline.p95_delta_pct == null then "" else "p95 vs baseline: \(.baseline.p95_delta_pct|tostring)%" end')
+        {
+          echo "### Loadify run \`${run_id}\`"
+          echo ""
+          echo "| Status | SLA | Total | p95 (ms) | Error % |"
+          echo "|---|---|---|---|---|"
+          echo "| ${status} | ${passed} | ${total} | ${p95} | ${errp} |"
+          [ -n "$bdelta" ] && echo "" && echo "$bdelta"
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "passed=$passed" >> "$GITHUB_OUTPUT"
+
+        # Fail the job on a hard failure or an SLA breach.
+        if [ "$status" = "failed" ]; then echo "::error::run failed"; exit 1; fi
+        if [ "$passed" = "false" ]; then echo "::error::SLA thresholds breached"; exit 1; fi
+        echo "Run $run_id finished: $status (SLA: $passed)"
