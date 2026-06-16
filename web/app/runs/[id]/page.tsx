@@ -5,7 +5,7 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
-import { api, exportCSVURL, reportURL, shareReportURL } from "@/lib/api";
+import { api, exportCSVURL, reportURL, shareRunURL, setShareToken } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
@@ -18,7 +18,11 @@ import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
   const { t } = useI18n();
-  const { user, ready } = useAuth();
+  // Public share mode: a ?share= token in the URL authorizes the read API and
+  // lets this real page render with no login (operator actions stay hidden).
+  const share = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("share") : null;
+  if (share) setShareToken(share);
+  const { user, ready } = useAuth(!share);
   const toast = useToast();
   const confirm = useConfirm();
   const [rerunning, setRerunning] = useState(false);
@@ -61,15 +65,17 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   }, [terminal, runId]);
 
   useEffect(() => {
-    if (terminal && run?.test_def_id) {
+    // Trend is a test-level endpoint not covered by a run share token; skip it
+    // in share mode (and breadcrumb back-to-list is hidden there too).
+    if (terminal && run?.test_def_id && !share) {
       api.testTrend(run.test_def_id, 20).then(setTrend).catch(() => {});
     }
-  }, [terminal, run?.test_def_id]);
+  }, [terminal, run?.test_def_id, share]);
 
   async function shareLink() {
     try {
       const { token } = await api.shareRun(runId);
-      await navigator.clipboard.writeText(shareReportURL(runId, token));
+      await navigator.clipboard.writeText(shareRunURL(runId, token));
       toast.success(t("run.shareCopied"));
     } catch {
       toast.error(t("run.shareFailed"));
@@ -113,9 +119,11 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     <>
       <Nav />
       <div className="container">
-        <Link href="/runs" className="muted" style={{ fontSize: 13, display: "inline-block", marginBottom: 4 }}>
-          ← {t("run.backToRuns")}
-        </Link>
+        {!share && (
+          <Link href="/runs" className="muted" style={{ fontSize: 13, display: "inline-block", marginBottom: 4 }}>
+            ← {t("run.backToRuns")}
+          </Link>
+        )}
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h1>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
           <div className="row" style={{ alignItems: "center" }}>

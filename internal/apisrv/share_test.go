@@ -59,6 +59,19 @@ func TestRunReportShareLink(t *testing.T) {
 		t.Fatalf("cross-run share = %d, want 401", rr.Code)
 	}
 
+	// The same token authorizes the run's read endpoints, so the shared link
+	// can drive the real interactive page with no session.
+	if rr := get("/api/v1/runs/run-1?share="+sh.Token, ""); rr.Code != http.StatusOK {
+		t.Errorf("GET run via share = %d, want 200", rr.Code)
+	}
+	if rr := get("/api/v1/runs/run-1/series?share="+sh.Token, ""); rr.Code != http.StatusOK {
+		t.Errorf("GET series via share = %d, want 200", rr.Code)
+	}
+	// No session and no share → the read endpoint is still locked.
+	if rr := get("/api/v1/runs/run-1", ""); rr.Code != http.StatusUnauthorized {
+		t.Errorf("GET run unauthenticated = %d, want 401", rr.Code)
+	}
+
 	// A viewer must not be able to mint a share token (operator+ only).
 	req = httptest.NewRequest("POST", "/api/v1/runs/run-1/share", nil)
 	req.Header.Set("Authorization", "Bearer "+token(t, auth.RoleViewer))

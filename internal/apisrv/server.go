@@ -94,7 +94,9 @@ func (s *Server) routes() {
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/yaml")
+		// text/plain so browsers display the spec inline instead of downloading
+		// it (application/yaml triggers a file download).
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(openAPISpec)
 	})
 
@@ -122,14 +124,16 @@ func (s *Server) routes() {
 		r.With(viewer).Get("/tests/{id}/trend", s.handleTestTrend)
 		r.With(operator).Post("/tests/{id}/baseline", s.handleSetBaseline)
 		r.With(viewer).Get("/runs", s.handleListRuns)
-		r.With(viewer).Get("/runs/{id}", s.handleGetRun)
-		r.With(viewer).Get("/runs/{id}/series", s.handleRunSeries)
-		r.With(viewer).Get("/runs/{id}/samples", s.handleRunSamples)
-		r.With(viewer).Get("/runs/{id}/export.csv", s.handleRunExport)  // token via ?token= works too
-		r.With(viewer).Get("/runs/{id}/metrics", s.handleRunMetrics)    // Prometheus text (token via ?token=)
-		r.Get("/runs/{id}/report.html", s.handleRunReport) // self-authorized: session token (?token=) or ?share= link
+		// Run read endpoints accept a session OR a run-scoped ?share= token, so a
+		// shared link drives the real interactive run page without login.
+		r.With(s.runRead).Get("/runs/{id}", s.handleGetRun)
+		r.With(s.runRead).Get("/runs/{id}/series", s.handleRunSeries)
+		r.With(s.runRead).Get("/runs/{id}/samples", s.handleRunSamples)
+		r.With(s.runRead).Get("/runs/{id}/export.csv", s.handleRunExport) // token via ?token= or ?share=
+		r.With(s.runRead).Get("/runs/{id}/metrics", s.handleRunMetrics)   // Prometheus text (?token= or ?share=)
+		r.Get("/runs/{id}/report.html", s.handleRunReport)                // self-authorized: ?token= or ?share=
 		r.With(operator).Post("/runs/{id}/share", s.handleShareRun)
-		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive)          // websocket (token via ?token=)
+		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
 		r.With(viewer).Get("/workers", s.handleListWorkers)
 
 		// Mutations require an operator (or higher).

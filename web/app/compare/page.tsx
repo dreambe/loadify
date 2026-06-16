@@ -46,19 +46,23 @@ function CompareInner() {
 
   useEffect(() => {
     if (!aId) return;
-    Promise.all([api.getRun(aId), api.runSeries(aId)]).then(([run, series]) =>
-      setA({ run, series })
-    );
+    Promise.all([api.getRun(aId), api.runSeries(aId)])
+      .then(([run, series]) => setA({ run, series }))
+      .catch(() => {});
   }, [aId]);
   useEffect(() => {
     if (!bId) return;
-    Promise.all([api.getRun(bId), api.runSeries(bId)]).then(([run, series]) =>
-      setB({ run, series })
-    );
+    Promise.all([api.getRun(bId), api.runSeries(bId)])
+      .then(([run, series]) => setB({ run, series }))
+      .catch(() => {});
   }, [bId]);
 
   const ma = metricsOf(a.run);
   const mb = metricsOf(b.run);
+  // A run only has chart data if its per-second rollups exist (a finished run
+  // that produced traffic and hasn't aged past retention). Otherwise the lines
+  // would be blank, so show a clear note instead.
+  const hasSeries = a.series.length > 0 || b.series.length > 0;
 
   // Charts align both runs on elapsed time since their own first sample, so
   // the crosshair compares "the same moment into the test" across A and B.
@@ -180,6 +184,12 @@ function CompareInner() {
               )}
             </div>
 
+            {!hasSeries ? (
+              <div className="panel">
+                <p className="muted">{t("compare.noChartData")}</p>
+              </div>
+            ) : (
+            <>
             <div className="panel">
               <h2>QPS</h2>
               <LineChart
@@ -218,6 +228,8 @@ function CompareInner() {
                 onHover={setHover}
               />
             </div>
+            </>
+            )}
           </>
         )}
       </div>

@@ -8,6 +8,26 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// runRead authorizes a run's read endpoints by either a normal session OR a
+// public share token scoped to that run, so a shared link can drive the real
+// (interactive) run page with no login.
+func (s *Server) runRead(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, ok := s.authmw.ClaimsFrom(r); ok {
+			next.ServeHTTP(w, r.WithContext(auth.WithClaims(r.Context(), c)))
+			return
+		}
+		runID := chi.URLParam(r, "id")
+		if share := r.URL.Query().Get("share"); share != "" {
+			if c, err := auth.Parse(share, s.jwtSecret); err == nil && c.Subject == shareSubject(runID) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+	})
+}
+
 // shareTokenTTL bounds how long a public report share link stays valid.
 const shareTokenTTL = 30 * 24 * time.Hour
 

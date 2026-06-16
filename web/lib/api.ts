@@ -14,17 +14,33 @@ class APIError extends Error {
   }
 }
 
+// shareToken, when set (a public report/run share link), authorizes read
+// requests via ?share= and suppresses the login redirect, so a shared link can
+// drive the real run page with no session.
+let shareToken = "";
+export function setShareToken(t: string) {
+  shareToken = t;
+}
+
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   const token = getToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  let url = `${API_BASE}${path}`;
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  } else if (shareToken) {
+    url += (path.includes("?") ? "&" : "?") + "share=" + encodeURIComponent(shareToken);
+  }
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const res = await fetch(url, { ...init, headers });
   if (res.status === 401) {
-    clearSession();
-    if (typeof window !== "undefined") window.location.href = "/login";
+    // In share mode there's no session to clear and nowhere to log in.
+    if (!shareToken) {
+      clearSession();
+      if (typeof window !== "undefined") window.location.href = "/login";
+    }
     throw new APIError(401, "unauthorized");
   }
   if (!res.ok) {
@@ -221,9 +237,11 @@ export function reportURL(runId: string): string {
   return `${API_BASE}/api/v1/runs/${runId}/report.html?token=${encodeURIComponent(token)}`;
 }
 
-// shareReportURL builds the public (no-login) report link from a share token.
-export function shareReportURL(runId: string, shareToken: string): string {
-  return `${API_BASE}/api/v1/runs/${runId}/report.html?share=${encodeURIComponent(shareToken)}`;
+// shareRunURL builds the public (no-login) link to the real, interactive run
+// page, carrying the share token so its read requests are authorized.
+export function shareRunURL(runId: string, shareToken: string): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `${origin}/runs/${runId}?share=${encodeURIComponent(shareToken)}`;
 }
 
 // liveSocketURL builds the WebSocket URL for a run's live stream, carrying the

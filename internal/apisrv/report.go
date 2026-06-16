@@ -76,7 +76,12 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 	if len(shortID) > 8 {
 		shortID = shortID[:8]
 	}
+	printLabel := "打印 / 存为 PDF"
+	if r.URL.Query().Get("lang") == "en" {
+		printLabel = "Print / Save PDF"
+	}
 	data := reportData{
+		PrintLabel:  printLabel,
 		Name:        orDefault(run.Name, shortID),
 		RunID:       runID,
 		Status:      run.Status,
@@ -105,6 +110,9 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The print button needs an inline handler; relax the (otherwise script-less)
+	// CSP for this self-contained, asset-free page so window.print() can run.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := reportTmpl.Execute(w, data); err != nil {
 		s.log.Warn("report render failed", "run", runID, "err", err)
@@ -120,14 +128,14 @@ type reportCheck struct {
 }
 
 type reportData struct {
-	Name, RunID, Status, Creator, Started, Ended string
-	DurationS, AvgQPS, ErrorPct                  float64
-	P50, P90, P95, P99                           float64
-	Total                                        int64
-	AutoStopped                                  bool
-	Reason, Snapshot                             string
-	QPSPath, P95Path                             template.HTML
-	Checks                                       []reportCheck
+	Name, RunID, Status, Creator, Started, Ended, PrintLabel string
+	DurationS, AvgQPS, ErrorPct                              float64
+	P50, P90, P95, P99                                       float64
+	Total                                                    int64
+	AutoStopped                                              bool
+	Reason, Snapshot                                         string
+	QPSPath, P95Path                                         template.HTML
+	Checks                                                   []reportCheck
 }
 
 func orDefault(s, d string) string {
@@ -203,7 +211,7 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!doctype html>
 <body><div class="wrap">
   <h1>{{.Name}}</h1>
   <div class="mut">{{.RunID}} · <span class="badge">{{.Status}}</span> · {{.Creator}} · {{.Started}} → {{.Ended}}</div>
-  <button class="btn no-print" onclick="window.print()">打印 / 存为 PDF · Print / Save PDF</button>
+  <button class="btn no-print" onclick="window.print()">{{.PrintLabel}}</button>
   {{if .AutoStopped}}<div class="warn" style="margin-top:12px">⚠ {{.Reason}}</div>{{end}}
 
   <div class="panel"><div class="grid">
