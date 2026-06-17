@@ -9,7 +9,9 @@
   --border-strong: #2d3f5e;
   --text: #eef3fa;
   --text-2: #aebbd0;
-  --muted: #6f7d96;
+  /* Muted: lifted from #6f7d96 to clear WCAG AA (~4.5:1) for small text on the
+     near-black bg/panels — captions, IDs and table headers were borderline. */
+  --muted: #8492ab;
   --accent: #36d6e7;
   --accent-soft: rgba(54, 214, 231, 0.14);
   --accent-2: #7c8cf8;
@@ -40,6 +42,22 @@
   --radius-sm: 6px;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Type scale — a single ramp so sizes are never ad-hoc. display→caption plus
+     two data sizes for mono readouts. line-heights pair with each step. */
+  --fs-display: 28px;
+  --fs-h1: 22px;
+  --fs-h2: 18px;
+  --fs-body: 14px;
+  --fs-sm: 13px;
+  --fs-caption: 12px;
+  --fs-micro: 11px;
+  --fs-readout: 22px; /* large mono metric value */
+
+  /* Motion durations — one rhythm for the whole UI. */
+  --t-fast: 120ms;
+  --t-base: 160ms;
+  --t-slow: 280ms;
 }
 
 /* Light theme: same instrument language on paper-white surfaces. The accent
@@ -286,19 +304,30 @@ a:hover {
 }
 
 h1 {
-  font-size: 28px;
+  font-size: var(--fs-display);
   font-weight: 700;
   letter-spacing: -0.03em;
   margin: 0 0 var(--s5);
   animation: rise 0.4s var(--ease) both;
 }
 h2 {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin: 0 0 var(--s4);
   color: var(--text-2);
+}
+/* Caption / readout helpers so components stop hardcoding sizes. */
+.caption {
+  font-size: var(--fs-caption);
+  color: var(--muted);
+}
+.readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-readout);
+  font-weight: 600;
 }
 
 /* --- tables ------------------------------------------------------------ */
@@ -583,7 +612,7 @@ button.sm {
 .metric .value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 22px;
+  font-size: var(--fs-readout);
   font-weight: 600;
   margin-top: 5px;
 }
@@ -684,8 +713,8 @@ pre {
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .id-chip:hover {
-  background: var(--surface-2, rgba(127, 127, 127, 0.1));
-  color: var(--fg);
+  background: var(--accent-soft);
+  color: var(--text);
   border-color: var(--accent);
 }
 .id-chip code {

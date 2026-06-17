@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import LineChart, { formatElapsed } from "@/components/LineChart";
+import EntityPicker from "@/components/EntityPicker";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
@@ -15,88 +16,9 @@ interface Side {
   series: SeriesPoint[];
 }
 
-// RunPicker is a searchable combobox (input + datalist): typing filters the
-// options inline across run name, 用例 (test) name, status, date and id — so a
-// run is findable however the user remembers it, with substring (not exact)
-// matching. The id suffix keeps each option's display value unique so the
-// chosen text maps back to exactly one run.
-function RunPicker({
-  label,
-  value,
-  onChange,
-  runs,
-  testName,
-  statusText,
-  placeholder,
-  listId,
-}: {
-  label: string;
-  value: string;
-  onChange: (id: string) => void;
-  runs: Run[];
-  testName: (r: Run) => string;
-  statusText: (s: string) => string;
-  placeholder: string;
-  listId: string;
-}) {
-  const display = (r: Run) => {
-    const tn = testName(r);
-    const name = r.name || r.id.slice(0, 8);
-    const head = tn && !name.includes(tn) ? `${tn} · ${name}` : name;
-    return `${head} · ${statusText(r.status)} · ${new Date(r.created_at).toLocaleString()} · ${r.id.slice(0, 8)}`;
-  };
-  // Resolve whatever the user typed/pasted to a run: a picked dropdown label, a
-  // full UUID (what the detail page's copy button yields), or the short 8-char
-  // form shown in the chip. Without the id cases, pasting the copied long ID
-  // matched nothing.
-  const resolve = (raw: string): Run | undefined => {
-    const v = raw.trim();
-    if (!v) return undefined;
-    const lower = v.toLowerCase();
-    return (
-      runs.find((x) => display(x) === v) ||
-      runs.find((x) => x.id.toLowerCase() === lower) ||
-      runs.find((x) => x.id.slice(0, 8).toLowerCase() === lower)
-    );
-  };
-  const [text, setText] = useState("");
-  useEffect(() => {
-    const r = runs.find((x) => x.id === value);
-    // Keep an out-of-window id (a valid run not in the loaded list) visible
-    // rather than blanking the field after it resolves.
-    setText(r ? display(r) : value);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, runs.length]);
-  return (
-    <div style={{ flex: "1 1 0", minWidth: 0 }}>
-      <label>{label}</label>
-      <input
-        list={listId}
-        value={text}
-        placeholder={placeholder}
-        onChange={(e) => {
-          setText(e.target.value);
-          const r = resolve(e.target.value);
-          if (r) {
-            onChange(r.id);
-          } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.target.value.trim())) {
-            // A full UUID that isn't in the loaded window (older than the last
-            // 500): accept it directly — getRun() will fetch it on selection.
-            onChange(e.target.value.trim());
-          } else {
-            onChange("");
-          }
-        }}
-        style={{ width: "100%" }}
-      />
-      <datalist id={listId}>
-        {runs.map((r) => (
-          <option key={r.id} value={display(r)} />
-        ))}
-      </datalist>
-    </div>
-  );
-}
+// A full UUID (what the run detail page's copy button yields) that may be
+// outside the loaded window — accept it so getRun() fetches it on selection.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function metricsOf(r?: Run) {
   const s = r?.summary?.summary;
@@ -134,6 +56,17 @@ function CompareInner() {
   // runs are often named "<test> @ <time>", but a custom-named run would
   // otherwise be unfindable by its test name.
   const testName = (r: Run) => tests.find((td) => td.id === r.test_def_id)?.name ?? "";
+
+  // How a run reads in the picker (test name first so prefix-matching browsers
+  // find it by 用例), and every string the typed/pasted value may match.
+  const runLabel = (r: Run) => {
+    const tn = testName(r);
+    const name = r.name || r.id.slice(0, 8);
+    const head = tn && !name.includes(tn) ? `${tn} · ${name}` : name;
+    return `${head} · ${statusLabel(t, r.status)} · ${new Date(r.created_at).toLocaleString()} · ${r.id.slice(0, 8)}`;
+  };
+  const runKeys = (r: Run) => [r.id, r.id.slice(0, 8), r.name ?? "", testName(r)].filter(Boolean);
+  const acceptId = (raw: string) => (UUID_RE.test(raw) ? raw : undefined);
 
   useEffect(() => {
     if (!aId) return;
@@ -198,26 +131,36 @@ function CompareInner() {
         <h1>{t("compare.title")}</h1>
         <div className="panel">
           <div className="row">
-            <RunPicker
-              label={t("compare.runA")}
-              value={aId}
-              onChange={setAId}
-              runs={runs}
-              testName={testName}
-              statusText={(s) => statusLabel(t, s)}
-              placeholder={t("compare.filterPh")}
-              listId="compare-a"
-            />
-            <RunPicker
-              label={t("compare.runB")}
-              value={bId}
-              onChange={setBId}
-              runs={runs}
-              testName={testName}
-              statusText={(s) => statusLabel(t, s)}
-              placeholder={t("compare.filterPh")}
-              listId="compare-b"
-            />
+            <div style={{ flex: "1 1 0", minWidth: 0 }}>
+              <label>{t("compare.runA")}</label>
+              <EntityPicker
+                items={runs}
+                value={aId}
+                onChange={setAId}
+                idOf={(r) => r.id}
+                label={runLabel}
+                keys={runKeys}
+                accept={acceptId}
+                placeholder={t("compare.filterPh")}
+                listId="compare-a"
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div style={{ flex: "1 1 0", minWidth: 0 }}>
+              <label>{t("compare.runB")}</label>
+              <EntityPicker
+                items={runs}
+                value={bId}
+                onChange={setBId}
+                idOf={(r) => r.id}
+                label={runLabel}
+                keys={runKeys}
+                accept={acceptId}
+                placeholder={t("compare.filterPh")}
+                listId="compare-b"
+                style={{ width: "100%" }}
+              />
+            </div>
           </div>
         </div>
 

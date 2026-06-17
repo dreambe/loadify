@@ -8,6 +8,7 @@ import Icon from "@/components/Icon";
 import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
+import EntityPicker from "@/components/EntityPicker";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
@@ -28,32 +29,18 @@ function TestPicker({
   placeholder: string;
   listId: string;
 }) {
-  const label = (td: TestDefinition) => `${td.name} (${td.protocol})`;
-  const [text, setText] = useState("");
-  useEffect(() => {
-    const td = tests.find((x) => x.id === value);
-    setText(td ? label(td) : "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, tests.length]);
   return (
-    <>
-      <input
-        list={listId}
-        value={text}
-        placeholder={placeholder}
-        onChange={(e) => {
-          setText(e.target.value);
-          const td = tests.find((x) => label(x) === e.target.value);
-          onChange(td ? td.id : "");
-        }}
-        style={{ width: 260 }}
-      />
-      <datalist id={listId}>
-        {tests.map((td) => (
-          <option key={td.id} value={label(td)} />
-        ))}
-      </datalist>
-    </>
+    <EntityPicker
+      items={tests}
+      value={value}
+      onChange={onChange}
+      idOf={(td) => td.id}
+      label={(td) => `${td.name} (${td.protocol})`}
+      keys={(td) => [td.id, td.name]}
+      placeholder={placeholder}
+      listId={listId}
+      style={{ width: 260 }}
+    />
   );
 }
 
