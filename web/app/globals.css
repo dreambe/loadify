@@ -665,6 +665,33 @@ pre {
   font-family: var(--font-mono);
 }
 
+/* Copyable identifier chip (e.g. a run ID) — monospace, subtle, click to copy.
+   Reads as inline metadata, not a button, until hovered. */
+.id-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 6px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.6;
+  vertical-align: baseline;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.id-chip:hover {
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.id-chip code {
+  font-family: var(--font-mono);
+}
+
 /* Small inline spinner for waiting states (e.g. a queued run). */
 .spinner {
   display: inline-block;

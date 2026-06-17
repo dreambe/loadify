@@ -175,6 +175,24 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             {t("run.creator")}: {run.creator_name || t("run.creatorSystem")}
             {" · "}
             {t("runs.colStarted")}: {run.started_at ? new Date(run.started_at).toLocaleString() : "–"}
+            {" · "}
+            <span title={runId}>ID: </span>
+            <button
+              type="button"
+              className="id-chip"
+              title={t("run.copyId")}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(runId);
+                  toast.success(t("run.idCopied"));
+                } catch {
+                  toast.error(t("run.shareFailed"));
+                }
+              }}
+            >
+              <code>{runId.slice(0, 8)}</code>
+              <Icon name="copy" size={12} />
+            </button>
           </div>
         )}
         {run?.summary?.auto_stopped && (
