@@ -143,6 +143,7 @@ function CompareInner() {
                 accept={acceptId}
                 placeholder={t("compare.filterPh")}
                 listId="compare-a"
+                testId="compare-a"
                 style={{ width: "100%" }}
               />
             </div>
@@ -158,6 +159,7 @@ function CompareInner() {
                 accept={acceptId}
                 placeholder={t("compare.filterPh")}
                 listId="compare-b"
+                testId="compare-b"
                 style={{ width: "100%" }}
               />
             </div>

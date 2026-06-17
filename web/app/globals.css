@@ -675,6 +675,49 @@ button.sm {
   transform: translateX(-50%) translateY(0);
 }
 
+/* --- combobox (EntityPicker) ------------------------------------------------ */
+
+/* A controlled searchable dropdown that replaces the native <datalist> (which
+   the browser renders unstyled and lets overflow/detach from the input). */
+.combo-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 300px;
+  overflow: auto;
+  background: var(--surface-pop);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  animation: menu-in 0.14s var(--ease) both;
+}
+.combo-opt {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-opt.active {
+  background: var(--accent-soft);
+}
+.combo-opt[aria-selected="true"] {
+  color: var(--accent);
+}
+.combo-empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
 /* --- misc ------------------------------------------------------------------ */
 
 .row {

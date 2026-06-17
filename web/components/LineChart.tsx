@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/Toast";
 
 // LineChart is a dependency-free SVG line chart for one or more series sharing
 // the same x-axis. `xLabels` gives each point an x-axis label (e.g. elapsed
@@ -30,42 +31,84 @@ export default function LineChart({
   onHover?: (i: number | null) => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const svgRef = useRef<SVGSVGElement>(null);
   const width = 760;
   const pad = { top: 10, right: 12, bottom: 22, left: 48 };
 
-  // exportPNG rasterizes the chart SVG to a PNG download. CSS variables don't
-  // resolve inside a standalone SVG image, so every var(--x) — including the
-  // series colors (e.g. var(--yellow)) and the area gradient — must be replaced
-  // with its concrete value first, or the data line renders invisible.
+  // exportPNG rasterizes the chart SVG to a PNG download. Hardened so it can
+  // never silently do nothing:
+  //  - color CSS vars are inlined (presentation attributes don't resolve var());
+  //  - font-family attrs are dropped (their var(--font-*) can't resolve in a
+  //    standalone SVG and the nested var made the <img> fail to load → silent);
+  //  - the SVG loads from a blob: URL and the PNG downloads via an object URL on
+  //    an anchor attached to the DOM (a detached anchor + big data-URL is ignored
+  //    by some Chrome builds);
+  //  - onerror / catch surface a toast instead of failing quietly.
   function exportPNG() {
     const svg = svgRef.current;
-    if (!svg) return;
-    const cs = getComputedStyle(document.documentElement);
-    const clone = svg.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("width", String(width));
-    clone.setAttribute("height", String(height));
-    const raw = new XMLSerializer().serializeToString(clone);
-    const s = inlineCssVars(raw, (name) => cs.getPropertyValue(name).trim());
-    const bg = cs.getPropertyValue("--panel").trim() || "#0e1522";
-    const img = new Image();
-    img.onload = () => {
-      const scale = 2;
-      const canvas = document.createElement("canvas");
-      canvas.width = width * scale;
-      canvas.height = height * scale;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0, width, height);
-      const a = document.createElement("a");
-      a.download = "loadify-chart.png";
-      a.href = canvas.toDataURL("image/png");
-      a.click();
-    };
-    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(s)));
+    if (!svg) {
+      toast.error(t("chart.exportFailed"));
+      return;
+    }
+    let svgURL = "";
+    try {
+      const cs = getComputedStyle(document.documentElement);
+      const clone = svg.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("width", String(width));
+      clone.setAttribute("height", String(height));
+      clone.querySelectorAll("[font-family]").forEach((el) => el.removeAttribute("font-family"));
+      const raw = new XMLSerializer().serializeToString(clone);
+      const s = inlineCssVars(raw, (name) => cs.getPropertyValue(name).trim());
+      const bg = cs.getPropertyValue("--panel").trim() || "#0e1522";
+      svgURL = URL.createObjectURL(new Blob([s], { type: "image/svg+xml;charset=utf-8" }));
+
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("no 2d context");
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              toast.error(t("chart.exportFailed"));
+              return;
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.download = "loadify-chart.png";
+            a.href = url;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          }, "image/png");
+        } catch (err) {
+          console.error("chart PNG export failed", err);
+          toast.error(t("chart.exportFailed"));
+        } finally {
+          URL.revokeObjectURL(svgURL);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(svgURL);
+        console.error("chart PNG export: SVG failed to load");
+        toast.error(t("chart.exportFailed"));
+      };
+      img.src = svgURL;
+    } catch (err) {
+      if (svgURL) URL.revokeObjectURL(svgURL);
+      console.error("chart PNG export failed", err);
+      toast.error(t("chart.exportFailed"));
+    }
   }
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;

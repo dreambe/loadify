@@ -39,6 +39,7 @@ function TestPicker({
       keys={(td) => [td.id, td.name]}
       placeholder={placeholder}
       listId={listId}
+      testId={listId}
       style={{ width: 260 }}
     />
   );

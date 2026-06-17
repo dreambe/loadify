@@ -52,9 +52,32 @@ test("run ID copied on the detail page resolves in the compare picker", async ({
   // table appears only when both sides resolved — this is exactly the short/long
   // ID bug that shipped before.
   await page.goto("/compare");
-  await page.locator('input[list="compare-a"]').fill(runId);
-  await page.locator('input[list="compare-b"]').fill(runId);
+  await page.getByTestId("compare-a").fill(runId);
+  await page.getByTestId("compare-b").fill(runId);
   await expect(page.getByText(/p95/i).first()).toBeVisible();
+});
+
+test("compare picker dropdown filters, stays in the panel, and selects", async ({ page }) => {
+  await page.goto("/compare");
+  const a = page.getByTestId("compare-a");
+  await a.click();
+  // Custom dropdown (not native datalist) must appear as a listbox in the DOM.
+  const list = page.locator('ul.combo-list[role="listbox"]').first();
+  await expect(list).toBeVisible();
+  // It must be contained, not overflowing far past the viewport.
+  const box = await list.boundingBox();
+  const vw = page.viewportSize()!.width;
+  expect(box!.x + box!.width).toBeLessThanOrEqual(vw + 1);
+  // Typing filters the options (substring), then a click selects one.
+  const optCount = await page.locator(".combo-opt").count();
+  if (optCount > 0) {
+    await a.fill("shark");
+    await expect(page.locator(".combo-opt").first()).toBeVisible();
+    await page.locator(".combo-opt").first().click();
+    // Selection populates the field and closes the dropdown.
+    await expect(list).toBeHidden();
+    expect(await a.inputValue()).not.toBe("shark");
+  }
 });
 
 test("chart PNG export contains the rendered data, not a blank canvas", async ({ page }) => {
