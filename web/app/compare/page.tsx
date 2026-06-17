@@ -8,11 +8,70 @@ import { useAuth } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
 import { compareColors } from "@/lib/colors";
-import type { Run, SeriesPoint } from "@/lib/types";
+import type { Run, SeriesPoint, TestDefinition } from "@/lib/types";
 
 interface Side {
   run?: Run;
   series: SeriesPoint[];
+}
+
+// RunPicker is a searchable combobox (input + datalist): typing filters the
+// options inline across run name, 用例 (test) name, status, date and id — so a
+// run is findable however the user remembers it, with substring (not exact)
+// matching. The id suffix keeps each option's display value unique so the
+// chosen text maps back to exactly one run.
+function RunPicker({
+  label,
+  value,
+  onChange,
+  runs,
+  testName,
+  statusText,
+  placeholder,
+  listId,
+}: {
+  label: string;
+  value: string;
+  onChange: (id: string) => void;
+  runs: Run[];
+  testName: (r: Run) => string;
+  statusText: (s: string) => string;
+  placeholder: string;
+  listId: string;
+}) {
+  const display = (r: Run) => {
+    const tn = testName(r);
+    const name = r.name || r.id.slice(0, 8);
+    const head = tn && !name.includes(tn) ? `${tn} · ${name}` : name;
+    return `${head} · ${statusText(r.status)} · ${new Date(r.created_at).toLocaleString()} · ${r.id.slice(0, 8)}`;
+  };
+  const [text, setText] = useState("");
+  useEffect(() => {
+    const r = runs.find((x) => x.id === value);
+    setText(r ? display(r) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, runs.length]);
+  return (
+    <div style={{ flex: "1 1 0", minWidth: 0 }}>
+      <label>{label}</label>
+      <input
+        list={listId}
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setText(e.target.value);
+          const r = runs.find((x) => display(x) === e.target.value);
+          onChange(r ? r.id : "");
+        }}
+        style={{ width: "100%" }}
+      />
+      <datalist id={listId}>
+        {runs.map((r) => (
+          <option key={r.id} value={display(r)} />
+        ))}
+      </datalist>
+    </div>
+  );
 }
 
 function metricsOf(r?: Run) {
@@ -33,16 +92,24 @@ function metricsOf(r?: Run) {
 function CompareInner() {
   const { t } = useI18n();
   const [runs, setRuns] = useState<Run[]>([]);
+  const [tests, setTests] = useState<TestDefinition[]>([]);
   const [aId, setAId] = useState("");
   const [bId, setBId] = useState("");
   const [a, setA] = useState<Side>({ series: [] });
   const [b, setB] = useState<Side>({ series: [] });
   const [hover, setHover] = useState<number | null>(null);
-  const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    api.listRuns().then(setRuns).catch(() => {});
+    // Pull a deep history so older runs are searchable here, not just the last
+    // 100 the runs list shows.
+    api.listRuns(500).then(setRuns).catch(() => {});
+    api.listTests().then(setTests).catch(() => {});
   }, []);
+
+  // Map a run to its test (用例) name so the picker can search and label by it —
+  // runs are often named "<test> @ <time>", but a custom-named run would
+  // otherwise be unfindable by its test name.
+  const testName = (r: Run) => tests.find((td) => td.id === r.test_def_id)?.name ?? "";
 
   useEffect(() => {
     if (!aId) return;
@@ -91,36 +158,6 @@ function CompareInner() {
     );
   }
 
-  // Filter the run list so the pickers stay usable when there are many runs.
-  const q = filter.trim().toLowerCase();
-  const filteredRuns = q
-    ? runs.filter((r) =>
-        `${r.name ?? ""} ${r.id} ${r.status} ${new Date(r.created_at).toLocaleString()}`
-          .toLowerCase()
-          .includes(q)
-      )
-    : runs;
-
-  function picker(label: string, value: string, set: (v: string) => void) {
-    // Keep the currently-selected run visible even if it's filtered out.
-    const opts = value && !filteredRuns.some((r) => r.id === value)
-      ? [...runs.filter((r) => r.id === value), ...filteredRuns]
-      : filteredRuns;
-    return (
-      <div style={{ flex: "1 1 0", minWidth: 0 }}>
-        <label>{label}</label>
-        <select value={value} onChange={(e) => set(e.target.value)} style={{ width: "100%" }}>
-          <option value="">{t("compare.select")}</option>
-          {opts.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name || r.id.slice(0, 8)} · {statusLabel(t, r.status)} · {new Date(r.created_at).toLocaleString()}
-            </option>
-          ))}
-        </select>
-      </div>
-    );
-  }
-
   const rows: { key: string; label: string; av: number; bv: number; fmt: (n: number) => string }[] = [
     { key: "total", label: t("compare.total"), av: ma.total, bv: mb.total, fmt: (n) => n.toLocaleString() },
     { key: "error", label: t("compare.errorRate"), av: ma.error_rate, bv: mb.error_rate, fmt: (n) => n.toFixed(2) + "%" },
@@ -136,17 +173,27 @@ function CompareInner() {
       <div className="container">
         <h1>{t("compare.title")}</h1>
         <div className="panel">
-          <div className="field" style={{ maxWidth: 360 }}>
-            <label>{t("compare.filter")}</label>
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder={t("compare.filterPh")}
-            />
-          </div>
           <div className="row">
-            {picker(t("compare.runA"), aId, setAId)}
-            {picker(t("compare.runB"), bId, setBId)}
+            <RunPicker
+              label={t("compare.runA")}
+              value={aId}
+              onChange={setAId}
+              runs={runs}
+              testName={testName}
+              statusText={(s) => statusLabel(t, s)}
+              placeholder={t("compare.filterPh")}
+              listId="compare-a"
+            />
+            <RunPicker
+              label={t("compare.runB")}
+              value={bId}
+              onChange={setBId}
+              runs={runs}
+              testName={testName}
+              statusText={(s) => statusLabel(t, s)}
+              placeholder={t("compare.filterPh")}
+              listId="compare-b"
+            />
           </div>
         </div>
 

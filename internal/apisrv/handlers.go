@@ -716,7 +716,16 @@ func (s *Server) evaluateThresholds(ctx context.Context, runID string, summary s
 func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
-	runs, err := s.pg.ListRuns(ctx, 100)
+	// Default 100 most-recent runs; callers (e.g. the compare picker) may request
+	// a deeper history via ?limit=, capped so a huge value can't hammer the DB.
+	limit := 100
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
+		if limit > 1000 {
+			limit = 1000
+		}
+	}
+	runs, err := s.pg.ListRuns(ctx, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

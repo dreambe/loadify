@@ -158,7 +158,7 @@ export const api = {
       body: JSON.stringify({ format, content }),
     }),
 
-  listRuns: () => reqList<Run>("/api/v1/runs"),
+  listRuns: (limit?: number) => reqList<Run>(`/api/v1/runs${limit ? `?limit=${limit}` : ""}`),
   getRun: (id: string) => req<Run>(`/api/v1/runs/${id}`),
   startRun: (testId: string, desiredWorkers: number, name = "", environmentId = "") =>
     req<{ run_id: string; status: string }>("/api/v1/runs", {
