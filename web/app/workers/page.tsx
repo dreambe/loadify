@@ -62,7 +62,7 @@ export default function WorkersPage() {
                   <td>{w.worker_id}</td>
                   <td>{w.region}</td>
                   <td>
-                    <span className={`badge ${w.status === "healthy" ? "running" : "failed"}`}>
+                    <span className={`badge ${w.status === "healthy" ? "ok" : "failed"}`}>
                       {statusLabel(t, w.status)}
                     </span>
                   </td>

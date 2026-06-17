@@ -192,7 +192,7 @@ export default function UsersPage() {
                           {u.disabled ? (
                             <span className="badge failed">{t("users.disabled")}</span>
                           ) : (
-                            <span className="badge completed">{t("users.active")}</span>
+                            <span className="badge ok">{t("users.active")}</span>
                           )}
                         </td>
                         <td className="muted">

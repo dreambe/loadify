@@ -450,7 +450,7 @@ export default function HttpRequestBuilder({
           ) : (
             <>
               <div className="row" style={{ alignItems: "center", marginBottom: 8 }}>
-                <span className={`badge ${debug.status < 400 ? "completed" : "failed"}`}>
+                <span className={`badge ${debug.status < 400 ? "ok" : "failed"}`}>
                   {debug.status} {debug.status_text}
                 </span>
                 <span className="muted" style={{ fontFamily: "var(--font-mono)" }}>

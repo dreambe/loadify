@@ -143,7 +143,7 @@ function slaBadge(r: Run, t: (k: string) => string) {
     return <span className="muted">{t("dashboard.slaNa")}</span>;
   }
   return r.summary.passed ? (
-    <span className="badge completed">{t("dashboard.slaOk")}</span>
+    <span className="badge ok">{t("dashboard.slaOk")}</span>
   ) : (
     <span className="badge failed">{t("dashboard.slaFail")}</span>
   );

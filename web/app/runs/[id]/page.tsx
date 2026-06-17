@@ -272,7 +272,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
               <div className="panel">
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <h2 style={{ margin: 0 }}>{t("run.sla")}</h2>
-                  <span className={`badge ${run.summary.passed ? "completed" : "failed"}`}>
+                  <span className={`badge ${run.summary.passed ? "ok" : "failed"}`}>
                     {run.summary.passed ? t("run.passed") : t("run.failed")}
                   </span>
                 </div>
@@ -305,7 +305,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <h2 style={{ margin: 0 }}>{t("run.vsBaseline")}</h2>
                   <div className="row" style={{ alignItems: "center" }}>
-                    <span className={`badge ${run?.summary?.regressed ? "failed" : "completed"}`}>
+                    <span className={`badge ${run?.summary?.regressed ? "failed" : "ok"}`}>
                       {run?.summary?.regressed ? t("run.regressed") : t("run.noRegress")}
                     </span>
                     {canStop && (

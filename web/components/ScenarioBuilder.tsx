@@ -477,7 +477,7 @@ export default function ScenarioBuilder({
                   <div className="row" style={{ alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <span className="row" style={{ alignItems: "center", gap: 8 }}>
                       <span className="muted" style={{ fontSize: 11 }}>{t("debug.response")}</span>
-                      <span className={`badge ${debug[i].ok ? "completed" : "failed"}`}>
+                      <span className={`badge ${debug[i].ok ? "ok" : "failed"}`}>
                         {debug[i].status} {debug[i].ok ? t("debug.ok") : debug[i].errorKind || t("debug.fail")}
                       </span>
                       <span className="muted" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
