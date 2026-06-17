@@ -505,9 +505,9 @@ button.sm {
   box-shadow: 0 0 8px var(--green);
 }
 .badge.completed {
-  color: var(--accent);
-  border-color: rgba(54, 214, 231, 0.45);
-  background: rgba(54, 214, 231, 0.1);
+  color: var(--green);
+  border-color: rgba(61, 220, 151, 0.45);
+  background: rgba(61, 220, 151, 0.1);
 }
 .badge.failed,
 .badge.aborted {
@@ -520,6 +520,12 @@ button.sm {
   color: var(--yellow);
   border-color: rgba(255, 200, 87, 0.45);
   background: rgba(255, 200, 87, 0.1);
+}
+/* Stopped is a manual halt — neutral, neither success nor failure. */
+.badge.stopped {
+  color: var(--muted);
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
 
 @keyframes pulse {
