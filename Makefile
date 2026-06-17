@@ -2,7 +2,7 @@ SHELL := /bin/bash
 GOPATH_BIN := $(shell go env GOPATH)/bin
 BINS := apisrv coordinatord workerd loadifyctl loadify-mcp
 
-.PHONY: all build proto tidy test vet lint run-echo clean help web-install web-build web-dev helm-lint
+.PHONY: all build proto tidy test vet lint run-echo clean help web-install web-build web-dev helm-lint e2e e2e-up e2e-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -43,6 +43,15 @@ web-dev: ## Run the frontend dev server
 
 helm-lint: ## Lint the Helm chart (requires helm)
 	helm lint deploy/helm/loadify
+
+e2e-up: ## Bring up the full stack for E2E (docker compose)
+	cd deploy/compose && docker compose up -d --build
+
+e2e-down: ## Tear down the E2E stack
+	cd deploy/compose && docker compose down -v
+
+e2e: ## Run the Playwright smoke suite against the running stack (see e2e-up)
+	cd web && npm ci && npm run e2e:install && npm run e2e
 
 clean: ## Remove build artifacts
 	rm -rf bin web/.next web/node_modules

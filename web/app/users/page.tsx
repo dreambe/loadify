@@ -406,13 +406,14 @@ function ApiTokenPanel({ onError, onCopied }: { onError: (m: string) => void; on
   const masked = token ? token.slice(0, 4) + "•".repeat(Math.max(0, token.length - 8)) + token.slice(-4) : "";
 
   return (
-    <div className="panel">
+    <div className="panel" data-testid="api-token-panel">
       <h2>
         {t("users.apiToken")}
         <Help tip={t("users.apiTokenHelp")} />
       </h2>
       <div className="row" style={{ marginTop: 8 }}>
         <input
+          data-testid="api-token-input"
           readOnly
           value={revealed ? token : masked}
           onFocus={(e) => e.currentTarget.select()}
