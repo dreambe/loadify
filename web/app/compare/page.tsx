@@ -45,6 +45,20 @@ function RunPicker({
     const head = tn && !name.includes(tn) ? `${tn} · ${name}` : name;
     return `${head} · ${statusText(r.status)} · ${new Date(r.created_at).toLocaleString()} · ${r.id.slice(0, 8)}`;
   };
+  // Resolve whatever the user typed/pasted to a run: a picked dropdown label, a
+  // full UUID (what the detail page's copy button yields), or the short 8-char
+  // form shown in the chip. Without the id cases, pasting the copied long ID
+  // matched nothing.
+  const resolve = (raw: string): Run | undefined => {
+    const v = raw.trim();
+    if (!v) return undefined;
+    const lower = v.toLowerCase();
+    return (
+      runs.find((x) => display(x) === v) ||
+      runs.find((x) => x.id.toLowerCase() === lower) ||
+      runs.find((x) => x.id.slice(0, 8).toLowerCase() === lower)
+    );
+  };
   const [text, setText] = useState("");
   useEffect(() => {
     const r = runs.find((x) => x.id === value);
@@ -60,8 +74,16 @@ function RunPicker({
         placeholder={placeholder}
         onChange={(e) => {
           setText(e.target.value);
-          const r = runs.find((x) => display(x) === e.target.value);
-          onChange(r ? r.id : "");
+          const r = resolve(e.target.value);
+          if (r) {
+            onChange(r.id);
+          } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.target.value.trim())) {
+            // A full UUID that isn't in the loaded window (older than the last
+            // 500): accept it directly — getRun() will fetch it on selection.
+            onChange(e.target.value.trim());
+          } else {
+            onChange("");
+          }
         }}
         style={{ width: "100%" }}
       />
