@@ -50,6 +50,8 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 		Passed    *bool           `json:"passed"`
 		Reason    string          `json:"reason"`
 		Stopped   bool            `json:"auto_stopped"`
+		Saturated bool            `json:"generator_saturated"`
+		PeakCPU   float64         `json:"peak_cpu_pct"`
 		RawChecks json.RawMessage `json:"checks"`
 	}
 	_ = json.Unmarshal(run.Summary, &summary)
@@ -98,6 +100,8 @@ func (s *Server) handleRunReport(w http.ResponseWriter, r *http.Request) {
 		P99:         summary.Summary.P99ms,
 		AutoStopped: summary.Stopped,
 		Reason:      summary.Reason,
+		Saturated:   summary.Saturated,
+		PeakCPU:     summary.PeakCPU,
 		QPSPath:     svgPath(series, func(p store.SeriesPoint) float64 { return p.RPS }),
 		P95Path:     svgPath(series, func(p store.SeriesPoint) float64 { return p.P95ms }),
 	}
@@ -132,7 +136,8 @@ type reportData struct {
 	DurationS, AvgQPS, ErrorPct                              float64
 	P50, P90, P95, P99                                       float64
 	Total                                                    int64
-	AutoStopped                                              bool
+	AutoStopped, Saturated                                   bool
+	PeakCPU                                                  float64
 	Reason, Snapshot                                         string
 	QPSPath, P95Path                                         template.HTML
 	Checks                                                   []reportCheck
@@ -213,6 +218,7 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!doctype html>
   <div class="mut">{{.RunID}} · <span class="badge">{{.Status}}</span> · {{.Creator}} · {{.Started}} → {{.Ended}}</div>
   <button class="btn no-print" onclick="window.print()">{{.PrintLabel}}</button>
   {{if .AutoStopped}}<div class="warn" style="margin-top:12px">⚠ {{.Reason}}</div>{{end}}
+  {{if .Saturated}}<div class="warn" style="margin-top:12px">⚠ Load generator may have been the bottleneck (peak node CPU {{printf "%.0f" .PeakCPU}}%); latency may reflect the generator, not the target.</div>{{end}}
 
   <div class="panel"><div class="grid">
     <div class="cell"><div class="l">Total requests</div><div class="v">{{.Total}}</div></div>

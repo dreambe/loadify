@@ -543,6 +543,11 @@ func (s *Server) watchRun(runID string, alert plan.AlertConfig) {
 // regressP95Pct is the p95 increase over baseline that flags a regression.
 const regressP95Pct = 20.0
 
+// generatorHotCPUPct is the peak per-node CPU utilization (0-100 of total
+// capacity) above which a run is flagged as possibly generator-limited: the
+// measured latency may be the load generator's, not the target's.
+const generatorHotCPUPct = 90.0
+
 // attachBaseline, when the run's test has a baseline run, computes deltas vs the
 // baseline and writes baseline/regressed into the summary payload. Best-effort.
 func (s *Server) attachBaseline(ctx context.Context, runID string, total int64, summary store.SeriesPoint, payload map[string]any) {
@@ -604,6 +609,17 @@ func (s *Server) finalizeRunReason(runID, status, reason string) {
 	if reason != "" {
 		payload["auto_stopped"] = true
 		payload["reason"] = reason
+	}
+	// Generator honesty: if the coordinator reports the load generator dropped
+	// work or ran hot, flag it so a "green" result that may reflect the
+	// generator's limits (not the target's) is not read as conclusive.
+	if st, gerr := s.coord.GetRunState(sctx, &loadifyv1.RunStateRequest{RunId: runID}); gerr == nil {
+		if st.DroppedIterations > 0 || st.DroppedMetrics > 0 || st.PeakCpuPct >= generatorHotCPUPct {
+			payload["generator_saturated"] = true
+			payload["dropped_iterations"] = st.DroppedIterations
+			payload["dropped_metrics"] = st.DroppedMetrics
+			payload["peak_cpu_pct"] = st.PeakCpuPct
+		}
 	}
 	if passed, checks, ok := s.evaluateThresholds(sctx, runID, summary, total); ok {
 		payload["passed"] = passed

@@ -71,6 +71,12 @@ export interface RunSummary {
   reason?: string;
   metrics_degraded?: boolean;
   metrics_error?: string;
+  // The load generator itself was a bottleneck: it dropped work or ran hot, so
+  // results may reflect the generator's limits, not the target's.
+  generator_saturated?: boolean;
+  dropped_iterations?: number;
+  dropped_metrics?: number;
+  peak_cpu_pct?: number;
   regressed?: boolean;
   baseline?: {
     run_id: string;

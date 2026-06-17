@@ -72,6 +72,13 @@ message RunState {
   // estimate of how long until a slot frees (0 when unknown / not queued).
   int32 queue_position = 8;
   int64 queue_eta_ms = 9;
+  // Generator-saturation signals aggregated across the run's workers: dropped
+  // iterations/metrics and the peak per-node CPU utilization (0-100 of total
+  // capacity). Used to flag a result that may reflect the load generator's
+  // limits rather than the target's.
+  int64 dropped_iterations = 10;
+  int64 dropped_metrics = 11;
+  double peak_cpu_pct = 12;
 }
 
 message CapacityRequest {}

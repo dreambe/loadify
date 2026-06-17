@@ -21,6 +21,10 @@ type runState struct {
 	startedAt time.Time
 	endedAt   time.Time
 	plannedMs int64 // total ramp duration, for queue-ETA estimation
+	// Generator-saturation accounting, aggregated across the run's workers.
+	droppedIterations int64
+	droppedMetrics    int64
+	peakCPUPct        float64 // peak per-node utilization (0-100 of total capacity)
 }
 
 // remainingMs estimates how much of a running run is left, from its planned
@@ -45,6 +49,9 @@ func (r *runState) toProto(activeVUs int64) *loadifyv1.RunState {
 	}
 	rs.ActiveWorkers = int32(len(r.assigned) - len(r.finished))
 	rs.Reason = r.reason
+	rs.DroppedIterations = r.droppedIterations
+	rs.DroppedMetrics = r.droppedMetrics
+	rs.PeakCpuPct = r.peakCPUPct
 	if !r.endedAt.IsZero() {
 		rs.EndedAtUnixMs = r.endedAt.UnixMilli()
 	}

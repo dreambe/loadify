@@ -99,6 +99,18 @@ func (r *Registry) Get(id string) (*Worker, bool) {
 	return w, ok
 }
 
+// Utilization returns a worker's CPU as a 0-100 share of total capacity (the
+// same normalization the admission gate uses), and whether the worker is known.
+func (r *Registry) Utilization(id string) (float64, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	w, ok := r.workers[id]
+	if !ok {
+		return 0, false
+	}
+	return w.cpuUtilization(), true
+}
+
 // Healthy returns the currently healthy workers that support the protocol.
 func (r *Registry) Healthy(proto loadifyv1.Protocol) []*Worker {
 	now := time.Now()

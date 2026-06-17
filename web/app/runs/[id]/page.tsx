@@ -224,6 +224,26 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             <Icon name="warn" /> {t("run.metricsDegraded")}
           </div>
         )}
+        {run?.summary?.generator_saturated && (
+          <div
+            className="error"
+            style={{
+              background: "rgba(255,200,87,.12)",
+              border: "1px solid var(--yellow)",
+              color: "var(--yellow)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: 12,
+            }}
+          >
+            <Icon name="warn" /> {t("run.generatorSaturated")}
+            <div className="caption" style={{ color: "var(--yellow)", marginTop: 4 }}>
+              {run.summary.peak_cpu_pct ? t("run.genPeakCpu").replace("{pct}", run.summary.peak_cpu_pct.toFixed(0)) : ""}
+              {run.summary.dropped_iterations ? " · " + t("run.genDroppedIters").replace("{n}", String(run.summary.dropped_iterations)) : ""}
+              {run.summary.dropped_metrics ? " · " + t("run.genDroppedMetrics").replace("{n}", String(run.summary.dropped_metrics)) : ""}
+            </div>
+          </div>
+        )}
 
         {run?.status === "running" && canStop && (
           <button

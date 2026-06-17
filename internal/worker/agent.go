@@ -241,19 +241,23 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 	close(flushDone)
 	// Saturation in the open model means requests were never issued: surface it
 	// so a "green" run that silently under-delivered its target rate is visible.
+	var droppedIters int64
 	if arr != nil {
-		if d := arr.Dropped(); d > 0 {
-			log.Warn("dropped iterations: worker pool saturated at cap; achieved rate was below target", "dropped", d)
+		if droppedIters = arr.Dropped(); droppedIters > 0 {
+			log.Warn("dropped iterations: worker pool saturated at cap; achieved rate was below target", "dropped", droppedIters)
 		}
 	}
-	if d := a.droppedSend.Swap(0); d > 0 {
-		log.Warn("dropped metric messages: coordinator send buffer was full; reported metrics are incomplete", "dropped", d)
+	droppedMetrics := a.droppedSend.Swap(0)
+	if droppedMetrics > 0 {
+		log.Warn("dropped metric messages: coordinator send buffer was full; reported metrics are incomplete", "dropped", droppedMetrics)
 	}
 	// Final flush.
 	a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Metrics{Metrics: smp.Flush(time.Now())}})
 	a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Finished{Finished: &loadifyv1.RunFinished{
-		RunId:    asg.RunId,
-		WorkerId: a.workerID,
+		RunId:             asg.RunId,
+		WorkerId:          a.workerID,
+		DroppedIterations: droppedIters,
+		DroppedMetrics:    droppedMetrics,
 	}}})
 	a.finishRun(asg.RunId)
 	log.Info("run finished")

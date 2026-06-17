@@ -74,4 +74,10 @@ message RunFinished {
   string run_id = 1;
   string worker_id = 2;
   int64 final_count = 3;
+  // Generator-side honesty signals: requests the open model never issued
+  // because the worker pool was capped, and metric messages dropped because the
+  // send buffer to the coordinator was full. Non-zero means the reported result
+  // under-represents the intended load — surfaced in the run summary.
+  int64 dropped_iterations = 4;
+  int64 dropped_metrics = 5;
 }

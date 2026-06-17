@@ -142,6 +142,7 @@ func (s *Service) Connect(stream loadifyv1.WorkerService_ConnectServer) error {
 			}}
 		case *loadifyv1.WorkerMessage_Heartbeat:
 			s.reg.Touch(m.Heartbeat.WorkerId, m.Heartbeat.ActiveVus, m.Heartbeat.CpuPct, m.Heartbeat.MemBytes)
+			s.recordPeakCPU(m.Heartbeat.WorkerId)
 		case *loadifyv1.WorkerMessage_Metrics:
 			s.ingest(m.Metrics)
 		case *loadifyv1.WorkerMessage_Finished:
@@ -191,6 +192,23 @@ func (s *Service) rehydrate(workerID string, active []*loadifyv1.ActiveRun) {
 	}
 }
 
+// recordPeakCPU folds a worker's current normalized CPU utilization into the
+// peak of every run it's assigned to, so the run summary can flag results that
+// may reflect the load generator's own saturation rather than the target's.
+func (s *Service) recordPeakCPU(workerID string) {
+	util, ok := s.reg.Utilization(workerID)
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	for _, rs := range s.runs {
+		if rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING && rs.assigned[workerID] && util > rs.peakCPUPct {
+			rs.peakCPUPct = util
+		}
+	}
+	s.mu.Unlock()
+}
+
 func (s *Service) workerFinished(f *loadifyv1.RunFinished) {
 	s.mu.Lock()
 	rs := s.runs[f.RunId]
@@ -199,6 +217,8 @@ func (s *Service) workerFinished(f *loadifyv1.RunFinished) {
 		return
 	}
 	rs.finished[f.WorkerId] = true
+	rs.droppedIterations += f.DroppedIterations
+	rs.droppedMetrics += f.DroppedMetrics
 	done := len(rs.finished) >= len(rs.assigned)
 	var cancel context.CancelFunc
 	if done && rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {

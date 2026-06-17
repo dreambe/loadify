@@ -17,6 +17,29 @@ func addWorker(s *Service, id string) {
 	}, make(chan *loadifyv1.CoordinatorMessage, 8))
 }
 
+// TestSaturationAggregation verifies a worker's dropped iterations/metrics are
+// summed into the run state (so the run summary can flag a generator-limited
+// result) and exposed via GetRunState.
+func TestSaturationAggregation(t *testing.T) {
+	s := New(nil, nil)
+	s.SetLimits(4, 0)
+	addWorker(s, "w1")
+	ctx := context.Background()
+	plan := []byte(`{"protocol":"http","http":{"url":"http://x"}}`)
+	if _, err := s.StartRun(ctx, &loadifyv1.StartRunRequest{RunId: "R", Protocol: loadifyv1.Protocol_PROTOCOL_HTTP, PlanJson: plan, Ramp: []*loadifyv1.RampStage{{DurationMs: 1000, TargetVus: 1}}, DesiredWorkers: 1}); err != nil {
+		t.Fatal(err)
+	}
+	s.workerFinished(&loadifyv1.RunFinished{RunId: "R", WorkerId: "w1", DroppedIterations: 12, DroppedMetrics: 3})
+
+	st, err := s.GetRunState(ctx, &loadifyv1.RunStateRequest{RunId: "R"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.DroppedIterations != 12 || st.DroppedMetrics != 3 {
+		t.Fatalf("dropped = (%d,%d), want (12,3)", st.DroppedIterations, st.DroppedMetrics)
+	}
+}
+
 func TestRampDurationMs(t *testing.T) {
 	got := rampDurationMs([]*loadifyv1.RampStage{{DurationMs: 1000}, {DurationMs: 2500}})
 	if got != 3500 {
