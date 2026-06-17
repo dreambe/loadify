@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 // These smoke tests target the "produce here, consume there" seams — the bug
 // class that unit tests and tsc cannot catch (copy an ID / token in one place,
@@ -52,4 +53,46 @@ test("run ID copied on the detail page resolves in the compare picker", async ({
   await page.locator('input[list="compare-a"]').fill(runId);
   await page.locator('input[list="compare-b"]').fill(runId);
   await expect(page.getByText(/p95/i).first()).toBeVisible();
+});
+
+test("chart PNG export contains the rendered data, not a blank canvas", async ({ page }) => {
+  // Open a finished run (its historical charts have an export button + data).
+  await page.goto("/runs");
+  const firstRunLink = page.locator('a[href^="/runs/"]').first();
+  if ((await firstRunLink.count()) === 0) test.skip(true, "no seeded runs available");
+  await firstRunLink.click();
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{8,}/);
+
+  const exportBtn = page.getByRole("button", { name: /导出 PNG|Export PNG/ }).first();
+  await expect(exportBtn).toBeVisible();
+
+  const [download] = await Promise.all([page.waitForEvent("download"), exportBtn.click()]);
+  const file = await download.path();
+  expect(file).toBeTruthy();
+  const b64 = readFileSync(file!).toString("base64");
+
+  // Decode the PNG and count clearly-colored (non-background) pixels: the data
+  // line/area uses bright series colors, the panel bg is near-black. A blank
+  // export (the var(--yellow)-not-inlined bug) has almost none.
+  const colored = await page.evaluate(async (dataB64) => {
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = rej;
+      img.src = "data:image/png;base64," + dataB64;
+    });
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] > 150 || data[i + 1] > 120 || data[i + 2] > 150) n++;
+    }
+    return n;
+  }, b64);
+
+  expect(colored, "exported PNG should contain a visible data line/area").toBeGreaterThan(300);
 });

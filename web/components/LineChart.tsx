@@ -35,22 +35,19 @@ export default function LineChart({
   const pad = { top: 10, right: 12, bottom: 22, left: 48 };
 
   // exportPNG rasterizes the chart SVG to a PNG download. CSS variables don't
-  // resolve inside a standalone SVG image, so concrete values are inlined first.
+  // resolve inside a standalone SVG image, so every var(--x) — including the
+  // series colors (e.g. var(--yellow)) and the area gradient — must be replaced
+  // with its concrete value first, or the data line renders invisible.
   function exportPNG() {
     const svg = svgRef.current;
     if (!svg) return;
     const cs = getComputedStyle(document.documentElement);
-    const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
     const clone = svg.cloneNode(true) as SVGSVGElement;
     clone.setAttribute("width", String(width));
     clone.setAttribute("height", String(height));
-    let s = new XMLSerializer().serializeToString(clone);
-    s = s
-      .replace(/var\(--chart-grid\)/g, v("--chart-grid", "#1d293d"))
-      .replace(/var\(--muted\)/g, v("--muted", "#6f7d96"))
-      .replace(/var\(--accent\)/g, v("--accent", "#36d6e7"))
-      .replace(/var\(--bg\)/g, v("--bg", "#070b12"));
-    const bg = v("--panel", "#0e1522");
+    const raw = new XMLSerializer().serializeToString(clone);
+    const s = inlineCssVars(raw, (name) => cs.getPropertyValue(name).trim());
+    const bg = cs.getPropertyValue("--panel").trim() || "#0e1522";
     const img = new Image();
     img.onload = () => {
       const scale = 2;
@@ -365,6 +362,18 @@ export default function LineChart({
       </div>
     </div>
   );
+}
+
+// inlineCssVars replaces every var(--name) token in an SVG string with its
+// resolved value (via lookup), so a serialized standalone SVG keeps all its
+// colors — including series strokes/gradients like var(--yellow). Exported so
+// it can be unit-tested without a browser. An unresolved var keeps its token
+// (better a wrong-but-visible default than silently dropping a color).
+export function inlineCssVars(svg: string, lookup: (name: string) => string): string {
+  return svg.replace(/var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,[^)]*)?\)/g, (m, name) => {
+    const val = lookup(name);
+    return val || m;
+  });
 }
 
 // formatElapsed renders seconds since test start as "5s" / "1m05s" / "1h02m".
