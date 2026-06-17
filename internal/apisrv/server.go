@@ -40,6 +40,8 @@ type Server struct {
 	// revCache memoizes per-user revocation state (disabled / creds-changed) so
 	// token validation doesn't hit the database on every request.
 	revCache sync.Map
+	// loginRL throttles password-login attempts per client IP.
+	loginRL *rateLimiter
 }
 
 // Config configures the Server.
@@ -74,6 +76,7 @@ func New(c Config) *Server {
 		jwtTTL:      ttl,
 		frontendURL: c.FrontendURL,
 		webhookURL:  c.WebhookURL,
+		loginRL:     newRateLimiter(loginMaxAttempts, loginWindow),
 	}
 	// Honor account disable / credential changes for already-issued tokens.
 	s.authmw.Validate = s.validateClaims

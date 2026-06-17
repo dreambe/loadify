@@ -45,6 +45,12 @@ func userView(u *postgres.User) publicUserView {
 
 // handleLogin authenticates an email/password user and returns a JWT.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// Throttle brute-force / credential-stuffing per client IP before doing any
+	// (relatively expensive) bcrypt work.
+	if s.loginRL != nil && !s.loginRL.allow(clientIP(r)) {
+		writeErr(w, http.StatusTooManyRequests, "too many login attempts, try again later")
+		return
+	}
 	var req loginReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json")
