@@ -131,11 +131,18 @@ export default function LiveRunChart({ runId }: { runId: string }) {
     : everConnected
       ? t("live.closed")
       : t("live.connecting");
+  const statusColor = connected
+    ? ticks.length > 0
+      ? "var(--green)"
+      : "var(--yellow)"
+    : everConnected
+      ? "var(--red)"
+      : "var(--muted)";
 
   return (
     <div>
       <div className="metrics-grid">
-        <Metric label={t("live.status")} value={statusValue} />
+        <Metric label={t("live.status")} value={statusValue} color={statusColor} />
         <Metric label={t("live.qps")} value={fmt(last?.rps)} />
         <Metric label={t("live.activeVus")} value={last ? String(last.active_vus) : "–"} />
         <Metric
@@ -310,11 +317,13 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="metric">
       <div className="label">{label}</div>
-      <div className="value">{value}</div>
+      <div className="value" style={color ? { color } : undefined}>
+        {value}
+      </div>
     </div>
   );
 }

@@ -405,11 +405,25 @@ function maskSnapshot(snapshot: any): any {
   return masked;
 }
 
+const snapMono: React.CSSProperties = { fontFamily: "var(--font-mono)", wordBreak: "break-all" };
+
+function SnapField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 10 }}>
+      <div className="muted" style={{ width: 84, flex: "none", fontSize: 12.5 }}>{label}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
 function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => string }) {
   const [open, setOpen] = useState(false);
+  const [raw, setRaw] = useState(false);
   const plan = snapshot?.plan ?? {};
   const http = plan?.http;
   const scenario = plan?.scenario;
+  const ramp: any[] = Array.isArray(snapshot?.ramp) ? snapshot.ramp : [];
+  const thresholds: any[] = Array.isArray(snapshot?.thresholds) ? snapshot.thresholds : [];
   const env = snapshot?.environment;
   const envKeys = env?.vars ? Object.keys(env.vars) : [];
   return (
@@ -434,9 +448,73 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
         </div>
       )}
       {open && (
-        <pre style={{ marginTop: 10, maxHeight: 360, overflow: "auto", fontSize: 12 }}>
-          {JSON.stringify(maskSnapshot(snapshot), null, 2)}
-        </pre>
+        <div style={{ marginTop: 12, display: "grid", gap: 10, fontSize: 13 }}>
+          <SnapField label={t("run.snapTarget")}>
+            {http ? (
+              <span style={snapMono}>
+                {http.method} {http.url}
+              </span>
+            ) : scenario ? (
+              <span>
+                {scenario.mode} · {scenario.steps?.length ?? 0} {t("run.steps")}
+              </span>
+            ) : (
+              <span style={snapMono}>{snapshot?.protocol}</span>
+            )}
+          </SnapField>
+
+          {ramp.length > 0 && (
+            <SnapField label={t("run.snapRamp")}>
+              <div style={{ display: "grid", gap: 2 }}>
+                {ramp.map((st, i) => {
+                  const isRps = (st.target_rps ?? 0) > 0;
+                  const tgt = isRps ? `${st.target_rps} QPS` : `${st.target_vus ?? 0} VU`;
+                  return (
+                    <div key={i} style={snapMono}>
+                      → {tgt} · {t("run.snapForS")} {Math.round((st.duration_ms || 0) / 1000)}s
+                    </div>
+                  );
+                })}
+              </div>
+            </SnapField>
+          )}
+
+          {thresholds.length > 0 && (
+            <SnapField label={t("run.snapThresholds")}>
+              <div style={{ display: "grid", gap: 2 }}>
+                {thresholds.map((th, i) => (
+                  <div key={i} style={snapMono}>
+                    {th.metric} {th.op} {th.value}
+                  </div>
+                ))}
+              </div>
+            </SnapField>
+          )}
+
+          {(plan.think_time_ms || plan.think_time) && (
+            <SnapField label={t("run.snapThink")}>
+              <span style={snapMono}>
+                {plan.think_time_ms ? `${plan.think_time_ms} ms` : plan.think_time?.distribution}
+              </span>
+            </SnapField>
+          )}
+          {plan.max_vus ? (
+            <SnapField label={t("run.snapMaxVus")}>
+              <span style={snapMono}>{plan.max_vus}</span>
+            </SnapField>
+          ) : null}
+
+          <div>
+            <button className="ghost sm" onClick={() => setRaw((v) => !v)}>
+              {raw ? t("run.snapRawHide") : t("run.snapRaw")}
+            </button>
+            {raw && (
+              <pre style={{ marginTop: 8, maxHeight: 360, overflow: "auto", fontSize: 12 }}>
+                {JSON.stringify(maskSnapshot(snapshot), null, 2)}
+              </pre>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
