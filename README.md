@@ -176,3 +176,65 @@ deploy/                # docker, compose, helm
 web/                   # Next.js frontend
 test/                  # multi-protocol echo target + e2e harness
 ```
+
+---
+
+# Loadify — load testing your whole team will actually use
+
+> One platform for HTTP, gRPC, WebSocket and SSE. Build a test by clicking, not
+> by writing YAML. Watch it live, prove your SLA, and share the result with a
+> link. Driveable by humans, CI, **and AI agents**.
+
+![Architecture](docs/images/architecture.svg)
+
+## Why teams pick loadify
+
+- 🧩 **Every protocol, one tool.** HTTP/HTTPS (with connect/TLS/TTFB phase
+  timings), dynamic **gRPC**, persistent **WebSocket**, and **SSE** — no
+  juggling four different testers.
+- 🪄 **No-code, then code when you need it.** A visual builder for requests,
+  **multi-step scenarios** (weighted traffic + chained requests with
+  `{{var}}` extraction), and **JSON-path assertions** — drop into embedded
+  **JavaScript** only when you want full control.
+- 📊 **Live and honest metrics.** Real-time QPS / latency / error charts with a
+  synced crosshair and an errors-only response log; full historical replay; and
+  **side-by-side run comparison** with color-coded deltas. Crucially, loadify
+  *tells you when a result can't be trusted* — it flags **coordinated
+  omission**, **dropped iterations**, and even when **the load generator itself
+  was the bottleneck**, so a degraded run never quietly reads "green".
+- 🚦 **SLA gates that fail your build.** Set k6-style thresholds (p95, error
+  rate, QPS); a breach fails the run — wire it straight into CI.
+- 🌐 **Truly distributed.** Stateless workers dial out to a single coordinator;
+  add capacity by starting more workers on more servers. **Capacity-aware
+  admission** queues runs when the fleet is busy and shows **"queued · ETA"**.
+- 🤝 **Built to be automated.** A clean **REST API + OpenAPI spec**, an **MCP
+  server**, a **CLI**, and a **permanent personal token** — hand it to your
+  agent and let it create tests and launch runs for you.
+- 🔗 **Share without logins.** One click turns any run into a public,
+  interactive share link (print/save-as-PDF included).
+- 🎛️ **Polished UX.** Switchable **中文 / English**, light/dark themes, a
+  precision-instrument visual language, keyboard-friendly, and exportable
+  PNG/CSV.
+- 🔒 **Enterprise-ready auth.** JWT sessions, **viewer/operator/admin RBAC**,
+  bcrypt local login, and **Feishu (Lark) OAuth**.
+
+## Screenshots
+
+<!-- Drop PNGs into docs/images/ with these names and they render here. -->
+
+| Dashboard & SLA trend | Live run |
+|---|---|
+| ![Dashboard](docs/images/dashboard.png) | ![Live run](docs/images/run-live.png) |
+
+| Run comparison | Scenario builder |
+|---|---|
+| ![Compare](docs/images/compare.png) | ![Builder](docs/images/builder.png) |
+
+## Get started in 30 seconds
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml up --build --scale workerd=2
+# UI: http://localhost:3000   ·   login admin@loadify.local / admin12345
+```
+
+Running workers across multiple servers? See **[docs/deployment.zh.md](docs/deployment.zh.md)**.

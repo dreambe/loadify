@@ -119,3 +119,57 @@ make proto        # 重新生成 gRPC stub(需要 buf + protoc 插件)
 | `LOADIFY_WORKER_REGION` | `default` | workerd |
 
 详细的 Kubernetes(Helm)部署、目录结构等见 [英文 README](README.md)。
+
+---
+
+# Loadify — 让团队真正愿意用的压测平台
+
+> HTTP、gRPC、WebSocket、SSE 一个平台搞定。点几下就建好压测,不用写 YAML。
+> 实时看、用 SLA 判定、一条链接分享结果。人能用、CI 能用、**AI Agent 也能用**。
+
+![架构](docs/images/architecture.svg)
+
+## 为什么选 loadify
+
+- 🧩 **多协议,一个工具。** HTTP/HTTPS(含连接/TLS/首字节分阶段耗时)、动态
+  **gRPC**、长连接 **WebSocket**、**SSE**——不用再在四个工具间来回切。
+- 🪄 **零代码起步,需要时再写代码。** 可视化请求构建器、**多步场景**
+  (按权重混合 + `{{变量}}` 提取的链式请求)、**JSON-path 断言**;想要完全
+  掌控时再切到内置 **JavaScript** 脚本。
+- 📊 **实时且诚实的指标。** 实时 QPS / 延迟 / 错误率图表(多图同步十字线)、
+  仅错误的响应日志、完整历史回放、**并排结果对比**(带涨跌色标)。更关键:
+  loadify **会告诉你哪条结果不可信**——它会标出**协调遗漏**、**丢弃迭代**、
+  乃至**压力机自身已成为瓶颈**,绝不让一条"已降级"的压测悄悄显示成"绿色"。
+- 🚦 **能卡住流水线的 SLA 门禁。** 设 k6 式阈值(p95、错误率、QPS),
+  越线即判失败——直接接进 CI。
+- 🌐 **真正分布式。** 无状态 worker 主动外连单个协调器;在更多服务器上多起
+  worker 即可扩容。**容量感知准入**会在集群繁忙时排队,并显示「排队中 · 预计」。
+- 🤝 **为自动化而生。** 干净的 **REST API + OpenAPI**、**MCP server**、
+  **CLI**,以及**永久个人令牌**——丢给你的 Agent,让它替你建用例、发压测。
+- 🔗 **免登录分享。** 一键把任意一次压测变成公开、可交互的分享链接
+  (含打印 / 存为 PDF)。
+- 🎛️ **打磨过的体验。** 中文 / English 一键切换、明暗主题、精密仪表式视觉、
+  键盘友好,PNG / CSV 导出。
+- 🔒 **企业级鉴权。** JWT 会话、**viewer/operator/admin RBAC**、bcrypt 本地
+  登录、**飞书(Lark)OAuth**。
+
+## 界面预览
+
+<!-- 把截图放到 docs/images/ 下,用以下文件名即可自动显示。 -->
+
+| 概览 & SLA 趋势 | 实时压测 |
+|---|---|
+| ![概览](docs/images/dashboard.png) | ![实时](docs/images/run-live.png) |
+
+| 结果对比 | 场景构建器 |
+|---|---|
+| ![对比](docs/images/compare.png) | ![构建器](docs/images/builder.png) |
+
+## 30 秒上手
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml up --build --scale workerd=2
+# 界面:http://localhost:3000   ·   登录 admin@loadify.local / admin12345
+```
+
+要把 worker 部署到多台服务器?见 **[docs/deployment.zh.md](docs/deployment.zh.md)**。
