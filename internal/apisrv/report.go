@@ -211,7 +211,15 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!doctype html>
   svg{width:100%;height:120px}
   .warn{background:rgba(255,93,115,.12);border:1px solid var(--rd);color:var(--rd);border-radius:8px;padding:10px 12px}
   .btn{display:inline-block;cursor:pointer;background:var(--ac);color:#04222a;border:none;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;margin-top:12px}
-  @media print{body{background:#fff;color:#000}.panel,.cell{background:#fff;border-color:#ccc}.mut{color:#555}.no-print{display:none}}
+  .spark-qps{stroke:#36d6e7} .spark-p95{stroke:#ffc857}
+  /* Print/PDF: white paper. Force colors to render, and swap the chart line
+     hues for dark, high-contrast ones — the on-screen cyan/amber are tuned for
+     a dark panel and wash out (amber is near-invisible) on white. */
+  @media print{
+    html,body{background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .panel,.cell{background:#fff;border-color:#ccc}.mut{color:#555}.no-print{display:none}
+    .spark-qps{stroke:#0e7490} .spark-p95{stroke:#b45309}
+  }
 </style></head>
 <body><div class="wrap">
   <h1>{{.Name}}</h1>
@@ -232,9 +240,9 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!doctype html>
   </div></div>
 
   {{if .QPSPath}}<div class="panel"><div class="mut">Throughput (QPS)</div>
-    <svg viewBox="0 0 600 120" preserveAspectRatio="none"><path d="{{.QPSPath}}" fill="none" stroke="#36d6e7" stroke-width="2"/></svg></div>
+    <svg viewBox="0 0 600 120" preserveAspectRatio="none"><path class="spark-qps" d="{{.QPSPath}}" fill="none" stroke-width="2"/></svg></div>
   <div class="panel"><div class="mut">Latency p95 (ms)</div>
-    <svg viewBox="0 0 600 120" preserveAspectRatio="none"><path d="{{.P95Path}}" fill="none" stroke="#ffc857" stroke-width="2"/></svg></div>{{end}}
+    <svg viewBox="0 0 600 120" preserveAspectRatio="none"><path class="spark-p95" d="{{.P95Path}}" fill="none" stroke-width="2"/></svg></div>{{end}}
 
   {{if .Checks}}<div class="panel"><div class="mut" style="margin-bottom:8px">SLA thresholds</div>
     <table><thead><tr><th>Metric</th><th>Op</th><th>Threshold</th><th>Actual</th><th>Result</th></tr></thead><tbody>

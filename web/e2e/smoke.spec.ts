@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
+const API = process.env.E2E_API_URL || "http://localhost:8080";
+
 // These smoke tests target the "produce here, consume there" seams — the bug
 // class that unit tests and tsc cannot catch (copy an ID / token in one place,
 // use it in another). Each asserts the loop closes, not just that a page loads.
@@ -95,4 +97,29 @@ test("chart PNG export contains the rendered data, not a blank canvas", async ({
   }, b64);
 
   expect(colored, "exported PNG should contain a visible data line/area").toBeGreaterThan(300);
+});
+
+test("report (PDF/print) shows chart data with print-contrast colors", async ({ page }) => {
+  await page.goto("/runs");
+  const firstRunLink = page.locator('a[href^="/runs/"]').first();
+  if ((await firstRunLink.count()) === 0) test.skip(true, "no seeded runs available");
+  await firstRunLink.click();
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{8,}/);
+  const runId = page.url().split("/runs/")[1].split(/[?#]/)[0];
+  const token = await page.evaluate(() => localStorage.getItem("loadify_token"));
+  expect(token).toBeTruthy();
+
+  // The report is the PDF source (browser "print / save as PDF").
+  await page.goto(`${API}/api/v1/runs/${runId}/report.html?token=${token}&lang=en`);
+  const qps = page.locator("path.spark-qps");
+  if ((await qps.count()) === 0) test.skip(true, "run produced no series");
+  // Data is present: the sparkline path has a real d attribute.
+  expect(((await qps.getAttribute("d")) || "").length).toBeGreaterThan(10);
+
+  // Under print media the line must switch to the dark, high-contrast hue so it
+  // doesn't wash out on white paper (the on-screen amber/cyan are near-invisible
+  // on white). #0e7490 == rgb(14, 116, 144).
+  await page.emulateMedia({ media: "print" });
+  const stroke = await qps.evaluate((el) => getComputedStyle(el as Element).stroke);
+  expect(stroke.replace(/\s/g, "")).toBe("rgb(14,116,144)");
 });
