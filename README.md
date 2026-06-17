@@ -130,6 +130,10 @@ Generated gRPC stubs under `api/gen/` are gitignored; CI regenerates them with
 
 ## Kubernetes (Helm)
 
+> Deploying workers across multiple servers / nodes? See the deployment guide:
+> [`docs/deployment.zh.md`](docs/deployment.zh.md) (bare-Docker multi-host and
+> Kubernetes multi-node, networking/security, the single-coordinator caveat).
+
 ```bash
 helm lint deploy/helm/loadify
 helm install loadify deploy/helm/loadify \
