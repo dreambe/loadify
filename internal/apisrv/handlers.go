@@ -745,15 +745,29 @@ func (s *Server) handleRunSeries(w http.ResponseWriter, r *http.Request) {
 	if res <= 0 {
 		res = 1
 	}
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	// Default the time window to the run's own span, so a run that finished more
+	// than 24h ago still renders (a fixed last-24h window would miss it — this
+	// was why old runs' charts and run comparisons came up blank).
 	to := time.Now()
 	from := to.Add(-24 * time.Hour)
+	if run, err := s.pg.GetRun(ctx, runID); err == nil {
+		from = run.CreatedAt.Add(-time.Minute)
+		if run.EndedAt != nil {
+			to = run.EndedAt.Add(time.Minute)
+		}
+	}
 	if v := r.URL.Query().Get("from"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			from = t
 		}
 	}
-	ctx, cancel := withTimeout(r.Context())
-	defer cancel()
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			to = t
+		}
+	}
 	pts, err := s.ch.QuerySeries(ctx, runID, group, from, to, res)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

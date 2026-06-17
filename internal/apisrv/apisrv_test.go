@@ -31,6 +31,7 @@ type fakeMeta struct {
 	lastRunCreatedBy *string           // captured from the most recent CreateRun
 	lastRunSource    string
 	testPlan         json.RawMessage // overrides the plan returned by GetTestDefinition
+	runOverride      *postgres.Run   // overrides the run returned by GetRun
 }
 
 func newFakeMeta() *fakeMeta {
@@ -71,6 +72,9 @@ func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage
 	return true, nil
 }
 func (f *fakeMeta) GetRun(_ context.Context, id string) (*postgres.Run, error) {
+	if f.runOverride != nil {
+		return f.runOverride, nil
+	}
 	return &postgres.Run{ID: id, TestDefID: "test-1", Status: "running", CreatedBy: f.owner}, nil
 }
 func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error) { return nil, nil }
