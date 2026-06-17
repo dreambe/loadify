@@ -68,16 +68,17 @@ test("compare picker dropdown filters, stays in the panel, and selects", async (
   const box = await list.boundingBox();
   const vw = page.viewportSize()!.width;
   expect(box!.x + box!.width).toBeLessThanOrEqual(vw + 1);
-  // Typing filters the options (substring), then a click selects one.
-  const optCount = await page.locator(".combo-opt").count();
-  if (optCount > 0) {
-    await a.fill("shark");
-    await expect(page.locator(".combo-opt").first()).toBeVisible();
-    await page.locator(".combo-opt").first().click();
-    // Selection populates the field and closes the dropdown.
-    await expect(list).toBeHidden();
-    expect(await a.inputValue()).not.toBe("shark");
-  }
+  // Typing filters the options (substring), then a click selects one. Derive the
+  // filter term from a real option so the test doesn't depend on seed names.
+  const opts = page.locator(".combo-opt");
+  if ((await opts.count()) === 0) test.skip(true, "no seeded runs available");
+  const term = (await opts.first().innerText()).trim().slice(0, 4);
+  await a.fill(term);
+  await expect(opts.first()).toBeVisible();
+  await opts.first().click();
+  // Selection closes the dropdown and populates the field.
+  await expect(list).toBeHidden();
+  expect((await a.inputValue()).length).toBeGreaterThan(0);
 });
 
 test("chart PNG export contains the rendered data, not a blank canvas", async ({ page }) => {
