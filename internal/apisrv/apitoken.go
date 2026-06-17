@@ -89,7 +89,10 @@ func (s *Server) resolveAPIToken(raw string) (*auth.Claims, bool) {
 	if err != nil || u == nil || u.Disabled {
 		return nil, false
 	}
-	return &auth.Claims{Subject: u.ID, Email: u.Email, Name: u.Name, Role: auth.Role(u.Role)}, true
+	// Issued:0 is explicit: it makes validateClaims skip the creds-changed check
+	// so the token survives password/role changes (it's its own credential),
+	// while account-disable still revokes it.
+	return &auth.Claims{Subject: u.ID, Email: u.Email, Name: u.Name, Role: auth.Role(u.Role), Issued: 0}, true
 }
 
 // newAPIToken returns a random, URL-safe opaque token with the loadify prefix.

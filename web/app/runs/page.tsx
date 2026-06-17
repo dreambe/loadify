@@ -261,9 +261,11 @@ export default function RunsPage() {
             {cap && !cap.can_accept && maxWorkers > 0 && (
               <p className="muted" style={{ marginTop: 4, color: "var(--yellow)" }}>
                 <Icon name="warn" />{" "}
-                {t("runs.capacityFull")
-                  .replace("{running}", String(cap.running))
-                  .replace("{max}", String(cap.max_runs))}
+                {/* Distinguish the two reasons a run would queue: all run slots
+                    busy vs. every node over its CPU protection threshold. */}
+                {cap.running >= cap.max_runs
+                  ? t("runs.capacityFull").replace("{running}", String(cap.running)).replace("{max}", String(cap.max_runs))
+                  : t("runs.capacityNodesBusy")}
                 {cap.queue_depth > 0 ? " · " + t("runs.capacityQueued").replace("{n}", String(cap.queue_depth)) : ""}
               </p>
             )}

@@ -62,7 +62,9 @@ function RunPicker({
   const [text, setText] = useState("");
   useEffect(() => {
     const r = runs.find((x) => x.id === value);
-    setText(r ? display(r) : "");
+    // Keep an out-of-window id (a valid run not in the loaded list) visible
+    // rather than blanking the field after it resolves.
+    setText(r ? display(r) : value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, runs.length]);
   return (

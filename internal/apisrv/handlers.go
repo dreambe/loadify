@@ -744,16 +744,28 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
-	// For a queued run, attach its live admission-queue position and a rough ETA
-	// so the run page can show "排队中 · 第 N 位 · 预计 …".
+	// A queued run: ask the coordinator for live admission state. If it has since
+	// been dispatched (the DB status lags until the reaper reconciles), reflect
+	// "running" now so the page doesn't show a stale "queued" banner with no live
+	// chart; otherwise attach the queue position + rough ETA for the banner.
 	if run.Status == "queued" {
-		if st, serr := s.coord.GetRunState(ctx, &loadifyv1.RunStateRequest{RunId: run.ID}); serr == nil && st.QueuePosition > 0 {
-			writeJSON(w, http.StatusOK, struct {
-				*postgres.Run
-				QueuePosition int32 `json:"queue_position,omitempty"`
-				QueueETAms    int64 `json:"queue_eta_ms,omitempty"`
-			}{run, st.QueuePosition, st.QueueEtaMs})
-			return
+		if st, serr := s.coord.GetRunState(ctx, &loadifyv1.RunStateRequest{RunId: run.ID}); serr == nil {
+			switch {
+			case st.Status == loadifyv1.RunStatus_RUN_STATUS_RUNNING:
+				run.Status = "running"
+				if run.StartedAt == nil {
+					now := time.Now()
+					run.StartedAt = &now
+				}
+				_ = s.pg.SetRunRunning(ctx, run.ID) // persist so the lag closes
+			case st.QueuePosition > 0:
+				writeJSON(w, http.StatusOK, struct {
+					*postgres.Run
+					QueuePosition int32 `json:"queue_position,omitempty"`
+					QueueETAms    int64 `json:"queue_eta_ms,omitempty"`
+				}{run, st.QueuePosition, st.QueueEtaMs})
+				return
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, run)

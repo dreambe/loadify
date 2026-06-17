@@ -28,6 +28,16 @@ func (w *Worker) Healthy(now time.Time) bool {
 	return now.Sub(w.LastSeen) <= w.healthyTTL
 }
 
+// cpuUtilization normalizes the per-core CPUPct (which can exceed 100 on a
+// multi-core box) to a 0-100 share of the worker's total CPU capacity. When the
+// core count is unknown it falls back to the raw per-core value.
+func (w *Worker) cpuUtilization() float64 {
+	if w.CPUCores > 1 {
+		return w.CPUPct / float64(w.CPUCores)
+	}
+	return w.CPUPct
+}
+
 // Registry is a concurrency-safe set of connected workers.
 type Registry struct {
 	mu      sync.RWMutex
@@ -107,8 +117,11 @@ func (r *Registry) Healthy(proto loadifyv1.Protocol) []*Worker {
 	return out
 }
 
-// Available returns healthy workers supporting proto whose CPU is below
-// cpuMaxPct. A cpuMaxPct of 0 disables the CPU gate.
+// Available returns healthy workers supporting proto whose CPU utilization is
+// below cpuMaxPct. A cpuMaxPct of 0 disables the CPU gate. CPUPct is reported
+// per single core (it can exceed 100 on a multi-core box), so it is normalized
+// by the worker's core count to a 0-100 share of total capacity before the
+// comparison — otherwise a lightly-loaded multi-core worker would be excluded.
 func (r *Registry) Available(proto loadifyv1.Protocol, cpuMaxPct float64) []*Worker {
 	now := time.Now()
 	r.mu.RLock()
@@ -121,7 +134,7 @@ func (r *Registry) Available(proto loadifyv1.Protocol, cpuMaxPct float64) []*Wor
 		if proto != loadifyv1.Protocol_PROTOCOL_UNSPECIFIED && !supports(w, proto) {
 			continue
 		}
-		if cpuMaxPct > 0 && w.CPUPct >= cpuMaxPct {
+		if cpuMaxPct > 0 && w.cpuUtilization() >= cpuMaxPct {
 			continue
 		}
 		out = append(out, w)
