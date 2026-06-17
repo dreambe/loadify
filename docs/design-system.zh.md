@@ -86,3 +86,25 @@
 
 - 视觉改动:用无头 Chromium 加载**真实 `globals.css`** 渲染+截图(必要时附像素测量),不靠"看着差不多"。
 - 逻辑改动:`tsc --noEmit` + `next build` + 相应单测必须通过。
+
+## 7. 设计 token 与可复用组件(2026 增补)
+
+为消除散落的魔法数与重复组件,新增以下统一约定,**新代码一律引用 token / 复用组件,不再内联**:
+
+### 排版尺度(type ramp)
+`--fs-display`(28)`--fs-h1`(22)`--fs-h2`(18)`--fs-body`(14)`--fs-sm`(13)`--fs-caption`(12)`--fs-micro`(11);数据读数用 `--fs-readout`(22,等宽 + tabular-nums)。辅助类:`.caption`、`.readout`。
+
+### 间距 / 动效
+- 间距沿用 `--s1..--s7`(4px 基)。
+- 动效时长统一为 `--t-fast`(120ms)`--t-base`(160ms)`--t-slow`(280ms),配 `--ease`;动效只表达状态变化,不装饰。
+
+### 对比度
+暗色 `--muted` 已提到 `#8492ab` 以满足 WCAG AA(小字 ~4.5:1)。新增灰阶前先量对比度。
+
+### 可复用组件
+- `<EntityPicker>`(`web/components/EntityPicker.tsx`):**唯一**的可输入搜索下拉。契约 `label()` / `keys()` / `accept()`——`keys()` 列出所有可匹配的字符串(id、短 id、名称…),保证"别处产出的值(如复制的完整 ID)在这里一定能解析"。runs 页的用例选择器、compare 页的运行选择器都用它,杜绝重复实现导致的漂移。
+- `.id-chip`:可复制标识符 chip(等宽、低饱和、hover 才高亮),用于展示 + 复制资源 ID。
+- `.spinner`:等待态(如排队中)的行内转圈。
+
+### 颜色语义(重申)
+颜色只编码 verdict(`.badge.ok` 绿=显式判定通过,`.failed/.aborted` 红,`.completed/.stopped` 中性),默认中性,红色留给真正的失败。新功能不破例。
