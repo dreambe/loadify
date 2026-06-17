@@ -249,13 +249,32 @@ func (s *Store) SetRunStatus(ctx context.Context, id, status string) error {
 // is already terminal is left untouched, so the watcher and the reaper can race
 // safely. Returns true when this call performed the transition.
 func (s *Store) FinishRun(ctx context.Context, id, status string, summary json.RawMessage) (bool, error) {
+	// Clear the dispatch payload: a terminal run is never replayed.
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE runs SET status=$2, ended_at=now(), summary=$3
+		UPDATE runs SET status=$2, ended_at=now(), summary=$3, dispatch_payload=NULL
 		WHERE id=$1 AND status NOT IN ('completed','failed','aborted')`, id, status, summary)
 	if err != nil {
 		return false, err
 	}
 	return tag.RowsAffected() > 0, nil
+}
+
+// SetRunDispatch stores the marshaled StartRun payload so a restarted
+// coordinator's in-memory queue can be replayed from Postgres.
+func (s *Store) SetRunDispatch(ctx context.Context, id string, payload []byte) error {
+	_, err := s.pool.Exec(ctx, `UPDATE runs SET dispatch_payload=$2 WHERE id=$1`, id, payload)
+	return err
+}
+
+// GetRunDispatch returns the stored StartRun payload for a run, or nil when none
+// is stored (already dispatched-and-finalized, or an older run).
+func (s *Store) GetRunDispatch(ctx context.Context, id string) ([]byte, error) {
+	var payload []byte
+	err := s.pool.QueryRow(ctx, `SELECT dispatch_payload FROM runs WHERE id=$1`, id).Scan(&payload)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
 }
 
 // ListActiveRuns returns runs that are still pending or running, oldest first,

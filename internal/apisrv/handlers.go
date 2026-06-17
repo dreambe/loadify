@@ -19,6 +19,7 @@ import (
 	"github.com/dreambe/loadify/internal/store"
 	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/protobuf/proto"
 )
 
 // apiError carries an HTTP status with a message so shared helpers can return
@@ -462,6 +463,12 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	if envName != "" {
 		startReq.Env = map[string]string{"__environment__": envName}
 	}
+	// Persist the exact dispatch payload before dispatching, so a coordinator
+	// restart that loses its in-memory queue can be replayed from Postgres (the
+	// reaper does this). Cleared automatically when the run finalizes.
+	if payload, merr := proto.Marshal(startReq); merr == nil {
+		_ = s.pg.SetRunDispatch(ctx, runID, payload)
+	}
 	resp, err := s.coord.StartRun(ctx, startReq)
 	if err != nil {
 		_, _ = s.pg.FinishRun(context.Background(), runID, "failed", json.RawMessage(`{"error":"dispatch failed"}`))
@@ -675,9 +682,17 @@ func (s *Server) reapOnce(ctx context.Context, maxRunAge time.Duration) {
 		overdue := time.Since(r.CreatedAt) > maxRunAge
 		switch {
 		case serr != nil:
-			// Coordinator doesn't know it (restarted / cleaned up). Finalize
-			// from whatever metrics exist.
-			s.finalizeRun(r.ID, "completed")
+			// The coordinator doesn't know this run (it restarted and lost its
+			// in-memory queue/state). Replay the stored dispatch payload so a
+			// queued run actually runs instead of being silently finalized as
+			// "completed" with zero metrics. Only if replay is impossible do we
+			// finalize — and then honestly: "completed" only when metrics exist,
+			// else "aborted".
+			if s.replayDispatch(lctx, r.ID) {
+				s.log.Info("reaper: replayed run to restarted coordinator", "run", r.ID)
+				continue
+			}
+			s.finalizeForgotten(r.ID)
 		case st.Status == loadifyv1.RunStatus_RUN_STATUS_COMPLETED:
 			s.finalizeRun(r.ID, "completed")
 		case st.Status == loadifyv1.RunStatus_RUN_STATUS_RUNNING:
@@ -695,6 +710,48 @@ func (s *Server) reapOnce(ctx context.Context, maxRunAge time.Duration) {
 			s.finalizeRun(r.ID, "aborted")
 		}
 	}
+}
+
+// replayDispatch re-sends a run's stored StartRun payload to the coordinator
+// (StartRun is idempotent on run id), recovering a queued/running run after a
+// coordinator restart. Returns true if it was replayed.
+func (s *Server) replayDispatch(ctx context.Context, runID string) bool {
+	payload, err := s.pg.GetRunDispatch(ctx, runID)
+	if err != nil || len(payload) == 0 {
+		return false
+	}
+	var req loadifyv1.StartRunRequest
+	if err := proto.Unmarshal(payload, &req); err != nil {
+		s.log.Warn("reaper: bad dispatch payload", "run", runID, "err", err)
+		return false
+	}
+	resp, err := s.coord.StartRun(ctx, &req)
+	if err != nil {
+		s.log.Warn("reaper: replay dispatch failed", "run", runID, "err", err)
+		return false
+	}
+	// Reflect the post-replay status; a running run also gets a fresh watcher.
+	if resp != nil && resp.Status == "running" {
+		_ = s.pg.SetRunRunning(ctx, runID)
+		go s.watchRun(runID, plan.AlertConfig{})
+	} else {
+		_ = s.pg.SetRunStatus(ctx, runID, "queued")
+	}
+	return true
+}
+
+// finalizeForgotten finalizes a run the coordinator no longer knows and that
+// can't be replayed — honestly: "completed" only if it produced metrics,
+// otherwise "aborted" (a never-run queued task must not read as a green result).
+func (s *Server) finalizeForgotten(runID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, total, err := s.ch.Summary(ctx, runID); err == nil && total > 0 {
+		s.finalizeRun(runID, "completed")
+		return
+	}
+	s.log.Warn("reaper: finalizing forgotten run with no metrics as aborted", "run", runID)
+	s.finalizeRun(runID, "aborted")
 }
 
 // evaluateThresholds loads the run's test thresholds and checks them against the

@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // --- fakes ---
@@ -30,12 +31,14 @@ type fakeMeta struct {
 	owner            *string           // CreatedBy returned for tests/runs/environments
 	lastRunCreatedBy *string           // captured from the most recent CreateRun
 	lastRunSource    string
-	testPlan         json.RawMessage // overrides the plan returned by GetTestDefinition
-	runOverride      *postgres.Run   // overrides the run returned by GetRun
+	testPlan         json.RawMessage   // overrides the plan returned by GetTestDefinition
+	runOverride      *postgres.Run     // overrides the run returned by GetRun
+	dispatch         map[string][]byte // stored StartRun payloads by run id
+	runStatus        map[string]string // captured SetRunStatus / SetRunRunning
 }
 
 func newFakeMeta() *fakeMeta {
-	return &fakeMeta{users: map[string]*postgres.User{}, finished: map[string]string{}, scheduleRun: map[string]string{}}
+	return &fakeMeta{users: map[string]*postgres.User{}, finished: map[string]string{}, scheduleRun: map[string]string{}, dispatch: map[string][]byte{}, runStatus: map[string]string{}}
 }
 
 func (f *fakeMeta) CreateTestDefinition(_ context.Context, _ *postgres.TestDefinition) (string, error) {
@@ -62,8 +65,11 @@ func (f *fakeMeta) CreateRun(_ context.Context, _ string, _ int, _ string, creat
 	f.lastRunSource = source
 	return "run-1", nil
 }
-func (f *fakeMeta) SetRunRunning(_ context.Context, _ string) error   { return nil }
-func (f *fakeMeta) SetRunStatus(_ context.Context, _, _ string) error { return nil }
+func (f *fakeMeta) SetRunRunning(_ context.Context, id string) error { f.runStatus[id] = "running"; return nil }
+func (f *fakeMeta) SetRunStatus(_ context.Context, id, st string) error {
+	f.runStatus[id] = st
+	return nil
+}
 func (f *fakeMeta) FinishRun(_ context.Context, id, st string, _ json.RawMessage) (bool, error) {
 	if _, done := f.finished[id]; done {
 		return false, nil
@@ -76,6 +82,13 @@ func (f *fakeMeta) GetRun(_ context.Context, id string) (*postgres.Run, error) {
 		return f.runOverride, nil
 	}
 	return &postgres.Run{ID: id, TestDefID: "test-1", Status: "running", CreatedBy: f.owner}, nil
+}
+func (f *fakeMeta) SetRunDispatch(_ context.Context, id string, p []byte) error {
+	f.dispatch[id] = p
+	return nil
+}
+func (f *fakeMeta) GetRunDispatch(_ context.Context, id string) ([]byte, error) {
+	return f.dispatch[id], nil
 }
 func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error) { return nil, nil }
 func (f *fakeMeta) ListRunsByTest(_ context.Context, _ string, _ int) ([]postgres.Run, error) {
@@ -398,6 +411,27 @@ func TestReaperFinalizesOrphans(t *testing.T) {
 	}
 	if _, done := meta.finished["brandnew"]; done {
 		t.Error("fresh run should not be finalized yet")
+	}
+}
+
+// TestReaperReplaysForgottenQueuedRun verifies the durable-queue recovery: a
+// queued run the (restarted) coordinator no longer knows is replayed from its
+// stored dispatch payload — not silently finalized as "completed".
+func TestReaperReplaysForgottenQueuedRun(t *testing.T) {
+	meta := newFakeMeta()
+	old := time.Now().Add(-2 * time.Minute)
+	meta.activeRuns = []postgres.Run{{ID: "q1", Status: "queued", CreatedAt: old}}
+	payload, _ := proto.Marshal(&loadifyv1.StartRunRequest{RunId: "q1", Protocol: loadifyv1.Protocol_PROTOCOL_HTTP})
+	meta.dispatch["q1"] = payload
+	// Coordinator doesn't know the run (returns NotFound via default getState).
+	srv := newTestServer(meta, &fakeCoord{})
+	srv.reapOnce(context.Background(), 6*time.Hour)
+
+	if _, done := meta.finished["q1"]; done {
+		t.Errorf("forgotten queued run was finalized instead of replayed: %v", meta.finished)
+	}
+	if meta.runStatus["q1"] == "" {
+		t.Error("replayed run status was not set")
 	}
 }
 
