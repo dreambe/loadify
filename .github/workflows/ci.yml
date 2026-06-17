@@ -48,6 +48,9 @@ jobs:
       - name: Install deps
         run: npm ci
         working-directory: web
+        env:
+          # E2E browser isn't needed for the build/typecheck job.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       - name: Build
         run: npm run build
         working-directory: web
