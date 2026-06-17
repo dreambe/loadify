@@ -20,6 +20,20 @@ type runState struct {
 	reason    string
 	startedAt time.Time
 	endedAt   time.Time
+	plannedMs int64 // total ramp duration, for queue-ETA estimation
+}
+
+// remainingMs estimates how much of a running run is left, from its planned
+// ramp duration and elapsed time. 0 once it's past plan (about to finish).
+func (r *runState) remainingMs(now time.Time) int64 {
+	if r.plannedMs <= 0 || r.startedAt.IsZero() {
+		return 0
+	}
+	rem := r.plannedMs - now.Sub(r.startedAt).Milliseconds()
+	if rem < 0 {
+		return 0
+	}
+	return rem
 }
 
 func (r *runState) toProto(activeVUs int64) *loadifyv1.RunState {

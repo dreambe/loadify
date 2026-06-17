@@ -628,6 +628,25 @@ paths:
       tags: [workers]
       summary: List connected workers with health/load (role viewer+)
       responses: { "200": { description: array of workers } }
+  /api/v1/capacity:
+    get:
+      tags: [workers]
+      summary: Cluster admission headroom — whether a new run starts now or queues (role viewer+)
+      responses:
+        "200":
+          description: capacity snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  max_runs: { type: integer }
+                  running: { type: integer }
+                  queue_depth: { type: integer }
+                  workers_total: { type: integer }
+                  workers_available: { type: integer }
+                  cpu_max_pct: { type: number }
+                  can_accept: { type: boolean }
   /api/v1/audit:
     get:
       tags: [audit]

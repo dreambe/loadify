@@ -40,6 +40,20 @@ export interface Run {
   source?: string; // "manual" | "schedule"
   test_snapshot?: any;
   created_at: string;
+  queue_position?: number; // 1-based, when status == "queued"
+  queue_eta_ms?: number; // rough estimate until a slot frees
+}
+
+// Capacity is the cluster's admission headroom: whether a new run would start
+// immediately or queue behind others.
+export interface Capacity {
+  max_runs: number;
+  running: number;
+  queue_depth: number;
+  workers_total: number;
+  workers_available: number;
+  cpu_max_pct: number;
+  can_accept: boolean;
 }
 
 export interface RunSummary {

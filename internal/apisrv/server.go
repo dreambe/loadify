@@ -139,6 +139,7 @@ func (s *Server) routes() {
 		r.With(operator).Post("/runs/{id}/share", s.handleShareRun)
 		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
 		r.With(viewer).Get("/workers", s.handleListWorkers)
+		r.With(viewer).Get("/capacity", s.handleCapacity)
 
 		// Mutations require an operator (or higher).
 		r.With(operator).Post("/tests", s.handleCreateTest)

@@ -57,7 +57,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     return () => clearInterval(timer);
   }, [ready, runId]);
 
-  const terminal = run && run.status !== "running" && run.status !== "pending";
+  const terminal = run && run.status !== "running" && run.status !== "pending" && run.status !== "queued";
 
   useEffect(() => {
     if (terminal) {
@@ -222,7 +222,31 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           </button>
         )}
 
-        {!terminal && <LiveRunChart runId={runId} />}
+        {run?.status === "queued" && (
+          <div
+            className="panel"
+            style={{
+              background: "rgba(255,200,87,.10)",
+              border: "1px solid var(--yellow)",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span className="spinner" aria-hidden />
+            <div>
+              <strong style={{ color: "var(--yellow)" }}>{t("run.queuedTitle")}</strong>
+              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+                {run.queue_position ? t("run.queuedPosition").replace("{n}", String(run.queue_position)) : t("run.queuedWaiting")}
+                {run.queue_eta_ms && run.queue_eta_ms > 0
+                  ? " · " + t("run.queuedEta").replace("{eta}", formatElapsed(run.queue_eta_ms / 1000))
+                  : ""}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!terminal && run?.status !== "queued" && <LiveRunChart runId={runId} />}
 
         {terminal && (
           <div>

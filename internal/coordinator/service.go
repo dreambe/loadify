@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -52,6 +53,7 @@ func New(writer store.RollupWriter, log *slog.Logger) *Service {
 		log:     log,
 		runs:    make(map[string]*runState),
 		maxRuns: 64, // effectively unlimited until SetLimits tightens it
+		cpuMax:  85, // per-node protection threshold (SetLimits may override)
 	}
 }
 
@@ -251,11 +253,12 @@ func (s *Service) StartRun(_ context.Context, req *loadifyv1.StartRunRequest) (*
 	// No capacity (slots full or no eligible worker): queue it.
 	s.queue = append(s.queue, req)
 	s.runs[req.RunId] = &runState{
-		runID:    req.RunId,
-		protocol: req.Protocol,
-		assigned: make(map[string]bool),
-		finished: make(map[string]bool),
-		status:   loadifyv1.RunStatus_RUN_STATUS_QUEUED,
+		runID:     req.RunId,
+		protocol:  req.Protocol,
+		assigned:  make(map[string]bool),
+		finished:  make(map[string]bool),
+		status:    loadifyv1.RunStatus_RUN_STATUS_QUEUED,
+		plannedMs: rampDurationMs(req.Ramp),
 	}
 	s.log.Info("run queued", "run", req.RunId, "queue_depth", len(s.queue))
 	return &loadifyv1.StartRunResponse{RunId: req.RunId, Status: "queued", QueuePosition: int32(len(s.queue))}, nil
@@ -264,6 +267,70 @@ func (s *Service) StartRun(_ context.Context, req *loadifyv1.StartRunRequest) (*
 // canDispatchLocked reports whether a run for proto can start right now.
 func (s *Service) canDispatchLocked(proto loadifyv1.Protocol) bool {
 	return s.running < s.maxRuns && len(s.reg.Available(proto, s.cpuMax)) > 0
+}
+
+// rampDurationMs sums a ramp's stage durations (the run's planned wall-clock
+// length), used to estimate when a slot will free for queued runs.
+func rampDurationMs(ramp []*loadifyv1.RampStage) int64 {
+	var total int64
+	for _, st := range ramp {
+		total += st.DurationMs
+	}
+	return total
+}
+
+// queueETALocked estimates, for the run at 1-based queue position pos, how long
+// until a slot frees. A queued run waits for `pos` running runs to finish, so
+// the estimate is the pos-th smallest remaining time among running runs. It's a
+// rough hint (ignores worker-CPU gating and post-run drain), not a guarantee.
+func (s *Service) queueETALocked(pos int) int64 {
+	if pos <= 0 {
+		return 0
+	}
+	now := time.Now()
+	rem := make([]int64, 0, len(s.runs))
+	for _, rs := range s.runs {
+		if rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
+			rem = append(rem, rs.remainingMs(now))
+		}
+	}
+	if len(rem) == 0 {
+		return 0
+	}
+	sort.Slice(rem, func(i, j int) bool { return rem[i] < rem[j] })
+	if pos > len(rem) {
+		pos = len(rem)
+	}
+	return rem[pos-1]
+}
+
+// queuePositionLocked returns the 1-based position of runID in the queue, or 0
+// if it isn't queued.
+func (s *Service) queuePositionLocked(runID string) int {
+	for i, req := range s.queue {
+		if req.RunId == runID {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// GetCapacity reports cluster admission headroom so the UI can warn a user that
+// starting a run now would queue it.
+func (s *Service) GetCapacity(_ context.Context, _ *loadifyv1.CapacityRequest) (*loadifyv1.CapacitySnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	total := len(s.reg.Healthy(loadifyv1.Protocol_PROTOCOL_UNSPECIFIED))
+	avail := len(s.reg.Available(loadifyv1.Protocol_PROTOCOL_UNSPECIFIED, s.cpuMax))
+	return &loadifyv1.CapacitySnapshot{
+		MaxRuns:          int32(s.maxRuns),
+		Running:          int32(s.running),
+		QueueDepth:       int32(len(s.queue)),
+		WorkersTotal:     int32(total),
+		WorkersAvailable: int32(avail),
+		CpuMaxPct:        s.cpuMax,
+		CanAccept:        s.running < s.maxRuns && avail > 0,
+	}, nil
 }
 
 // dispatchLocked selects workers, slices the ramp and sends assignments. The
@@ -293,6 +360,7 @@ func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
 		finished:  make(map[string]bool),
 		status:    loadifyv1.RunStatus_RUN_STATUS_RUNNING,
 		startedAt: time.Now(),
+		plannedMs: rampDurationMs(req.Ramp),
 	}
 	startAt := time.Now().Add(assignGrace).UnixMilli()
 	for i, w := range workers {
@@ -379,17 +447,28 @@ func (s *Service) autoStopRun(runID, reason string) {
 func (s *Service) GetRunState(_ context.Context, req *loadifyv1.RunStateRequest) (*loadifyv1.RunState, error) {
 	s.mu.Lock()
 	rs := s.runs[req.RunId]
-	s.mu.Unlock()
 	if rs == nil {
+		s.mu.Unlock()
 		return nil, status.Error(codes.NotFound, "run not found")
 	}
+	var pos int
+	var eta int64
+	if rs.status == loadifyv1.RunStatus_RUN_STATUS_QUEUED {
+		pos = s.queuePositionLocked(req.RunId)
+		eta = s.queueETALocked(pos)
+	}
+	s.mu.Unlock()
+
 	var activeVUs int64
 	for _, w := range s.reg.List() {
 		if rs.assigned[w.WorkerId] {
 			activeVUs += w.ActiveVus
 		}
 	}
-	return rs.toProto(activeVUs), nil
+	out := rs.toProto(activeVUs)
+	out.QueuePosition = int32(pos)
+	out.QueueEtaMs = eta
+	return out, nil
 }
 
 // ListWorkers returns all connected workers.

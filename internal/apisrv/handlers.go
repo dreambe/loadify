@@ -735,6 +735,18 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	// For a queued run, attach its live admission-queue position and a rough ETA
+	// so the run page can show "排队中 · 第 N 位 · 预计 …".
+	if run.Status == "queued" {
+		if st, serr := s.coord.GetRunState(ctx, &loadifyv1.RunStateRequest{RunId: run.ID}); serr == nil && st.QueuePosition > 0 {
+			writeJSON(w, http.StatusOK, struct {
+				*postgres.Run
+				QueuePosition int32 `json:"queue_position,omitempty"`
+				QueueETAms    int64 `json:"queue_eta_ms,omitempty"`
+			}{run, st.QueuePosition, st.QueueEtaMs})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, run)
 }
 
@@ -863,6 +875,27 @@ func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
 		workers = []*loadifyv1.WorkerInfo{}
 	}
 	writeJSON(w, http.StatusOK, workers)
+}
+
+// handleCapacity reports cluster admission headroom so the start-run form can
+// warn the user that a run would queue right now.
+func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	cs, err := s.coord.GetCapacity(ctx, &loadifyv1.CapacityRequest{})
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"max_runs":          cs.MaxRuns,
+		"running":           cs.Running,
+		"queue_depth":       cs.QueueDepth,
+		"workers_total":     cs.WorkersTotal,
+		"workers_available": cs.WorkersAvailable,
+		"cpu_max_pct":       cs.CpuMaxPct,
+		"can_accept":        cs.CanAccept,
+	})
 }
 
 // --- helpers ---

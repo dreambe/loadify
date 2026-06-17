@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { AuditEntry, DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
+import type { AuditEntry, Capacity, DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
@@ -197,6 +197,7 @@ export const api = {
   deleteEnvironment: (id: string) => req<void>(`/api/v1/environments/${id}`, { method: "DELETE" }),
 
   listWorkers: () => reqList<WorkerInfo>("/api/v1/workers"),
+  getCapacity: () => req<Capacity>("/api/v1/capacity"),
 
   listSchedules: () => reqList<Schedule>("/api/v1/schedules"),
   createSchedule: (testId: string, intervalMinutes: number, desiredWorkers: number) =>

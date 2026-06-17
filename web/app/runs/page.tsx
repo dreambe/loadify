@@ -11,7 +11,7 @@ import TableSkeleton from "@/components/TableSkeleton";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
-import type { Environment, Run, TestDefinition } from "@/lib/types";
+import type { Capacity, Environment, Run, TestDefinition } from "@/lib/types";
 
 // TestPicker is a searchable test selector: type to filter, pick from the
 // native datalist. Selection maps the typed label back to the test id.
@@ -79,6 +79,7 @@ export default function RunsPage() {
   const [runName, setRunName] = useState("");
   const [workers, setWorkers] = useState("1");
   const [maxWorkers, setMaxWorkers] = useState(0);
+  const [cap, setCap] = useState<Capacity | null>(null);
   const [envId, setEnvId] = useState("");
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [err, setErr] = useState("");
@@ -113,7 +114,13 @@ export default function RunsPage() {
       .listWorkers()
       .then((ws) => setMaxWorkers(ws.filter((w) => w.status === "healthy").length))
       .catch(() => {});
-    const t = setInterval(refresh, 4000);
+    // Poll admission capacity so the start form can warn before a run queues.
+    const loadCap = () => api.getCapacity().then(setCap).catch(() => {});
+    loadCap();
+    const t = setInterval(() => {
+      refresh();
+      loadCap();
+    }, 4000);
     return () => clearInterval(t);
   }, [ready]);
 
@@ -251,6 +258,15 @@ export default function RunsPage() {
             <p className="muted" style={{ marginTop: 8, color: maxWorkers === 0 ? "var(--yellow)" : undefined }}>
               {maxWorkers === 0 ? t("runs.workersNone") : `${t("runs.workersAvail")}: ${maxWorkers}`}
             </p>
+            {cap && !cap.can_accept && maxWorkers > 0 && (
+              <p className="muted" style={{ marginTop: 4, color: "var(--yellow)" }}>
+                <Icon name="warn" />{" "}
+                {t("runs.capacityFull")
+                  .replace("{running}", String(cap.running))
+                  .replace("{max}", String(cap.max_runs))}
+                {cap.queue_depth > 0 ? " · " + t("runs.capacityQueued").replace("{n}", String(cap.queue_depth)) : ""}
+              </p>
+            )}
           </div>
         )}
 

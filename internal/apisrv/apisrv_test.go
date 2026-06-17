@@ -206,6 +206,9 @@ func (c *fakeCoord) StreamLive(context.Context, *loadifyv1.LiveRequest, ...grpc.
 func (c *fakeCoord) StopRun(context.Context, *loadifyv1.StopRunRequest, ...grpc.CallOption) (*loadifyv1.StopRunResponse, error) {
 	return &loadifyv1.StopRunResponse{}, nil
 }
+func (c *fakeCoord) GetCapacity(context.Context, *loadifyv1.CapacityRequest, ...grpc.CallOption) (*loadifyv1.CapacitySnapshot, error) {
+	return &loadifyv1.CapacitySnapshot{MaxRuns: 8, Running: 0, WorkersTotal: 1, WorkersAvailable: 1, CpuMaxPct: 85, CanAccept: true}, nil
+}
 
 func newTestServer(meta *fakeMeta, coord loadifyv1.CoordinatorServiceClient) *Server {
 	return New(Config{
