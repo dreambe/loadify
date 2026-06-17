@@ -220,15 +220,13 @@ test/                  # multi-protocol echo target + e2e harness
 
 ## Screenshots
 
-<!-- Drop PNGs into docs/images/ with these names and they render here. -->
-
-| Dashboard & SLA trend | Live run |
+| Dashboard & SLA trend | Run detail & charts |
 |---|---|
-| ![Dashboard](docs/images/dashboard.png) | ![Live run](docs/images/run-live.png) |
+| ![Dashboard](docs/images/dashboard.png) | ![Run detail](docs/images/run.png) |
 
-| Run comparison | Scenario builder |
+| Run comparison (color-coded deltas) | Runs & launch a test |
 |---|---|
-| ![Compare](docs/images/compare.png) | ![Builder](docs/images/builder.png) |
+| ![Compare](docs/images/compare.png) | ![Runs](docs/images/runs.png) |
 
 ## Get started in 30 seconds
 

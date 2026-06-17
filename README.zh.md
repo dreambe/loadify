@@ -155,15 +155,13 @@ make proto        # 重新生成 gRPC stub(需要 buf + protoc 插件)
 
 ## 界面预览
 
-<!-- 把截图放到 docs/images/ 下,用以下文件名即可自动显示。 -->
-
-| 概览 & SLA 趋势 | 实时压测 |
+| 总览 & SLA 趋势 | 运行详情 & 图表 |
 |---|---|
-| ![概览](docs/images/dashboard.png) | ![实时](docs/images/run-live.png) |
+| ![总览](docs/images/dashboard.png) | ![运行详情](docs/images/run.png) |
 
-| 结果对比 | 场景构建器 |
+| 结果对比(涨跌色标) | 压测任务 & 发起 |
 |---|---|
-| ![对比](docs/images/compare.png) | ![构建器](docs/images/builder.png) |
+| ![对比](docs/images/compare.png) | ![压测任务](docs/images/runs.png) |
 
 ## 30 秒上手
 
