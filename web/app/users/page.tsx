@@ -21,11 +21,16 @@ export default function UsersPage() {
   const [role, setRole] = useState("viewer");
   const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
+  const [usersLoaded, setUsersLoaded] = useState(false);
 
   const isAdmin = roleAtLeast(user?.role, "admin");
 
   function refresh() {
-    api.listUsers().then(setUsers).catch((e) => toast.error(e.message));
+    api
+      .listUsers()
+      .then(setUsers)
+      .catch((e) => toast.error(e.message))
+      .finally(() => setUsersLoaded(true));
   }
   useEffect(() => {
     if (ready && isAdmin) refresh();
@@ -216,13 +221,23 @@ export default function UsersPage() {
                       </tr>
                     );
                   })}
-                  {users.length === 0 && (
+                  {usersLoaded && users.length === 0 && (
                     <tr>
                       <td colSpan={6} className="muted">
                         {t("users.empty")}
                       </td>
                     </tr>
                   )}
+                  {!usersLoaded &&
+                    Array.from({ length: 4 }).map((_, r) => (
+                      <tr key={`sk-${r}`}>
+                        {Array.from({ length: 6 }).map((_, c) => (
+                          <td key={c}>
+                            <div className="skeleton" style={{ height: 14, width: c === 0 ? "70%" : "50%" }} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>

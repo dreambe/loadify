@@ -84,13 +84,16 @@ export default function WorkersPage() {
                   </td>
                 </tr>
               )}
-              {!loaded && (
-                <tr>
-                  <td colSpan={8} className="muted">
-                    {t("common.loading")}
-                  </td>
-                </tr>
-              )}
+              {!loaded &&
+                Array.from({ length: 4 }).map((_, r) => (
+                  <tr key={`sk-${r}`}>
+                    {Array.from({ length: 8 }).map((_, c) => (
+                      <td key={c}>
+                        <div className="skeleton" style={{ height: 14, width: c === 0 ? "70%" : "50%" }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

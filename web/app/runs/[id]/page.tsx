@@ -199,7 +199,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <div
             className="error"
             style={{
-              background: "rgba(255,93,115,.12)",
+              background: "color-mix(in srgb, var(--red) 12%, transparent)",
               border: "1px solid var(--red)",
               borderRadius: 8,
               padding: "10px 12px",
@@ -213,7 +213,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <div
             className="error"
             style={{
-              background: "rgba(255,200,87,.12)",
+              background: "color-mix(in srgb, var(--yellow) 12%, transparent)",
               border: "1px solid var(--yellow)",
               color: "var(--yellow)",
               borderRadius: 8,
@@ -228,7 +228,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <div
             className="error"
             style={{
-              background: "rgba(255,200,87,.12)",
+              background: "color-mix(in srgb, var(--yellow) 12%, transparent)",
               border: "1px solid var(--yellow)",
               color: "var(--yellow)",
               borderRadius: 8,
@@ -264,7 +264,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           <div
             className="panel"
             style={{
-              background: "rgba(255,200,87,.10)",
+              background: "color-mix(in srgb, var(--yellow) 10%, transparent)",
               border: "1px solid var(--yellow)",
               display: "flex",
               alignItems: "center",

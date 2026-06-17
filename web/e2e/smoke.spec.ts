@@ -123,3 +123,78 @@ test("report (PDF/print) shows chart data with print-contrast colors", async ({ 
   const stroke = await qps.evaluate((el) => getComputedStyle(el as Element).stroke);
   expect(stroke.replace(/\s/g, "")).toBe("rgb(14,116,144)");
 });
+
+test("share link works with no session: run renders + CSV downloads with % units", async ({ page, browser }) => {
+  await page.goto("/runs");
+  const link = page.locator('a[href^="/runs/"]').first();
+  if ((await link.count()) === 0) test.skip(true, "no seeded runs available");
+  await link.click();
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{8,}/);
+  const runId = page.url().split("/runs/")[1].split(/[?#]/)[0];
+  const token = await page.evaluate(() => localStorage.getItem("loadify_token"));
+
+  // Mint a public share token via the API (operator+).
+  const mint = await fetch(`${API}/api/v1/runs/${runId}/share`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(mint.ok).toBeTruthy();
+  const { token: share } = (await mint.json()) as { token: string };
+  expect(share).toBeTruthy();
+
+  // Open the share link in a FRESH context with NO session — must not bounce to
+  // login and must render the run.
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await p.goto(`/runs/${runId}?share=${encodeURIComponent(share)}`);
+  await expect(p).toHaveURL(new RegExp(`/runs/${runId}`));
+  await expect(p.locator(".nav")).toBeVisible();
+  await expect(p.getByText(/p95/i).first()).toBeVisible();
+
+  // CSV export must carry the share token (was 401 in share mode before) and use
+  // percent units for error rate (matches the on-screen %).
+  const csvHref = await p.locator('a[download][href*="export.csv"]').first().getAttribute("href");
+  expect(csvHref, "CSV link should exist").toBeTruthy();
+  expect(csvHref).toContain("share=");
+  const csv = await fetch(csvHref!);
+  expect(csv.status).toBe(200);
+  const header = (await csv.text()).split("\n")[0];
+  expect(header).toContain("error_rate_pct");
+  await ctx.close();
+});
+
+test("no NaN/Infinity rendered on run and compare pages", async ({ page }) => {
+  await page.goto("/runs");
+  const link = page.locator('a[href^="/runs/"]').first();
+  if ((await link.count()) > 0) {
+    await link.click();
+    await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{8,}/);
+    await expect(page.locator(".nav")).toBeVisible();
+    const body = await page.locator("body").innerText();
+    expect(body, "run page must not show NaN/Infinity").not.toMatch(/\bNaN\b|Infinity/);
+  }
+  await page.goto("/compare");
+  const cmp = await page.locator("body").innerText();
+  expect(cmp, "compare page must not show NaN/Infinity").not.toMatch(/\bNaN\b|Infinity/);
+});
+
+test("light theme: pages mount and the spinner stays visible", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("loadify_theme", "light"));
+  for (const path of ["/", "/runs", "/users"]) {
+    await page.goto(path);
+    await expect(page.locator(".nav")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe("light");
+  }
+  // The spinner's ring (the color-mix border) must resolve to a visible color on
+  // the light background, not transparent.
+  const ring = await page.evaluate(() => {
+    const el = document.createElement("div");
+    el.className = "spinner";
+    document.body.appendChild(el);
+    const c = getComputedStyle(el).borderLeftColor;
+    el.remove();
+    return c;
+  });
+  expect(ring).not.toBe("rgba(0, 0, 0, 0)");
+  expect(ring).not.toBe("transparent");
+});

@@ -916,12 +916,15 @@ func (s *Server) handleRunExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="run-`+runID+`.csv"`)
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"ts", "qps", "error_rate", "p50_ms", "p90_ms", "p95_ms", "p99_ms"})
+	// error_rate_pct is a percentage (0-100) to match every on-screen surface
+	// (run charts, summary, report all show percent); QuerySeries returns a
+	// fraction, so multiply by 100 here.
+	_ = cw.Write([]string{"ts", "qps", "error_rate_pct", "p50_ms", "p90_ms", "p95_ms", "p99_ms"})
 	for _, p := range pts {
 		_ = cw.Write([]string{
 			p.TS.UTC().Format(time.RFC3339),
 			strconv.FormatFloat(p.RPS, 'f', 2, 64),
-			strconv.FormatFloat(p.ErrorRate, 'f', 4, 64),
+			strconv.FormatFloat(p.ErrorRate*100, 'f', 4, 64),
 			strconv.FormatFloat(p.P50ms, 'f', 2, 64),
 			strconv.FormatFloat(p.P90ms, 'f', 2, 64),
 			strconv.FormatFloat(p.P95ms, 'f', 2, 64),

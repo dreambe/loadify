@@ -90,20 +90,30 @@ export default function LineChart({
   const hi = zoom ? zoom.hi : maxLen - 1;
   const span = Math.max(1, hi - lo);
   const visible = series.filter((s) => !hidden.has(s.label));
-  // Scale the y-axis to the visible series within the current x-window.
+  // Scale the y-axis to the visible series within the current x-window. Only
+  // finite values count, so a stray NaN/Infinity from the API can't make maxVal
+  // NaN and blank every line.
   const maxVal = Math.max(
     1,
-    ...visible.flatMap((s) => s.data.slice(lo, hi + 1))
+    ...visible.flatMap((s) => s.data.slice(lo, hi + 1)).filter((v) => Number.isFinite(v))
   );
 
   const x = (i: number) => pad.left + ((i - lo) / span) * innerW;
   const y = (v: number) => pad.top + innerH - (v / maxVal) * innerH;
 
-  // Path over the visible x-window only.
+  // Path over the visible x-window only; non-finite points are skipped (the line
+  // just breaks across the gap) instead of poisoning the whole path with NaN.
   const path = (data: number[]) => {
     let d = "";
+    let pen = false;
     for (let i = lo; i <= hi && i < data.length; i++) {
-      d += `${i === lo ? "M" : "L"}${x(i).toFixed(1)},${y(data[i]).toFixed(1)}`;
+      const v = data[i];
+      if (!Number.isFinite(v)) {
+        pen = false;
+        continue;
+      }
+      d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      pen = true;
     }
     return d;
   };
@@ -270,7 +280,7 @@ export default function LineChart({
               strokeDasharray="3 3"
             />
             {series.map((s) =>
-              s.data[validHover] !== undefined ? (
+              Number.isFinite(s.data[validHover]) ? (
                 <circle
                   key={s.label}
                   cx={hoverX}
@@ -378,6 +388,7 @@ export function inlineCssVars(svg: string, lookup: (name: string) => string): st
 
 // formatElapsed renders seconds since test start as "5s" / "1m05s" / "1h02m".
 export function formatElapsed(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "–";
   const s = Math.max(0, Math.round(seconds));
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -387,11 +398,13 @@ export function formatElapsed(seconds: number): string {
 }
 
 function formatTick(v: number): string {
+  if (!Number.isFinite(v)) return "–";
   if (v >= 1000) return (v / 1000).toFixed(1) + "k";
   return v < 10 ? v.toFixed(1) : Math.round(v).toString();
 }
 
 function formatVal(v: number): string {
+  if (!Number.isFinite(v)) return "–";
   if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
   return v < 10 ? v.toFixed(2) : v.toFixed(1);
 }

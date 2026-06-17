@@ -113,7 +113,7 @@ body {
 }
 
 ::selection {
-  background: rgba(54, 214, 231, 0.28);
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 ::-webkit-scrollbar {
@@ -383,7 +383,8 @@ tbody tr {
 /* No per-row entrance animation: on an auto-refreshing list it makes the first
    rows fade/stagger on every update, which reads as a glitch. Rows just appear. */
 tbody tr:hover {
-  background: rgba(54, 214, 231, 0.05);
+  /* Theme-aware row hover (the old fixed 5% cyan was imperceptible on light). */
+  background: var(--accent-soft);
 }
 tbody tr:last-child td {
   border-bottom: none;
@@ -654,7 +655,7 @@ button.sm {
   border-radius: 8px;
   background: var(--surface-pop);
   border: 1px solid var(--border-strong);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-pop);
   color: var(--text);
   font-size: 12px;
   font-weight: 400;
@@ -721,13 +722,14 @@ pre {
   font-family: var(--font-mono);
 }
 
-/* Small inline spinner for waiting states (e.g. a queued run). */
+/* Small inline spinner for waiting states (e.g. a queued run). Theme-aware so
+   it stays visible on the light background too. */
 .spinner {
   display: inline-block;
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  border: 2px solid rgba(255, 200, 87, 0.3);
+  border: 2px solid color-mix(in srgb, var(--yellow) 30%, transparent);
   border-top-color: var(--yellow);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;

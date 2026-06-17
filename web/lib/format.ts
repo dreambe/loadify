@@ -2,12 +2,14 @@
 // pages (dashboard, run detail, compare). Below 100ms keep one decimal for
 // precision; above, round and group thousands.
 export function fmtMs(n: number | undefined | null): string {
-  if (n == null) return "–";
+  // Non-finite (NaN/Infinity, e.g. a divide-by-zero from the API) renders "–"
+  // rather than "NaN ms" / "∞ ms".
+  if (n == null || !Number.isFinite(n)) return "–";
   const v = n >= 100 ? Math.round(n).toLocaleString() : n.toFixed(1);
   return `${v} ms`;
 }
 
 export function fmtInt(n: number | undefined | null): string {
-  if (n == null) return "–";
+  if (n == null || !Number.isFinite(n)) return "–";
   return Math.round(n).toLocaleString();
 }

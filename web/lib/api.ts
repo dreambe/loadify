@@ -236,10 +236,10 @@ export const api = {
 };
 
 // reportURL builds the HTML report link (token via query param for a plain
-// link / new tab).
+// link / new tab); falls back to the share token so the report opens from a
+// public share link too.
 export function reportURL(runId: string): string {
-  const token = getToken() || "";
-  return `${API_BASE}/api/v1/runs/${runId}/report.html?token=${encodeURIComponent(token)}`;
+  return `${API_BASE}/api/v1/runs/${runId}/report.html?${authParam()}`;
 }
 
 // shareRunURL builds the public (no-login) link to the real, interactive run
@@ -249,17 +249,27 @@ export function shareRunURL(runId: string, shareToken: string): string {
   return `${origin}/runs/${runId}?share=${encodeURIComponent(shareToken)}`;
 }
 
+// authParam returns the query auth for plain links / WS handshakes that can't
+// set headers: the session token when signed in, else the run share token (so a
+// shared link's CSV download and live stream are authorized just like its reads).
+function authParam(): string {
+  const token = getToken();
+  if (token) return `token=${encodeURIComponent(token)}`;
+  if (shareToken) return `share=${encodeURIComponent(shareToken)}`;
+  return "token=";
+}
+
 // liveSocketURL builds the WebSocket URL for a run's live stream, carrying the
-// JWT as a query param (browsers cannot set headers on the WS handshake).
+// JWT (or share token) as a query param (browsers cannot set headers on the WS
+// handshake).
 export function liveSocketURL(runId: string): string {
   const base = API_BASE.replace(/^http/, "ws");
-  const token = getToken() || "";
-  return `${base}/api/v1/runs/${runId}/live?token=${encodeURIComponent(token)}`;
+  return `${base}/api/v1/runs/${runId}/live?${authParam()}`;
 }
 
 // exportCSVURL builds the CSV download link for a run (token via query param,
-// since a plain <a download> can't set headers).
+// since a plain <a download> can't set headers). Falls back to the share token
+// so CSV export works from a public share link too.
 export function exportCSVURL(runId: string): string {
-  const token = getToken() || "";
-  return `${API_BASE}/api/v1/runs/${runId}/export.csv?token=${encodeURIComponent(token)}`;
+  return `${API_BASE}/api/v1/runs/${runId}/export.csv?${authParam()}`;
 }

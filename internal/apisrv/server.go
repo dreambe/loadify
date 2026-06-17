@@ -140,7 +140,7 @@ func (s *Server) routes() {
 		r.With(s.runRead).Get("/runs/{id}/metrics", s.handleRunMetrics)   // Prometheus text (?token= or ?share=)
 		r.Get("/runs/{id}/report.html", s.handleRunReport)                // self-authorized: ?token= or ?share=
 		r.With(operator).Post("/runs/{id}/share", s.handleShareRun)
-		r.With(viewer).Get("/runs/{id}/live", s.handleRunLive) // websocket (token via ?token=)
+		r.With(s.runRead).Get("/runs/{id}/live", s.handleRunLive) // websocket (?token= or ?share=)
 		r.With(viewer).Get("/workers", s.handleListWorkers)
 		r.With(viewer).Get("/capacity", s.handleCapacity)
 
