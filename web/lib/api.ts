@@ -174,8 +174,10 @@ export const api = {
     req<{ run_id: string; status: string }>(`/api/v1/runs/${id}/stop`, { method: "POST" }),
   shareRun: (id: string) =>
     req<{ token: string; expires_at: string }>(`/api/v1/runs/${id}/share`, { method: "POST" }),
-  createApiToken: () =>
-    req<{ token: string; expires_at: string }>(`/api/v1/auth/token`, { method: "POST" }),
+  // Persistent CLI/agent token (Feishu-style): getApiToken returns the current
+  // one (minted lazily on first read); resetApiToken rotates it.
+  getApiToken: () => req<{ token: string }>(`/api/v1/auth/token`),
+  resetApiToken: () => req<{ token: string }>(`/api/v1/auth/token`, { method: "POST" }),
   runSeries: (id: string, group = "*", res = 1) =>
     reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
   runSamples: (id: string, filter: { status_class?: string; error_kind?: string; group?: string; limit?: number } = {}) => {

@@ -134,22 +134,37 @@ paths:
         "400": { description: password too short }
         "403": { description: current password incorrect }
   /api/v1/auth/token:
-    post:
+    get:
       tags: [auth]
-      summary: Mint a long-lived API token for CLI/agent use (role viewer+)
+      summary: Get my persistent API token for CLI/agent use (role viewer+)
       description: >
-        Returns a token carrying the caller's identity for use via LOADIFY_TOKEN
-        by loadifyctl and loadify-mcp. Shown once; store it securely.
+        Returns the caller's permanent API token (minted on first read) for use
+        via LOADIFY_TOKEN by loadifyctl and loadify-mcp. The token never expires
+        and is viewable any time; it is revoked only by POST (reset) or by
+        disabling the account.
       responses:
         "200":
-          description: token + expiry
+          description: current token
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   token: { type: string }
-                  expires_at: { type: string }
+    post:
+      tags: [auth]
+      summary: Reset (rotate) my persistent API token (role viewer+)
+      description: >
+        Generates a fresh token, immediately invalidating the previous one.
+      responses:
+        "200":
+          description: new token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
   /api/v1/auth/webhooks:
     get:
       tags: [auth]

@@ -20,6 +20,7 @@ type User struct {
 	AvatarURL    string     `json:"avatar_url,omitempty"`
 	WebhookURLs  []string   `json:"webhook_urls,omitempty"`
 	Disabled     bool       `json:"disabled"`
+	APIToken     string     `json:"-"` // persistent CLI/agent token (never JSON-listed)
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 	// CredsChangedAt advances when the account is disabled, has its password
@@ -30,12 +31,12 @@ type User struct {
 // ErrUserNotFound is returned when a lookup matches no row.
 var ErrUserNotFound = errors.New("postgres: user not found")
 
-const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), coalesce(webhook_urls,'[]'), disabled, created_at, last_login_at, creds_changed_at`
+const userCols = `id, email, name, role, coalesce(password_hash,''), coalesce(feishu_open_id,''), coalesce(avatar_url,''), coalesce(webhook_urls,'[]'), disabled, coalesce(api_token,''), created_at, last_login_at, creds_changed_at`
 
 func scanUser(row pgx.Row) (*User, error) {
 	u := &User{}
 	var webhooks []byte
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &webhooks, &u.Disabled, &u.CreatedAt, &u.LastLoginAt, &u.CredsChangedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.PasswordHash, &u.FeishuOpenID, &u.AvatarURL, &webhooks, &u.Disabled, &u.APIToken, &u.CreatedAt, &u.LastLoginAt, &u.CredsChangedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
 		}
@@ -45,6 +46,27 @@ func scanUser(row pgx.Row) (*User, error) {
 		_ = json.Unmarshal(webhooks, &u.WebhookURLs)
 	}
 	return u, nil
+}
+
+// GetUserByAPIToken fetches the account whose persistent API token matches.
+// Empty tokens never match (the index is partial on NOT NULL).
+func (s *Store) GetUserByAPIToken(ctx context.Context, token string) (*User, error) {
+	if token == "" {
+		return nil, ErrUserNotFound
+	}
+	return scanUser(s.pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE api_token=$1`, token))
+}
+
+// SetUserAPIToken stores (or clears, when token is empty) a user's persistent
+// API token. Unlike password/role changes this does NOT advance
+// creds_changed_at: the token is its own credential and is invalidated only by
+// reset (a new value) or by disabling the account.
+func (s *Store) SetUserAPIToken(ctx context.Context, id, token string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET api_token=nullif($2,'') WHERE id=$1`, id, token)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return err
 }
 
 // SetUserWebhooks replaces a user's notification webhook URLs.

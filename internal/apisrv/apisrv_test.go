@@ -106,6 +106,26 @@ func (f *fakeMeta) SetUserPassword(_ context.Context, _, _ string) error        
 func (f *fakeMeta) SetUserDisabled(_ context.Context, _ string, _ bool) error     { return nil }
 func (f *fakeMeta) DeleteUser(_ context.Context, _ string) error                  { return nil }
 func (f *fakeMeta) SetUserWebhooks(_ context.Context, _ string, _ []string) error { return nil }
+func (f *fakeMeta) SetUserAPIToken(_ context.Context, id, tokenVal string) error {
+	if f.usersByID == nil {
+		f.usersByID = map[string]*postgres.User{}
+	}
+	u := f.usersByID[id]
+	if u == nil {
+		u = &postgres.User{ID: id}
+		f.usersByID[id] = u
+	}
+	u.APIToken = tokenVal
+	return nil
+}
+func (f *fakeMeta) GetUserByAPIToken(_ context.Context, token string) (*postgres.User, error) {
+	for _, u := range f.usersByID {
+		if u.APIToken != "" && u.APIToken == token {
+			return u, nil
+		}
+	}
+	return nil, postgres.ErrUserNotFound
+}
 func (f *fakeMeta) ListUsers(_ context.Context, _ int) ([]postgres.User, error)   { return nil, nil }
 func (f *fakeMeta) CreateUser(_ context.Context, email, name, role, _ string) (*postgres.User, error) {
 	return &postgres.User{ID: "new", Email: email, Name: name, Role: role}, nil

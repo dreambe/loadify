@@ -77,6 +77,8 @@ func New(c Config) *Server {
 	}
 	// Honor account disable / credential changes for already-issued tokens.
 	s.authmw.Validate = s.validateClaims
+	// Resolve persistent opaque API tokens (CLI / AI agent) to their owner.
+	s.authmw.Resolve = s.resolveAPIToken
 	s.routes()
 	return s
 }
@@ -117,7 +119,8 @@ func (s *Server) routes() {
 		r.With(viewer).Post("/auth/password", s.handleChangePassword)
 		r.With(viewer).Get("/auth/webhooks", s.handleGetWebhooks)
 		r.With(viewer).Put("/auth/webhooks", s.handleSetWebhooks)
-		r.With(viewer).Post("/auth/token", s.handleCreateAPIToken)
+		r.With(viewer).Get("/auth/token", s.handleGetAPIToken)
+		r.With(viewer).Post("/auth/token", s.handleResetAPIToken)
 
 		// Reads require a viewer (or higher).
 		r.With(viewer).Get("/tests", s.handleListTests)

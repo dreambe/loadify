@@ -31,6 +31,7 @@ type metaStore interface {
 
 	GetUserByEmail(ctx context.Context, email string) (*postgres.User, error)
 	GetUserByID(ctx context.Context, id string) (*postgres.User, error)
+	GetUserByAPIToken(ctx context.Context, token string) (*postgres.User, error)
 	UpsertFeishuUser(ctx context.Context, openID, email, name, avatarURL string) (*postgres.User, error)
 	TouchLogin(ctx context.Context, id string) error
 	ListUsers(ctx context.Context, limit int) ([]postgres.User, error)
@@ -39,6 +40,7 @@ type metaStore interface {
 	SetUserPassword(ctx context.Context, id, passwordHash string) error
 	SetUserDisabled(ctx context.Context, id string, disabled bool) error
 	SetUserWebhooks(ctx context.Context, id string, urls []string) error
+	SetUserAPIToken(ctx context.Context, id, token string) error
 	DeleteUser(ctx context.Context, id string) error
 
 	ListEnvironments(ctx context.Context, limit int) ([]postgres.Environment, error)

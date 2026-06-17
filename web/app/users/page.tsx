@@ -355,19 +355,37 @@ function ProfileCard() {
 }
 
 // WebhooksPanel lets the signed-in user manage their notification webhooks.
-// ApiTokenPanel mints a long-lived token for the CLI / AI agents (LOADIFY_TOKEN).
-// The token is shown once, with a copy button and a usage hint.
+// ApiTokenPanel shows the user's PERSISTENT CLI / AI agent token (LOADIFY_TOKEN),
+// Feishu-style: it never expires, is viewable here any time, and can be reset.
 function ApiTokenPanel({ onError, onCopied }: { onError: (m: string) => void; onCopied: () => void }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const [token, setToken] = useState("");
+  const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  async function generate() {
+  useEffect(() => {
+    let live = true;
+    api
+      .getApiToken()
+      .then(({ token }) => {
+        if (live) setToken(token);
+      })
+      .catch(() => onError(t("users.apiTokenFailed")));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function reset() {
     if (busy) return;
+    if (!(await confirm({ title: t("users.apiTokenReset"), body: t("users.apiTokenResetWarn"), danger: true, confirmLabel: t("users.apiTokenReset") }))) return;
     setBusy(true);
     try {
-      const { token } = await api.createApiToken();
+      const { token } = await api.resetApiToken();
       setToken(token);
+      setRevealed(true);
     } catch {
       onError(t("users.apiTokenFailed"));
     } finally {
@@ -383,40 +401,37 @@ function ApiTokenPanel({ onError, onCopied }: { onError: (m: string) => void; on
     }
   }
 
+  // Mask all but the prefix + last 4 chars until revealed (the value is a
+  // long-lived secret; avoid leaving it shoulder-surfable on screen).
+  const masked = token ? token.slice(0, 4) + "•".repeat(Math.max(0, token.length - 8)) + token.slice(-4) : "";
+
   return (
     <div className="panel">
       <h2>
         {t("users.apiToken")}
         <Help tip={t("users.apiTokenHelp")} />
       </h2>
-      {!token ? (
-        <div className="row" style={{ marginTop: 8 }}>
-          <button type="button" onClick={generate} disabled={busy}>
-            {t("users.apiTokenGen")}
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              readOnly
-              value={token}
-              onFocus={(e) => e.currentTarget.select()}
-              style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12 }}
-            />
-            <button type="button" className="secondary" onClick={copy}>
-              {t("users.apiTokenCopy")}
-            </button>
-            <button type="button" className="ghost" onClick={generate} disabled={busy}>
-              {t("users.apiTokenRegen")}
-            </button>
-          </div>
-          <p className="muted" style={{ fontSize: 12.5, marginTop: 6, color: "var(--yellow)" }}>
-            ⚠ {t("users.apiTokenWarn")}
-          </p>
-          <pre style={{ marginTop: 6, fontSize: 12, overflow: "auto" }}>export LOADIFY_TOKEN={token.slice(0, 12)}…</pre>
-        </>
-      )}
+      <div className="row" style={{ marginTop: 8 }}>
+        <input
+          readOnly
+          value={revealed ? token : masked}
+          onFocus={(e) => e.currentTarget.select()}
+          style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12 }}
+        />
+        <button type="button" className="ghost" onClick={() => setRevealed((v) => !v)}>
+          {revealed ? t("users.apiTokenHide") : t("users.apiTokenReveal")}
+        </button>
+        <button type="button" className="secondary" onClick={copy} disabled={!token}>
+          {t("users.apiTokenCopy")}
+        </button>
+        <button type="button" className="ghost" onClick={reset} disabled={busy}>
+          {t("users.apiTokenReset")}
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+        {t("users.apiTokenPersistentHint")}
+      </p>
+      <pre style={{ marginTop: 6, fontSize: 12, overflow: "auto" }}>export LOADIFY_TOKEN={token ? token.slice(0, 8) + "…" : "lfy_…"}</pre>
     </div>
   );
 }

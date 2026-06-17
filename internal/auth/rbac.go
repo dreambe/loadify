@@ -36,6 +36,10 @@ type Middleware struct {
 	// returns false to reject an otherwise-valid token — used to honor account
 	// disable / credential-change revocation that JWT expiry alone cannot.
 	Validate func(*Claims) bool
+	// Resolve, when set, is consulted for a bearer that is NOT a valid JWT: it
+	// maps an opaque persistent API token (CLI / AI agent, Feishu-style) to its
+	// owner's claims. Returns false when the raw string is not a known token.
+	Resolve func(raw string) (*Claims, bool)
 }
 
 // claimsFrom extracts and verifies the bearer token from the request.
@@ -52,8 +56,13 @@ func (m Middleware) claimsFrom(r *http.Request) (*Claims, bool) {
 	if !strings.HasPrefix(h, prefix) {
 		return nil, false
 	}
-	c, err := Parse(strings.TrimPrefix(h, prefix), m.Secret)
+	raw := strings.TrimPrefix(h, prefix)
+	c, err := Parse(raw, m.Secret)
 	if err != nil {
+		// Not a JWT: fall back to a persistent opaque API token, if configured.
+		if m.Resolve != nil {
+			return m.Resolve(raw)
+		}
 		return nil, false
 	}
 	return c, true
