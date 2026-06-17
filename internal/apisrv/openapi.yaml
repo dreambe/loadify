@@ -133,6 +133,23 @@ paths:
         "204": { description: password changed }
         "400": { description: password too short }
         "403": { description: current password incorrect }
+  /api/v1/auth/token:
+    post:
+      tags: [auth]
+      summary: Mint a long-lived API token for CLI/agent use (role viewer+)
+      description: >
+        Returns a token carrying the caller's identity for use via LOADIFY_TOKEN
+        by loadifyctl and loadify-mcp. Shown once; store it securely.
+      responses:
+        "200":
+          description: token + expiry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string }
   /api/v1/auth/webhooks:
     get:
       tags: [auth]

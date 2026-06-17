@@ -142,13 +142,15 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   return (
     <div>
       <div className="metrics-grid">
-        <Metric label={t("live.status")} value={statusValue} color={statusColor} />
+        <Metric label={t("live.status")} value={statusValue} color={statusColor} small />
         <Metric label={t("live.qps")} value={fmt(last?.rps)} />
         <Metric label={t("live.activeVus")} value={last ? String(last.active_vus) : "–"} />
         <Metric
           label={t("live.errorRate")}
           value={last ? (last.error_rate * 100).toFixed(2) + "%" : "–"}
         />
+      </div>
+      <div className="metrics-grid" style={{ marginTop: 12 }}>
         <Metric label="p50" value={fmt(last?.p50_ms) + " ms"} />
         <Metric label="p90" value={fmt(last?.p90_ms) + " ms"} />
         <Metric label="p95" value={fmt(last?.p95_ms) + " ms"} />
@@ -317,11 +319,11 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   );
 }
 
-function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
+function Metric({ label, value, color, small }: { label: string; value: string; color?: string; small?: boolean }) {
   return (
     <div className="metric">
       <div className="label">{label}</div>
-      <div className="value" style={color ? { color } : undefined}>
+      <div className="value" style={{ ...(color ? { color } : {}), ...(small ? { fontSize: 17, whiteSpace: "nowrap" } : {}) }}>
         {value}
       </div>
     </div>

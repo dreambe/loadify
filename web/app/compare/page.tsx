@@ -107,9 +107,9 @@ function CompareInner() {
       ? [...runs.filter((r) => r.id === value), ...filteredRuns]
       : filteredRuns;
     return (
-      <div>
+      <div style={{ flex: "1 1 0", minWidth: 0 }}>
         <label>{label}</label>
-        <select value={value} onChange={(e) => set(e.target.value)}>
+        <select value={value} onChange={(e) => set(e.target.value)} style={{ width: "100%" }}>
           <option value="">{t("compare.select")}</option>
           {opts.map((r) => (
             <option key={r.id} value={r.id}>

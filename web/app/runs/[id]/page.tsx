@@ -13,6 +13,7 @@ import { useConfirm } from "@/components/Confirm";
 import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
+import { fmtMs } from "@/lib/format";
 import { chartColor, latencyColors } from "@/lib/colors";
 import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
 
@@ -375,10 +376,12 @@ function SummaryReport({ run, t }: { run: Run; t: (k: string) => string }) {
         {cell(t("report.duration"), durationS ? formatElapsed(durationS) : "–")}
         {cell(t("report.avgQps"), avgQps ? avgQps.toFixed(1) : "–")}
         {cell(t("report.errorRate"), s?.error_rate !== undefined ? (s.error_rate * 100).toFixed(2) + "%" : "–")}
-        {cell("p50", s?.p50_ms !== undefined ? s.p50_ms.toFixed(1) + " ms" : "–")}
-        {cell("p90", s?.p90_ms !== undefined ? s.p90_ms.toFixed(1) + " ms" : "–")}
-        {cell("p95", s?.p95_ms !== undefined ? s.p95_ms.toFixed(1) + " ms" : "–")}
-        {cell("p99", s?.p99_ms !== undefined ? s.p99_ms.toFixed(1) + " ms" : "–")}
+      </div>
+      <div className="metrics-grid" style={{ marginTop: 12 }}>
+        {cell("p50", s?.p50_ms !== undefined ? fmtMs(s.p50_ms) : "–")}
+        {cell("p90", s?.p90_ms !== undefined ? fmtMs(s.p90_ms) : "–")}
+        {cell("p95", s?.p95_ms !== undefined ? fmtMs(s.p95_ms) : "–")}
+        {cell("p99", s?.p99_ms !== undefined ? fmtMs(s.p99_ms) : "–")}
       </div>
     </div>
   );

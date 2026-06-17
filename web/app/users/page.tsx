@@ -118,6 +118,8 @@ export default function UsersPage() {
 
         <ChangePasswordPanel onError={toast.error} onDone={() => flash(t("users.pwChanged"))} />
 
+        <ApiTokenPanel onError={toast.error} onCopied={() => flash(t("users.apiTokenCopied"))} />
+
         <WebhooksPanel onError={toast.error} onDone={() => flash(t("users.webhooksSaved"))} />
 
         {isAdmin && (
@@ -353,6 +355,72 @@ function ProfileCard() {
 }
 
 // WebhooksPanel lets the signed-in user manage their notification webhooks.
+// ApiTokenPanel mints a long-lived token for the CLI / AI agents (LOADIFY_TOKEN).
+// The token is shown once, with a copy button and a usage hint.
+function ApiTokenPanel({ onError, onCopied }: { onError: (m: string) => void; onCopied: () => void }) {
+  const { t } = useI18n();
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function generate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { token } = await api.createApiToken();
+      setToken(token);
+    } catch {
+      onError(t("users.apiTokenFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(token);
+      onCopied();
+    } catch {
+      onError(t("users.apiTokenFailed"));
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>
+        {t("users.apiToken")}
+        <Help tip={t("users.apiTokenHelp")} />
+      </h2>
+      {!token ? (
+        <div className="row" style={{ marginTop: 8 }}>
+          <button type="button" onClick={generate} disabled={busy}>
+            {t("users.apiTokenGen")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="row" style={{ marginTop: 8 }}>
+            <input
+              readOnly
+              value={token}
+              onFocus={(e) => e.currentTarget.select()}
+              style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12 }}
+            />
+            <button type="button" className="secondary" onClick={copy}>
+              {t("users.apiTokenCopy")}
+            </button>
+            <button type="button" className="ghost" onClick={generate} disabled={busy}>
+              {t("users.apiTokenRegen")}
+            </button>
+          </div>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 6, color: "var(--yellow)" }}>
+            ⚠ {t("users.apiTokenWarn")}
+          </p>
+          <pre style={{ marginTop: 6, fontSize: 12, overflow: "auto" }}>export LOADIFY_TOKEN={token.slice(0, 12)}…</pre>
+        </>
+      )}
+    </div>
+  );
+}
+
 // When one of their runs finishes/auto-stops, the first URL is notified
 // (Feishu/Lark bot URLs get a formatted card).
 function WebhooksPanel({ onError, onDone }: { onError: (m: string) => void; onDone: () => void }) {

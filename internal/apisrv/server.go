@@ -117,6 +117,7 @@ func (s *Server) routes() {
 		r.With(viewer).Post("/auth/password", s.handleChangePassword)
 		r.With(viewer).Get("/auth/webhooks", s.handleGetWebhooks)
 		r.With(viewer).Put("/auth/webhooks", s.handleSetWebhooks)
+		r.With(viewer).Post("/auth/token", s.handleCreateAPIToken)
 
 		// Reads require a viewer (or higher).
 		r.With(viewer).Get("/tests", s.handleListTests)
