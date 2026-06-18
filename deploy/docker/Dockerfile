@@ -2,8 +2,18 @@
 # --build-arg SERVICE=<apisrv|coordinatord|workerd|loadifyctl>.
 # The build stage runs on the BUILD platform and Go cross-compiles to the target
 # arch (TARGETARCH), so multi-arch builds (amd64+arm64) are fast — no QEMU.
+#
+# Restricted networks (e.g. China): override the runtime base image and the Go
+# module proxy via build-args (set in deploy/compose/.env). Defaults are the
+# upstream registries, so normal builds are unchanged.
+ARG RUNTIME_BASE=gcr.io/distroless/static-debian12:nonroot
+
 FROM --platform=$BUILDPLATFORM golang:1.25 AS build
 WORKDIR /src
+
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG GOSUMDB=sum.golang.org
+ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -24,6 +34,6 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -
     -ldflags "-s -w" \
     -o /out/app ./cmd/${SERVICE}
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM ${RUNTIME_BASE}
 COPY --from=build /out/app /app
 ENTRYPOINT ["/app"]
