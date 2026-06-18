@@ -2,7 +2,9 @@
 # Multi-stage build for the Next.js frontend (web/), producing a small
 # standalone runtime image.
 
-FROM node:22-alpine AS deps
+# deps + build run on the BUILD platform (the Next output is plain JS, served by
+# a per-arch node runner below) — so multi-arch builds don't emulate the build.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS deps
 WORKDIR /app
 COPY web/package.json web/package-lock.json ./
 # @playwright/test is a dev-only dep (E2E); skip its browser download in the
@@ -11,7 +13,7 @@ COPY web/package.json web/package-lock.json ./
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci --no-audit --no-fund
 
-FROM node:22-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY web/ ./

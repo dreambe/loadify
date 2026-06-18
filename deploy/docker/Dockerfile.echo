@@ -1,10 +1,11 @@
 # Build the multi-protocol echo target used for smoke tests.
-FROM golang:1.25 AS build
+FROM --platform=$BUILDPLATFORM golang:1.25 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/echo ./test/echo
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -o /out/echo ./test/echo
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/echo /echo

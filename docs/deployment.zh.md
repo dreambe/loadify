@@ -108,3 +108,108 @@ helm install loadify deploy/helm/loadify \
 | `LOADIFY_JWT_SECRET` | apisrv | 生产必须改随机值 |
 
 完整变量见 README 的 Configuration 表。
+
+---
+
+## 镜像发布与拉取(传到哪里)
+
+镜像不用手动传。仓库在 GitHub,最省事的方案是 **GHCR(GitHub Container Registry)**:
+
+- 打一个版本 tag 即自动构建并推送(见 `.github/workflows/release.yml`):
+  ```bash
+  git tag v0.1.0 && git push origin v0.1.0
+  ```
+  产物:`ghcr.io/dreambe/loadify-<组件>:v0.1.0`(+ `:latest`),**多架构(amd64 + arm64)**,
+  用 `GITHUB_TOKEN` 推送、**无需额外密钥**;公开仓库免费。
+- 首次推送后到 GitHub → Packages 把这几个 package 设为 **public**(否则拉取需登录)。
+- 组件:`loadify-apisrv` / `loadify-coordinatord` / `loadify-workerd` / `loadify-web`。
+
+部署时指向它(Helm 默认就是 `ghcr.io/dreambe/loadify`):
+```bash
+helm upgrade --install loadify deploy/helm/loadify \
+  --set image.registry=ghcr.io --set image.repository=dreambe/loadify --set image.tag=v0.1.0
+```
+
+### 国内部署(GHCR 拉取慢/不稳)
+两种办法,任选其一:
+1. **重打 tag 推到国内 registry**(阿里云 ACR 个人版免费、腾讯 TCR、华为 SWR,或自建 Harbor):
+   ```bash
+   for c in apisrv coordinatord workerd web; do
+     docker pull  ghcr.io/dreambe/loadify-$c:v0.1.0
+     docker tag   ghcr.io/dreambe/loadify-$c:v0.1.0 registry.cn-hangzhou.aliyuncs.com/你的命名空间/loadify-$c:v0.1.0
+     docker push  registry.cn-hangzhou.aliyuncs.com/你的命名空间/loadify-$c:v0.1.0
+   done
+   ```
+   然后 `--set image.registry=registry.cn-hangzhou.aliyuncs.com --set image.repository=你的命名空间/loadify`。
+2. 给 Docker / containerd 配 registry 镜像加速 / 代理。
+
+> ⚠️ **web 镜像的坑**:`NEXT_PUBLIC_API_BASE` 在**构建时**烘焙进前端包。要么用下面的 nginx
+> **同源**方案(浏览器同域访问 `/api`,把 API base 设成你的对外域名),要么用你的 API 公网地址
+> **重新构建 web 镜像**(`--build-arg NEXT_PUBLIC_API_BASE=https://loadify.example.com`,
+> 或在仓库 Variables 里设 `LOADIFY_API_BASE` 后再打 tag)。
+
+---
+
+## 用 nginx 做对外入口(反向代理)
+
+典型拓扑:**边缘机**跑 nginx + `web`(3000)+ `apisrv`(8080);**其它服务器**只跑 `workerd`。
+**worker 不经过 nginx**——它直连协调器的 gRPC(7070,走内网),见下方说明。
+
+把下面这段放到 `/etc/nginx/conf.d/loadify.conf`(你的 `nginx.conf` 已 `include conf.d/*.conf`,
+**主文件不用改**)。`web`/`apisrv` 在本机就用 `127.0.0.1`,在别的机器就填其私网 IP。
+
+```nginx
+upstream loadify_web { server 127.0.0.1:3000; }
+upstream loadify_api { server 127.0.0.1:8080; }
+
+# WebSocket 升级所需
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    listen 80;
+    server_name loadify.example.com;     # ← 改成你的域名
+
+    client_max_body_size 32m;            # 导入/脚本可能较大
+
+    # API + 实时 WebSocket(/api/v1/runs/<id>/live)
+    location /api/ {
+        proxy_pass http://loadify_api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;        # 实时长连接
+        proxy_buffering off;             # 实时推送不缓冲
+    }
+
+    location = /healthz     { proxy_pass http://loadify_api; }
+    location = /openapi.yaml { proxy_pass http://loadify_api; }
+
+    # 前端(Next.js)
+    location / {
+        proxy_pass http://loadify_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+要点:
+- **同源**:浏览器访问 `https://loadify.example.com`,API 走同域 `/api`,**无跨域问题**。
+  对应地,web 构建时的 `NEXT_PUBLIC_API_BASE` 设为 `https://loadify.example.com`(见上文 web 镜像坑)。
+- **WebSocket**:实时图表用 WS(`/api/v1/runs/<id>/live`),所以 `/api/` 必须带 `Upgrade`/
+  `Connection` 头并放大 `proxy_read_timeout`,上面已包含。
+- **X-Forwarded-For**:apisrv 的登录限流按它取客户端 IP,nginx 已正确透传。
+- **TLS**:生产建议加 443(用你 `nginx.conf` 注释里的 TLS 模板,把 `location /` 换成上面的三段
+  `location`),并 80→443 跳转。
+
+### worker 所在的其它服务器(不经 nginx)
+- worker **主动外连**协调器 gRPC `7070`,这是 **TCP/gRPC,不要用 nginx 的 http 反代**。
+- 让各 worker 机器通过**内网 / VPC / VPN** 直连协调器的 `7070`。
+- ⚠️ 该 gRPC 当前**明文无鉴权**,**切勿把 7070 暴露公网**(详见上文「网络与安全」)。
+- worker 还需能直连**被压测目标**。
