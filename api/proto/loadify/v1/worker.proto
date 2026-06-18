@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package loadify.v1;
+
+import "loadify/v1/common.proto";
+import "loadify/v1/metrics.proto";
+
+// WorkerService is implemented by the coordinator. Workers are clients and only
+// ever dial outbound, which keeps non-addressable/scaled workers simple. A
+// worker opens one long-lived Connect stream: it pushes WorkerMessages up
+// (register, heartbeat, metric batches, run-finished) and the coordinator
+// pushes CoordinatorMessages down (assignment, stop).
+service WorkerService {
+  rpc Connect(stream WorkerMessage) returns (stream CoordinatorMessage);
+}
+
+message WorkerMessage {
+  oneof msg {
+    RegisterRequest register = 1;
+    HeartbeatRequest heartbeat = 2;
+    MetricBatch metrics = 3;
+    RunFinished finished = 4;
+  }
+}
+
+message CoordinatorMessage {
+  oneof msg {
+    RegisterAck register_ack = 1;
+    RunAssignment assignment = 2;
+    StopRequest stop = 3;
+  }
+}
+
+message RegisterRequest {
+  string worker_id = 1;
+  string region = 2;
+  int32 cpu_cores = 3;
+  int64 mem_bytes = 4;
+  repeated Protocol supported = 5;
+  // Runs this worker is already executing (set on reconnect so a restarted
+  // coordinator can rehydrate its run state).
+  repeated ActiveRun active_runs = 6;
+}
+
+message RegisterAck {
+  string lease_id = 1;
+  int64 heartbeat_interval_ms = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  double cpu_pct = 2;
+  int64 active_vus = 3;
+  int64 mem_bytes = 4;
+}
+
+message RunAssignment {
+  string run_id = 1;
+  Protocol protocol = 2;
+  bytes plan_json = 3; // protocol-specific request template(s)
+  repeated RampStage ramp = 4; // this worker's slice of the global ramp
+  ScriptBundle script = 5;
+  int64 start_at_unix_ms = 6; // synchronized start across workers
+  int64 seed = 7;
+  map<string, string> env = 8;
+}
+
+message StopRequest {
+  string run_id = 1;
+  bool graceful = 2;
+}
+
+message RunFinished {
+  string run_id = 1;
+  string worker_id = 2;
+  int64 final_count = 3;
+  // Generator-side honesty signals: requests the open model never issued
+  // because the worker pool was capped, and metric messages dropped because the
+  // send buffer to the coordinator was full. Non-zero means the reported result
+  // under-represents the intended load — surfaced in the run summary.
+  int64 dropped_iterations = 4;
+  int64 dropped_metrics = 5;
+}

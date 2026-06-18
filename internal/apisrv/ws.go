@@ -1,0 +1,152 @@
+package apisrv
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
+	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc/status"
+)
+
+// liveTick is the JSON shape pushed to the browser.
+type liveTick struct {
+	RunID     string             `json:"run_id"`
+	TS        int64              `json:"ts_unix_ms"`
+	RPS       float64            `json:"rps"`
+	ErrorRate float64            `json:"error_rate"`
+	ActiveVUs int64              `json:"active_vus"`
+	P50ms     float64            `json:"p50_ms"`
+	P90ms     float64            `json:"p90_ms"`
+	P95ms     float64            `json:"p95_ms"`
+	P99ms     float64            `json:"p99_ms"`
+	Groups    map[string]grpTick `json:"groups,omitempty"`
+	Samples   []logSample        `json:"samples,omitempty"`
+}
+
+// logSample is one per-request observation surfaced to the live response log.
+type logSample struct {
+	TS        int64   `json:"ts_unix_ms"`
+	Group     string  `json:"group"`
+	Method    string  `json:"method,omitempty"`
+	URL       string  `json:"url,omitempty"`
+	Status    int32   `json:"status"`
+	OK        bool    `json:"ok"`
+	LatencyMs float64 `json:"latency_ms"`
+	TTFBms    float64 `json:"ttfb_ms"`
+	SentBytes int64   `json:"sent_bytes"`
+	RecvBytes int64   `json:"recv_bytes"`
+	ErrorKind string  `json:"error_kind,omitempty"`
+	ReqBody   string  `json:"req_body,omitempty"`
+	RespBody  string  `json:"resp_body,omitempty"`
+}
+
+type grpTick struct {
+	RPS       float64 `json:"rps"`
+	ErrorRate float64 `json:"error_rate"`
+	P50ms     float64 `json:"p50_ms"`
+	P90ms     float64 `json:"p90_ms"`
+	P95ms     float64 `json:"p95_ms"`
+	P99ms     float64 `json:"p99_ms"`
+}
+
+// handleRunLive upgrades to a WebSocket and forwards coordinator live ticks.
+func (s *Server) handleRunLive(w http.ResponseWriter, r *http.Request) {
+	runID := chi.URLParam(r, "id")
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	if err != nil {
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	stream, err := s.coord.StreamLive(ctx, &loadifyv1.LiveRequest{RunId: runID})
+	if err != nil {
+		// Surface the real cause (run not found / queued / coordinator
+		// unreachable) to the client and the log, instead of an opaque
+		// "stream unavailable", so a stalled live view is diagnosable.
+		reason := liveCloseReason(err)
+		s.log.Warn("live stream unavailable", "run", runID, "reason", reason, "err", err)
+		conn.Close(websocket.StatusInternalError, reason)
+		return
+	}
+
+	// Detect client disconnect.
+	go func() {
+		conn.Read(ctx) //nolint:errcheck // we only care that it unblocks on close
+		cancel()
+	}()
+
+	for {
+		tick, err := stream.Recv()
+		if err != nil {
+			return
+		}
+		out := toLiveTick(tick)
+		wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
+		err = wsjson.Write(wctx, conn, out)
+		wcancel()
+		if err != nil {
+			return
+		}
+	}
+}
+
+// liveCloseReason maps a StreamLive error to a short, human-readable WebSocket
+// close reason (capped at the 123-byte close-frame limit).
+func liveCloseReason(err error) string {
+	reason := "live stream unavailable"
+	if st, ok := status.FromError(err); ok && st.Message() != "" {
+		reason = st.Message()
+	}
+	if len(reason) > 100 {
+		reason = reason[:100]
+	}
+	return reason
+}
+
+func toLiveTick(t *loadifyv1.LiveTick) liveTick {
+	groups := make(map[string]grpTick, len(t.Groups))
+	for name, g := range t.Groups {
+		groups[name] = grpTick{RPS: g.Rps, ErrorRate: g.ErrorRate, P50ms: g.P50Ms, P90ms: g.P90Ms, P95ms: g.P95Ms, P99ms: g.P99Ms}
+	}
+	var samples []logSample
+	if len(t.Samples) > 0 {
+		samples = make([]logSample, 0, len(t.Samples))
+		for _, s := range t.Samples {
+			samples = append(samples, logSample{
+				TS:        s.TsUnixMs,
+				Group:     s.Group,
+				Method:    s.Method,
+				URL:       s.Url,
+				Status:    s.Status,
+				OK:        s.Ok,
+				LatencyMs: float64(s.LatencyUs) / 1000.0,
+				TTFBms:    float64(s.TtfbUs) / 1000.0,
+				SentBytes: s.SentBytes,
+				RecvBytes: s.RecvBytes,
+				ErrorKind: s.ErrorKind,
+				ReqBody:   s.ReqBody,
+				RespBody:  s.RespBody,
+			})
+		}
+	}
+	return liveTick{
+		RunID:     t.RunId,
+		TS:        t.TsUnixMs,
+		RPS:       t.Rps,
+		ErrorRate: t.ErrorRate,
+		ActiveVUs: t.ActiveVus,
+		P50ms:     t.P50Ms,
+		P90ms:     t.P90Ms,
+		P95ms:     t.P95Ms,
+		P99ms:     t.P99Ms,
+		Groups:    groups,
+		Samples:   samples,
+	}
+}

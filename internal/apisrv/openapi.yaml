@@ -1,0 +1,823 @@
+openapi: 3.0.3
+info:
+  title: Loadify API
+  version: "0.2.0"
+  description: |
+    REST API for the Loadify distributed load-testing platform. Driven by the
+    web UI, the `loadifyctl` CLI, and autonomous agents (directly or via the
+    Loadify MCP server).
+
+    ## Usage / 使用说明
+
+    1. **Authenticate** — `POST /api/v1/auth/login` with email/password (or sign
+       in via Feishu OAuth at `GET /api/v1/auth/feishu/login`). Send the
+       returned JWT as `Authorization: Bearer <token>` on every other call.
+    2. **Author a test** — `POST /api/v1/tests` with a `plan` (protocol target:
+       http / scenario / grpc / websocket / sse / script), a `ramp` (load
+       stages), optional per-request `asserts` and run-level SLA `thresholds`.
+       Verify the request first with `POST /api/v1/tests/debug`.
+    3. **Run it** — `POST /api/v1/runs` with the test id; poll
+       `GET /api/v1/runs/{id}` or stream live metrics over the WebSocket at
+       `GET /api/v1/runs/{id}/live`. Stop early with `POST /api/v1/runs/{id}/stop`.
+    4. **Read results** — per-second series at `GET /api/v1/runs/{id}/series`,
+       CSV export at `GET /api/v1/runs/{id}/export.csv`; the run object carries
+       the summary report, SLA check results and a snapshot of the test as it
+       was when the run started.
+
+    Roles: `viewer` (read) < `operator` (create/run tests) < `admin` (user
+    management). Browsers cannot set headers on WebSocket/download links, so
+    those two endpoints also accept the JWT as a `?token=` query parameter.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: tests
+  - name: runs
+  - name: schedules
+  - name: workers
+  - name: users
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      security: []
+      responses: { "200": { description: ok } }
+  /api/v1/auth/config:
+    get:
+      tags: [auth]
+      summary: Which login methods the server has enabled
+      security: []
+      responses:
+        "200":
+          description: login capability flags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feishu_enabled: { type: boolean }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange email/password for a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: token + user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { description: invalid credentials }
+        "403": { description: account disabled }
+  /api/v1/auth/feishu/login:
+    get:
+      tags: [auth]
+      summary: Begin Feishu OAuth (302 to the Feishu authorize page)
+      security: []
+      responses:
+        "302": { description: redirect to accounts.feishu.cn }
+        "501": { description: Feishu login not configured on the server }
+  /api/v1/auth/feishu/callback:
+    get:
+      tags: [auth]
+      summary: Feishu OAuth callback (redirects to the frontend with a token)
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+      responses:
+        "302": { description: redirect to <frontend>/login#token=... }
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user profile (role viewer+)
+      responses:
+        "200":
+          description: user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /api/v1/auth/password:
+    post:
+      tags: [auth]
+      summary: Change my password (role viewer+)
+      description: >
+        Verifies old_password unless the account has none yet (Feishu-only
+        accounts setting their first password). Minimum 8 characters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                old_password: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        "204": { description: password changed }
+        "400": { description: password too short }
+        "403": { description: current password incorrect }
+  /api/v1/auth/token:
+    get:
+      tags: [auth]
+      summary: Get my persistent API token for CLI/agent use (role viewer+)
+      description: >
+        Returns the caller's permanent API token (minted on first read) for use
+        via LOADIFY_TOKEN by loadifyctl and loadify-mcp. The token never expires
+        and is viewable any time; it is revoked only by POST (reset) or by
+        disabling the account.
+      responses:
+        "200":
+          description: current token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+    post:
+      tags: [auth]
+      summary: Reset (rotate) my persistent API token (role viewer+)
+      description: >
+        Generates a fresh token, immediately invalidating the previous one.
+      responses:
+        "200":
+          description: new token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+  /api/v1/auth/webhooks:
+    get:
+      tags: [auth]
+      summary: List my notification webhook URLs (role viewer+)
+      responses:
+        "200":
+          description: webhook URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook_urls: { type: array, items: { type: string } }
+    put:
+      tags: [auth]
+      summary: Replace my notification webhook URLs (role viewer+)
+      description: >
+        When one of my runs finishes (or auto-stops), Loadify posts a
+        notification to the first URL here — a Feishu/Lark bot URL receives a
+        formatted card; any other receiver gets a generic JSON event. Falls
+        back to the instance-wide webhook when none is set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                webhook_urls: { type: array, items: { type: string } }
+      responses:
+        "200": { description: saved URLs }
+        "400": { description: a URL is not http(s) }
+  /api/v1/tests:
+    get:
+      tags: [tests]
+      summary: List test definitions (role viewer+; archived tests excluded)
+      responses: { "200": { description: array of tests } }
+    post:
+      tags: [tests]
+      summary: Create a test definition (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTest" }
+      responses:
+        "201": { description: "created; returns { id }" }
+        "400": { description: invalid plan }
+  /api/v1/environments:
+    get:
+      tags: [environments]
+      summary: List user-defined environments (role viewer+)
+      responses: { "200": { description: array of environments } }
+    post:
+      tags: [environments]
+      summary: Create an environment (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                vars: { type: object, additionalProperties: { type: string } }
+      responses: { "201": { description: "created; returns { id }" } }
+  /api/v1/environments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [environments]
+      summary: Update an environment (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                vars: { type: object, additionalProperties: { type: string } }
+      responses: { "204": { description: updated }, "404": { description: not found } }
+    delete:
+      tags: [environments]
+      summary: Delete an environment (role operator+)
+      responses: { "204": { description: deleted }, "404": { description: not found } }
+  /api/v1/tests/{id}/trend:
+    get:
+      tags: [tests]
+      summary: Recent runs' compact metrics for a test's trend chart (role viewer+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: n, in: query, schema: { type: integer, default: 20 } }
+      responses: { "200": { description: array of trend points (oldest→newest) } }
+  /api/v1/tests/{id}/baseline:
+    post:
+      tags: [tests]
+      summary: Set (or clear, empty run_id) a test's baseline run (role operator+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                run_id: { type: string }
+      responses: { "204": { description: set }, "404": { description: not found } }
+  /api/v1/tests/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [tests]
+      summary: Get one test definition (role viewer+)
+      responses: { "200": { description: test }, "404": { description: not found } }
+    put:
+      tags: [tests]
+      summary: Update a test definition in place (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTest" }
+      responses:
+        "204": { description: updated }
+        "404": { description: not found or archived }
+    delete:
+      tags: [tests]
+      summary: Delete (archive) a test (role operator+)
+      description: >
+        Soft delete: the test disappears from lists and can no longer run, its
+        schedules are disabled, but historical runs keep their snapshot.
+      responses:
+        "204": { description: archived }
+        "404": { description: not found }
+  /api/v1/tests/import:
+    post:
+      tags: [tests]
+      summary: Convert curl/HAR/Postman/OpenAPI into a test draft (role operator+)
+      description: >
+        Parses an external request format into a test draft for the builder to
+        prefill. Does NOT persist — the user reviews and saves via POST /tests.
+        A single request becomes an http test; several become a sequence
+        scenario (one step per request).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [format, content]
+              properties:
+                format: { type: string, enum: [curl, har, postman, openapi] }
+                content: { type: string, description: raw file/text content }
+      responses:
+        "200":
+          description: a test draft
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  protocol: { type: string }
+                  plan: { $ref: "#/components/schemas/Plan" }
+        "400": { description: unknown format or unparsable content }
+  /api/v1/tests/debug:
+    post:
+      tags: [tests]
+      summary: Fire the request being authored once and return the response (role operator+)
+      description: >
+        Used by the test builder to verify a request and author assertions
+        against the real payload before saving. The response body is truncated
+        to 64 KiB. Transport errors are reported in the `error` field with a
+        200 status so the builder can render them inline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                method: { type: string, default: GET }
+                url: { type: string }
+                headers: { type: object, additionalProperties: { type: string } }
+                body: { type: string }
+                timeout_ms: { type: integer }
+                insecure_skip_verify: { type: boolean }
+      responses:
+        "200":
+          description: response details (or transport error)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: integer }
+                  status_text: { type: string }
+                  latency_ms: { type: number }
+                  headers: { type: object, additionalProperties: { type: string } }
+                  body: { type: string }
+                  body_truncated: { type: boolean }
+                  recv_bytes: { type: integer }
+                  error: { type: string }
+  /api/v1/tests/debug-scenario:
+    post:
+      tags: [tests]
+      summary: Debug a scenario chain — run steps 1..N in order, resolving variables (role operator+)
+      description: >
+        Runs the given sequence steps through the real scenario engine,
+        performing {{var}} interpolation and extraction between steps, so a step
+        that depends on an upstream value resolves correctly instead of firing
+        the literal template. Returns each step's resolved request and response.
+        Capped at 20 steps; each body is truncated to 64 KiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [steps]
+              properties:
+                steps:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      method: { type: string, default: GET }
+                      url: { type: string }
+                      params:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            key: { type: string }
+                            value: { type: string }
+                      headers: { type: object, additionalProperties: { type: string } }
+                      body: { type: string }
+                      extracts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            var: { type: string }
+                            path: { type: string }
+      responses:
+        "200":
+          description: per-step resolved requests and responses (or an error field)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        group: { type: string }
+                        method: { type: string }
+                        url: { type: string }
+                        req_body: { type: string }
+                        status: { type: integer }
+                        ok: { type: boolean }
+                        error_kind: { type: string }
+                        latency_ms: { type: number }
+                        body: { type: string }
+  /api/v1/runs:
+    get:
+      tags: [runs]
+      summary: List recent runs (role viewer+)
+      responses: { "200": { description: array of runs } }
+    post:
+      tags: [runs]
+      summary: Start a run for a test (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [test_id]
+              properties:
+                test_id: { type: string }
+                name:
+                  type: string
+                  description: Optional run name; defaults to "<test> @ <time>".
+                desired_workers: { type: integer, default: 1 }
+      responses:
+        "202": { description: "accepted; returns { run_id, status: running|queued }" }
+        "400": { description: test archived or invalid plan }
+        "404": { description: test not found }
+  /api/v1/runs/{id}:
+    get:
+      tags: [runs]
+      summary: Get a run (status, summary report, SLA checks, test snapshot)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: run }, "404": { description: not found } }
+  /api/v1/runs/{id}/stop:
+    post:
+      tags: [runs]
+      summary: Gracefully stop a running run (role operator+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { "202": { description: stopping } }
+  /api/v1/runs/{id}/series:
+    get:
+      tags: [runs]
+      summary: Per-second metric series (qps, error rate, p50/p90/p95/p99)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: group, in: query, schema: { type: string }, description: "metric group filter; * for all" }
+        - { name: res, in: query, schema: { type: integer, default: 1 }, description: resolution in seconds }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+      responses: { "200": { description: array of points } }
+  /api/v1/runs/{id}/live:
+    get:
+      tags: [runs]
+      summary: WebSocket live stream of per-second ticks + sampled request log
+      description: >
+        Upgrades to a WebSocket. Each frame is a JSON tick with qps, error rate,
+        active VUs, latency percentiles, per-group metrics and sampled requests
+        (method, url, status, latency, truncated response body, assertion
+        failure reason). Pass the JWT as ?token= (browsers cannot set headers
+        on the WS handshake).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, schema: { type: string } }
+      responses: { "101": { description: switching protocols } }
+  /api/v1/runs/{id}/export.csv:
+    get:
+      tags: [runs]
+      summary: Download the per-second series as CSV
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, schema: { type: string } }
+      responses: { "200": { description: text/csv } }
+  /api/v1/runs/{id}/samples:
+    get:
+      tags: [runs]
+      summary: Sampled request detail for error drill-down (role viewer+)
+      description: >
+        Returns the persisted sampled request detail (method, url, status,
+        latency, error kind, response snippet), newest first, optionally
+        filtered. NOTE the detail is sampled (bounded, error-prioritized), not
+        every request — the response sets sampled=true.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: group, in: query, schema: { type: string } }
+        - { name: status_class, in: query, schema: { type: string, enum: ["2xx", "4xx", "5xx", err] } }
+        - { name: error_kind, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 200 } }
+      responses:
+        "200":
+          description: sampled detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sampled: { type: boolean }
+                  samples: { type: array, items: { type: object } }
+  /api/v1/runs/{id}/report.html:
+    get:
+      tags: [runs]
+      summary: Self-contained HTML report (print to PDF in the browser)
+      description: >
+        Authorized by a normal session (Authorization header or ?token=) OR a
+        public share token (?share=) scoped to this run, so the link can be
+        sent to someone without an account.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, schema: { type: string } }
+        - { name: share, in: query, schema: { type: string } }
+      responses: { "200": { description: text/html } }
+  /api/v1/runs/{id}/metrics:
+    get:
+      tags: [runs]
+      summary: Run metrics in Prometheus text format (role viewer+; scrape via ?token=)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, schema: { type: string } }
+      responses: { "200": { description: text/plain Prometheus exposition } }
+  /api/v1/runs/{id}/share:
+    post:
+      tags: [runs]
+      summary: Mint a public, expiring share token for a run's report (role operator+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: share token + expiry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string }
+  /api/v1/schedules:
+    get:
+      tags: [schedules]
+      summary: List schedules (role viewer+)
+      responses: { "200": { description: array of schedules } }
+    post:
+      tags: [schedules]
+      summary: Create a recurring schedule for a test (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [test_id, interval_minutes]
+              properties:
+                test_id: { type: string }
+                interval_minutes: { type: integer, minimum: 1 }
+                desired_workers: { type: integer }
+      responses: { "201": { description: created } }
+  /api/v1/schedules/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [schedules]
+      summary: Update a schedule's interval and worker count (role operator+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interval_minutes]
+              properties:
+                interval_minutes: { type: integer, minimum: 1 }
+                desired_workers: { type: integer }
+      responses:
+        "200": { description: updated }
+        "404": { description: not found }
+    delete:
+      tags: [schedules]
+      summary: Delete a schedule (role operator+)
+      responses:
+        "204": { description: deleted }
+        "404": { description: not found }
+  /api/v1/schedules/{id}/enabled:
+    post:
+      tags: [schedules]
+      summary: Enable/disable a schedule (role operator+)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: enabled, in: query, schema: { type: boolean, default: true } }
+      responses: { "200": { description: new enabled state } }
+  /api/v1/workers:
+    get:
+      tags: [workers]
+      summary: List connected workers with health/load (role viewer+)
+      responses: { "200": { description: array of workers } }
+  /api/v1/capacity:
+    get:
+      tags: [workers]
+      summary: Cluster admission headroom — whether a new run starts now or queues (role viewer+)
+      responses:
+        "200":
+          description: capacity snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  max_runs: { type: integer }
+                  running: { type: integer }
+                  queue_depth: { type: integer }
+                  workers_total: { type: integer }
+                  workers_available: { type: integer }
+                  cpu_max_pct: { type: number }
+                  can_accept: { type: boolean }
+  /api/v1/audit:
+    get:
+      tags: [audit]
+      summary: List recent audit log entries — mutating actions by who/when/what/outcome (role admin)
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, default: 200, maximum: 500 } }
+      responses: { "200": { description: array of audit entries } }
+  /api/v1/users:
+    get:
+      tags: [users]
+      summary: List users (role admin)
+      responses: { "200": { description: array of users } }
+    post:
+      tags: [users]
+      summary: Create a user (role admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, role]
+              properties:
+                email: { type: string }
+                name: { type: string }
+                role: { type: string, enum: [viewer, operator, admin] }
+                password: { type: string, minLength: 8 }
+      responses: { "201": { description: created user } }
+  /api/v1/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [users]
+      summary: Update a user — role, password reset, enable/disable (role admin)
+      description: >
+        Absent fields are untouched. Admins cannot demote, disable or delete
+        their own account (self-lockout protection).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [viewer, operator, admin] }
+                password: { type: string, minLength: 8 }
+                disabled: { type: boolean }
+      responses:
+        "200": { description: updated user }
+        "400": { description: self-lockout or invalid role/password }
+    delete:
+      tags: [users]
+      summary: Delete a user (role admin; never your own account)
+      responses:
+        "204": { description: deleted }
+        "400": { description: cannot delete own account }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [viewer, operator, admin] }
+        avatar_url: { type: string }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time }
+    Assert:
+      type: object
+      description: >
+        One per-request check. source=status compares the HTTP status;
+        source=body checks the raw body; source=json extracts `path` (dot
+        notation, array indexes allowed, e.g. data.items.0.id) and compares the
+        value with type-aware semantics. A missing field fails the assertion
+        with a descriptive reason — it never aborts the run.
+      required: [source, op]
+      properties:
+        source: { type: string, enum: [status, body, json] }
+        path: { type: string, description: required when source=json }
+        op: { type: string, enum: [eq, ne, gt, lt, gte, lte, contains, exists] }
+        value: { type: string }
+    ScenarioStep:
+      type: object
+      required: [url]
+      properties:
+        name: { type: string }
+        weight: { type: integer, description: relative ratio (weighted mode) }
+        method: { type: string, default: GET }
+        url: { type: string, description: "may reference {{vars}} from earlier extracts" }
+        headers: { type: object, additionalProperties: { type: string } }
+        body: { type: string }
+        extracts:
+          type: array
+          description: save JSON fields into {{vars}} for later steps (sequence mode)
+          items:
+            type: object
+            required: [var, path]
+            properties:
+              var: { type: string }
+              path: { type: string }
+        asserts:
+          type: array
+          items: { $ref: "#/components/schemas/Assert" }
+    Plan:
+      type: object
+      description: >
+        Protocol target. Exactly one protocol section applies. protocol=scenario
+        is the no-code multi-step plan (sequence chaining or weighted traffic
+        mix); protocol=script generates traffic from the test's goja script.
+      required: [protocol]
+      properties:
+        protocol:
+          type: string
+          enum: [http, https, scenario, grpc, websocket, sse, script]
+        http:
+          type: object
+          properties:
+            method: { type: string, default: GET }
+            url: { type: string }
+            headers: { type: object, additionalProperties: { type: string } }
+            body: { type: string }
+            timeout_ms: { type: integer }
+            insecure_skip_verify: { type: boolean }
+            asserts:
+              type: array
+              items: { $ref: "#/components/schemas/Assert" }
+        scenario:
+          type: object
+          required: [mode, steps]
+          properties:
+            mode: { type: string, enum: [sequence, weighted] }
+            steps:
+              type: array
+              items: { $ref: "#/components/schemas/ScenarioStep" }
+        max_vus:
+          type: integer
+          description: VU pool cap for the open (arrival-rate) model; 0 = derive
+    CreateTest:
+      type: object
+      required: [name, protocol, plan]
+      properties:
+        name: { type: string }
+        protocol: { type: string, enum: [http, https, scenario, grpc, websocket, sse, script] }
+        plan: { $ref: "#/components/schemas/Plan" }
+        ramp:
+          type: array
+          description: load stages; each ramps linearly from the previous target
+          items:
+            type: object
+            properties:
+              duration_ms: { type: integer }
+              target_vus: { type: integer, description: closed (VU) model }
+              target_rps: { type: integer, description: open (arrival-rate) model }
+        script: { type: string, description: goja JS defining iteration() (protocol=script) }
+        thresholds:
+          type: array
+          description: run-level SLA pass/fail criteria evaluated at finalize
+          items:
+            type: object
+            properties:
+              metric: { type: string, enum: [p50_ms, p90_ms, p95_ms, p99_ms, error_rate, qps] }
+              op: { type: string, enum: ["<", "<=", ">", ">="] }
+              value: { type: number }
+        dataset:
+          type: array
+          description: JSON rows read via nextRow() for parameterization
+          items: { type: object }

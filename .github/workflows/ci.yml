@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Install buf + protoc plugins
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.47.2
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.35.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+      - name: Generate gRPC stubs
+        run: PATH="$(go env GOPATH)/bin:$PATH" buf generate
+      - name: Vet
+        run: go vet ./...
+      - name: Vulnerability scan (informational)
+        # Surfaces known vulnerabilities in called code; non-blocking for now.
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+      - name: Test (race)
+        run: go test -race ./...
+      - name: Build
+        run: |
+          for b in apisrv coordinatord workerd loadifyctl loadify-mcp; do
+            go build -o bin/$b ./cmd/$b
+          done
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install deps
+        run: npm ci
+        working-directory: web
+        env:
+          # E2E browser isn't needed for the build/typecheck job.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: Build
+        run: npm run build
+        working-directory: web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"

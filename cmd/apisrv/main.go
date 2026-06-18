@@ -1,0 +1,134 @@
+// Command apisrv is the public REST + WebSocket API plane.
+package main
+
+import (
+	"context"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/apisrv"
+	"github.com/dreambe/loadify/internal/auth"
+	"github.com/dreambe/loadify/internal/config"
+	"github.com/dreambe/loadify/internal/obs"
+	chstore "github.com/dreambe/loadify/internal/store/clickhouse"
+	pgstore "github.com/dreambe/loadify/internal/store/postgres"
+	"github.com/dreambe/loadify/internal/version"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+func main() {
+	log := obs.NewLogger("apisrv")
+	log.Info("starting", "version", version.String())
+	cfg := config.LoadAPIServer()
+	if err := cfg.Validate(); err != nil {
+		log.Error("invalid configuration", "err", err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Postgres (with migrations).
+	var pg *pgstore.Store
+	if err := obs.Retry(ctx, "postgres", log, func(c context.Context) error {
+		s, err := pgstore.Connect(c, cfg.Postgres)
+		if err != nil {
+			return err
+		}
+		if err := s.Migrate(c); err != nil {
+			s.Close()
+			return err
+		}
+		pg = s
+		return nil
+	}); err != nil {
+		log.Error("postgres unavailable", "err", err)
+		return
+	}
+	defer pg.Close()
+	log.Info("postgres ready")
+
+	// Bootstrap the admin account from env, if configured.
+	if cfg.AdminEmail != "" && cfg.AdminPassword != "" {
+		hash, herr := auth.HashPassword(cfg.AdminPassword)
+		if herr != nil {
+			log.Error("hash admin password", "err", herr)
+			return
+		}
+		if created, aerr := pg.EnsureAdmin(ctx, cfg.AdminEmail, "Administrator", hash); aerr != nil {
+			log.Warn("ensure admin failed", "err", aerr)
+		} else if created {
+			log.Info("bootstrap admin created", "email", cfg.AdminEmail)
+		}
+	}
+
+	// ClickHouse (read-only for apisrv; coordinator owns migrations/writes).
+	var ch *chstore.Store
+	if err := obs.Retry(ctx, "clickhouse", log, func(c context.Context) error {
+		s, err := chstore.Connect(c, cfg.ClickHouse)
+		if err != nil {
+			return err
+		}
+		ch = s
+		return nil
+	}); err != nil {
+		log.Error("clickhouse unavailable", "err", err)
+		return
+	}
+	defer ch.Close()
+	log.Info("clickhouse ready")
+
+	conn, err := grpc.NewClient(cfg.CoordinatorGRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Error("dial coordinator failed", "err", err)
+		return
+	}
+	defer conn.Close()
+	coord := loadifyv1.NewCoordinatorServiceClient(conn)
+
+	feishu := &auth.FeishuClient{
+		AppID:       cfg.FeishuAppID,
+		AppSecret:   cfg.FeishuAppSecret,
+		RedirectURL: cfg.FeishuRedirectURL,
+	}
+	if feishu.Enabled() && feishu.RedirectURL != "" {
+		log.Info("feishu login enabled", "redirect", cfg.FeishuRedirectURL)
+	} else {
+		log.Info("feishu login disabled — set LOADIFY_FEISHU_APP_ID / LOADIFY_FEISHU_APP_SECRET / LOADIFY_FEISHU_REDIRECT_URL to enable")
+	}
+	srv := apisrv.New(apisrv.Config{
+		Postgres:    pg,
+		ClickHouse:  ch,
+		Coordinator: coord,
+		Logger:      log,
+		JWTSecret:   cfg.JWTSecret,
+		JWTTTL:      time.Duration(cfg.JWTTTLHours) * time.Hour,
+		Feishu:      feishu,
+		FrontendURL: cfg.FrontendURL,
+		WebhookURL:  cfg.WebhookURL,
+	})
+	httpSrv := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+
+	go func() {
+		log.Info("http listening", "addr", cfg.HTTPAddr)
+		if serr := httpSrv.ListenAndServe(); serr != nil && serr != http.ErrServerClosed {
+			log.Error("http serve failed", "err", serr)
+		}
+	}()
+
+	// Reconcile runs orphaned by a restart, and abort runs that overrun.
+	go srv.StartReaper(ctx, 30*time.Second, 6*time.Hour)
+	// Fire scheduled runs (claiming is multi-replica safe).
+	go srv.StartScheduler(ctx, 20*time.Second)
+
+	<-ctx.Done()
+	log.Info("shutting down")
+	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = httpSrv.Shutdown(shutCtx)
+}

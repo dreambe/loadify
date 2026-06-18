@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "loadify.fullname" . }}-apisrv
+  labels:
+    {{- include "loadify.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apisrv
+spec:
+  replicas: {{ .Values.apisrv.replicas }}
+  selector:
+    matchLabels:
+      {{- include "loadify.selectorLabels" (dict "ctx" . "component" "apisrv") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "loadify.selectorLabels" (dict "ctx" . "component" "apisrv") | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "loadify.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: apisrv
+          image: {{ include "loadify.image" (dict "ctx" . "component" "apisrv") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.apisrv.port }} }
+          env:
+            - { name: LOADIFY_API_HTTP_ADDR, value: ":{{ .Values.apisrv.port }}" }
+            - { name: LOADIFY_COORDINATOR_GRPC, value: "{{ include "loadify.fullname" . }}-coordinatord:{{ .Values.coordinatord.grpcPort }}" }
+            - { name: LOADIFY_CLICKHOUSE_ADDR, value: {{ .Values.database.clickhouse.addr | quote }} }
+            - { name: LOADIFY_CLICKHOUSE_DB, value: {{ .Values.database.clickhouse.database | quote }} }
+            - { name: LOADIFY_CLICKHOUSE_USER, value: {{ .Values.database.clickhouse.username | quote }} }
+            - { name: LOADIFY_CLICKHOUSE_PASSWORD, value: {{ .Values.database.clickhouse.password | quote }} }
+            - { name: LOADIFY_JWT_TTL_HOURS, value: {{ .Values.config.jwtTTLHours | quote }} }
+            - { name: LOADIFY_FEISHU_REDIRECT_URL, value: {{ .Values.config.feishuRedirectURL | quote }} }
+            - { name: LOADIFY_FRONTEND_URL, value: {{ .Values.config.frontendURL | quote }} }
+            - name: LOADIFY_POSTGRES_DSN
+              valueFrom: { secretKeyRef: { name: {{ include "loadify.secretName" . }}, key: LOADIFY_POSTGRES_DSN } }
+            - name: LOADIFY_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "loadify.secretName" . }}, key: LOADIFY_JWT_SECRET } }
+            - name: LOADIFY_FEISHU_APP_ID
+              valueFrom: { secretKeyRef: { name: {{ include "loadify.secretName" . }}, key: LOADIFY_FEISHU_APP_ID } }
+            - name: LOADIFY_FEISHU_APP_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "loadify.secretName" . }}, key: LOADIFY_FEISHU_APP_SECRET } }
+            - name: LOADIFY_ADMIN_EMAIL
+              valueFrom: { secretKeyRef: { name: {{ include "loadify.secretName" . }}, key: LOADIFY_ADMIN_EMAIL } }
+            - name: LOADIFY_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "loadify.secretName" . }}, key: LOADIFY_ADMIN_PASSWORD } }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources: {{- toYaml .Values.apisrv.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "loadify.fullname" . }}-apisrv
+  labels:
+    {{- include "loadify.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apisrv
+spec:
+  selector:
+    {{- include "loadify.selectorLabels" (dict "ctx" . "component" "apisrv") | nindent 4 }}
+  ports:
+    - { name: http, port: {{ .Values.apisrv.port }}, targetPort: http }

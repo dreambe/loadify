@@ -1,0 +1,117 @@
+# Single-node dev/CI stack for the loadify load-testing platform.
+#
+#   docker compose -f deploy/compose/docker-compose.yml up --build
+#   docker compose -f deploy/compose/docker-compose.yml up --build --scale workerd=3
+#
+# Build context is the repo root (two levels up).
+name: loadify
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: loadify
+      POSTGRES_PASSWORD: loadify
+      POSTGRES_DB: loadify
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loadify"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_DB: loadify
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports: ["8123:8123", "9000:9000"]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - chdata:/var/lib/clickhouse
+
+  coordinatord:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args: { SERVICE: coordinatord }
+    environment:
+      LOADIFY_COORDINATOR_GRPC_ADDR: ":7070"
+      LOADIFY_COORDINATOR_HTTP_ADDR: ":7071"
+      LOADIFY_MAX_CONCURRENT_RUNS: "8"
+      # Per-node protection: a worker at/above this CPU% takes no new runs (0 = off).
+      LOADIFY_WORKER_CPU_MAX_PCT: "85"
+      LOADIFY_CLICKHOUSE_ADDR: "clickhouse:9000"
+      LOADIFY_CLICKHOUSE_DB: "loadify"
+    ports: ["7070:7070", "7071:7071"]
+    depends_on:
+      clickhouse: { condition: service_healthy }
+
+  apisrv:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args: { SERVICE: apisrv }
+    environment:
+      LOADIFY_API_HTTP_ADDR: ":8080"
+      LOADIFY_COORDINATOR_GRPC: "coordinatord:7070"
+      LOADIFY_POSTGRES_DSN: "postgres://loadify:loadify@postgres:5432/loadify?sslmode=disable"
+      LOADIFY_CLICKHOUSE_ADDR: "clickhouse:9000"
+      LOADIFY_CLICKHOUSE_DB: "loadify"
+      LOADIFY_JWT_SECRET: "dev-insecure-secret-change-me"
+      LOADIFY_FRONTEND_URL: "${LOADIFY_FRONTEND_URL:-http://localhost:3000}"
+      # Feishu OAuth (set in a .env file next to this compose file; see .env.example).
+      LOADIFY_FEISHU_APP_ID: "${LOADIFY_FEISHU_APP_ID:-}"
+      LOADIFY_FEISHU_APP_SECRET: "${LOADIFY_FEISHU_APP_SECRET:-}"
+      LOADIFY_FEISHU_REDIRECT_URL: "${LOADIFY_FEISHU_REDIRECT_URL:-}"
+      # Bootstrap admin (change in any real deployment).
+      LOADIFY_ADMIN_EMAIL: "admin@loadify.local"
+      LOADIFY_ADMIN_PASSWORD: "admin12345"
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+      coordinatord: { condition: service_started }
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_BASE: "${LOADIFY_API_BASE:-http://localhost:8080}"
+    environment:
+      # Baked into the client bundle at build time; also read at runtime.
+      NEXT_PUBLIC_API_BASE: "${LOADIFY_API_BASE:-http://localhost:8080}"
+    ports: ["3000:3000"]
+    depends_on:
+      apisrv: { condition: service_started }
+
+  workerd:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args: { SERVICE: workerd }
+    environment:
+      LOADIFY_COORDINATOR_GRPC: "coordinatord:7070"
+      LOADIFY_WORKER_HTTP_ADDR: ":8090"
+      LOADIFY_WORKER_REGION: "compose"
+    depends_on:
+      coordinatord: { condition: service_started }
+
+  echo-target:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.echo
+    ports: ["8088:8088", "8089:8089"]
+
+volumes:
+  pgdata:
+  chdata:

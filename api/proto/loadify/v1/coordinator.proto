@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package loadify.v1;
+
+import "loadify/v1/common.proto";
+import "loadify/v1/metrics.proto";
+
+// CoordinatorService is the internal control API consumed by apisrv.
+service CoordinatorService {
+  rpc StartRun(StartRunRequest) returns (StartRunResponse);
+  rpc StopRun(StopRunRequest) returns (StopRunResponse);
+  rpc GetRunState(RunStateRequest) returns (RunState);
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+  // GetCapacity reports cluster admission headroom so the UI can warn before a
+  // run would queue.
+  rpc GetCapacity(CapacityRequest) returns (CapacitySnapshot);
+  // StreamLive pushes live aggregates for a run (coordinator -> apisrv -> browser).
+  rpc StreamLive(LiveRequest) returns (stream LiveTick);
+}
+
+message StartRunRequest {
+  string run_id = 1;
+  Protocol protocol = 2;
+  bytes plan_json = 3;
+  repeated RampStage ramp = 4;
+  ScriptBundle script = 5;
+  int32 desired_workers = 6;
+  map<string, string> env = 7;
+}
+
+message StartRunResponse {
+  string run_id = 1;
+  int32 assigned_workers = 2;
+  // "running" when dispatched immediately, or "queued" when the cluster was at
+  // capacity and the run is waiting for a slot.
+  string status = 3;
+  int32 queue_position = 4;
+}
+
+message StopRunRequest {
+  string run_id = 1;
+  bool graceful = 2;
+}
+
+message StopRunResponse {
+  string run_id = 1;
+}
+
+message RunStateRequest {
+  string run_id = 1;
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_PENDING = 1;
+  RUN_STATUS_RUNNING = 2;
+  RUN_STATUS_COMPLETED = 3;
+  RUN_STATUS_FAILED = 4;
+  RUN_STATUS_ABORTED = 5;
+  RUN_STATUS_QUEUED = 6;
+}
+
+message RunState {
+  string run_id = 1;
+  RunStatus status = 2;
+  int32 active_workers = 3;
+  int64 active_vus = 4;
+  int64 started_at_unix_ms = 5;
+  int64 ended_at_unix_ms = 6;
+  string reason = 7; // why a run was aborted (e.g. auto-stop circuit breaker)
+  // For a queued run: its 1-based position in the admission queue and a rough
+  // estimate of how long until a slot frees (0 when unknown / not queued).
+  int32 queue_position = 8;
+  int64 queue_eta_ms = 9;
+  // Generator-saturation signals aggregated across the run's workers: dropped
+  // iterations/metrics and the peak per-node CPU utilization (0-100 of total
+  // capacity). Used to flag a result that may reflect the load generator's
+  // limits rather than the target's.
+  int64 dropped_iterations = 10;
+  int64 dropped_metrics = 11;
+  double peak_cpu_pct = 12;
+}
+
+message CapacityRequest {}
+
+// CapacitySnapshot is a point-in-time view of admission headroom.
+message CapacitySnapshot {
+  int32 max_runs = 1;          // concurrent-run ceiling
+  int32 running = 2;           // runs dispatched right now
+  int32 queue_depth = 3;       // runs waiting for a slot
+  int32 workers_total = 4;     // connected workers
+  int32 workers_available = 5; // healthy workers below the CPU protection threshold
+  double cpu_max_pct = 6;      // per-node CPU protection threshold (0 = disabled)
+  bool can_accept = 7;         // a new run would start immediately (not queue)
+}
+
+message ListWorkersRequest {}
+
+message WorkerInfo {
+  string worker_id = 1;
+  string addr = 2;
+  string region = 3;
+  string status = 4; // healthy / unhealthy / draining
+  int64 active_vus = 5;
+  int64 last_seen_unix_ms = 6;
+  double cpu_pct = 7;   // worker process CPU usage (0-100 per core-equivalent)
+  int64 mem_bytes = 8;  // worker process memory
+  int32 cpu_cores = 9;
+}
+
+message ListWorkersResponse {
+  repeated WorkerInfo workers = 1;
+}
+
+message LiveRequest {
+  string run_id = 1;
+}
+
+message GroupTick {
+  double rps = 1;
+  double error_rate = 2;
+  double p50_ms = 3;
+  double p90_ms = 4;
+  double p95_ms = 5;
+  double p99_ms = 6;
+}
+
+message LiveTick {
+  string run_id = 1;
+  int64 ts_unix_ms = 2;
+  double rps = 3;
+  double error_rate = 4;
+  int64 active_vus = 5;
+  double p50_ms = 6;
+  double p90_ms = 7;
+  double p95_ms = 8;
+  double p99_ms = 9;
+  map<string, GroupTick> groups = 10;
+  // A bounded set of recent per-request samples (errors prioritized) for the
+  // live response-log view.
+  repeated Sample samples = 11;
+}

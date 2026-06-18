@@ -1,0 +1,25 @@
+# Example: gate merges on a loadify load test. Manual trigger so it never runs
+# unintentionally; copy into your own repo and switch to `pull_request` to make
+# it a required check. Set LOADIFY_TOKEN (operator+ API token) as a secret.
+name: Load test (example)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-id:
+        description: "Loadify test definition id"
+        required: true
+
+jobs:
+  loadtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run loadify test
+        uses: ./.github/actions/loadify
+        with:
+          api-url: ${{ vars.LOADIFY_API_URL }}
+          token: ${{ secrets.LOADIFY_TOKEN }}
+          test-id: ${{ inputs.test-id }}
+          workers: 2
+          name: "${{ github.workflow }} #${{ github.run_number }}"

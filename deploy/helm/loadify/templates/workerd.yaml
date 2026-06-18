@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "loadify.fullname" . }}-workerd
+  labels:
+    {{- include "loadify.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workerd
+spec:
+  {{- if not .Values.workerd.autoscaling.enabled }}
+  replicas: {{ .Values.workerd.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "loadify.selectorLabels" (dict "ctx" . "component" "workerd") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "loadify.selectorLabels" (dict "ctx" . "component" "workerd") | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "loadify.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: workerd
+          image: {{ include "loadify.image" (dict "ctx" . "component" "workerd") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.workerd.httpPort }} }
+          env:
+            - { name: LOADIFY_COORDINATOR_GRPC, value: "{{ include "loadify.fullname" . }}-coordinatord:{{ .Values.coordinatord.grpcPort }}" }
+            - { name: LOADIFY_WORKER_HTTP_ADDR, value: ":{{ .Values.workerd.httpPort }}" }
+            - { name: LOADIFY_WORKER_REGION, value: {{ .Values.workerd.region | quote }} }
+            - name: LOADIFY_WORKER_ID
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.workerd.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.workerd.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "loadify.fullname" . }}-workerd
+  labels:
+    {{- include "loadify.labels" . | nindent 4 }}
+    app.kubernetes.io/component: workerd
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "loadify.fullname" . }}-workerd
+  minReplicas: {{ .Values.workerd.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.workerd.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.workerd.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
