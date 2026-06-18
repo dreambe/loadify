@@ -103,11 +103,11 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 
 // UpsertFeishuUser creates or updates the account mapped to a Feishu open_id,
 // returning the resulting row. Existing roles are preserved; new accounts get
-// the viewer role.
+// the operator role.
 func (s *Store) UpsertFeishuUser(ctx context.Context, openID, email, name, avatarURL string) (*User, error) {
 	row := s.pool.QueryRow(ctx, `
 		INSERT INTO users (email, name, role, feishu_open_id, avatar_url)
-		VALUES ($1,$2,'viewer',$3,$4)
+		VALUES ($1,$2,'operator',$3,$4)
 		ON CONFLICT (feishu_open_id) DO UPDATE
 		  SET name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url, last_login_at = now()
 		RETURNING `+userCols, email, name, openID, avatarURL)

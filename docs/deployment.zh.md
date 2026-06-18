@@ -47,14 +47,26 @@ go build -o workerd ./cmd/workerd
 ```
 
 ### 3) 每台压力机上启动一个(或多个)workerd
+
+**推荐:用 worker-only compose**(和中心机同一套 `.env` 习惯,自带国内镜像源开关):
 ```bash
-docker run -d --name loadify-workerd \
+cd deploy/compose
+cp .env.example .env
+# 编辑 .env:至少设 LOADIFY_COORDINATOR_GRPC=<协调器主机或IP>:7070
+#           可选 LOADIFY_WORKER_REGION=bj-1;受限网络再打开镜像源那几行
+docker compose -f docker-compose.worker.yml up -d --build
+```
+同机想多开:`docker compose -f docker-compose.worker.yml up -d --build --scale workerd=4`。
+
+或直接 `docker run`(已有镜像时):
+```bash
+docker run -d --name loadify-workerd --restart unless-stopped \
   -e LOADIFY_COORDINATOR_GRPC="<协调器主机或IP>:7070" \
   -e LOADIFY_WORKER_REGION="bj-1" \
   -e LOADIFY_WORKER_HTTP_ADDR=":8090" \
   loadify-workerd:latest
 ```
-在每台服务器重复这一步(`LOADIFY_WORKER_REGION` 可按机房/可用区区分)。一台机器上想多开就多跑几个容器。
+在每台服务器重复(`LOADIFY_WORKER_REGION` 可按机房/可用区区分)。
 
 > ⚠️ **`docker compose ... --scale workerd=N` 只在同一台机器上起 N 个**,不是多机。多机务必在每台机器分别启动 workerd 并指向同一个协调器。
 

@@ -1,0 +1,34 @@
+# Worker-only stack: run this on EACH extra load-generator box.
+#
+# The worker (workerd) is stateless — it dials the coordinator's gRPC port and
+# receives ramp shards. It needs neither Postgres/ClickHouse nor the API/web.
+# Point it at the central coordinator via LOADIFY_COORDINATOR_GRPC in .env, then:
+#
+#   cd deploy/compose
+#   cp .env.example .env          # set LOADIFY_COORDINATOR_GRPC=<coordinator-host>:7070
+#   docker compose -f docker-compose.worker.yml up -d --build
+#
+# Run one such box per machine. To put several workers on the SAME machine,
+# add --scale workerd=N. Region label distinguishes machines/AZs in the UI.
+#
+# ⚠️ The coordinator<->worker gRPC link is plaintext/unauthenticated — keep
+#    port 7070 on a private network / VPC / VPN, never on the public internet.
+name: loadify-worker
+
+services:
+  workerd:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        # Mirrors for restricted networks (China); defaults are upstream.
+        RUNTIME_BASE: "${LOADIFY_RUNTIME_BASE:-gcr.io/distroless/static-debian12:nonroot}"
+        GOPROXY: "${LOADIFY_GOPROXY:-https://proxy.golang.org,direct}"
+        GOSUMDB: "${LOADIFY_GOSUMDB:-sum.golang.org}"
+        SERVICE: workerd
+    environment:
+      # Required: the central coordinator's gRPC address, reachable from this box.
+      LOADIFY_COORDINATOR_GRPC: "${LOADIFY_COORDINATOR_GRPC:?set LOADIFY_COORDINATOR_GRPC=<coordinator-host>:7070 in .env}"
+      LOADIFY_WORKER_HTTP_ADDR: ":8090"
+      LOADIFY_WORKER_REGION: "${LOADIFY_WORKER_REGION:-remote}"
+    restart: unless-stopped
