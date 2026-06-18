@@ -213,3 +213,14 @@ server {
 - 让各 worker 机器通过**内网 / VPC / VPN** 直连协调器的 `7070`。
 - ⚠️ 该 gRPC 当前**明文无鉴权**,**切勿把 7070 暴露公网**(详见上文「网络与安全」)。
 - worker 还需能直连**被压测目标**。
+
+### 在已终止 TLS 的上游(云 LB / CDN / WAF)后面
+
+很常见:外部是 `https://你的域名`,但 TLS 由上游 LB/CDN 终止,回源到这台 nginx 是**明文 80**。
+此时:
+- 这台 nginx **保持 `listen 80`,不要配 443/证书**(证书在上游)。
+- 代理时**写死** `proxy_set_header X-Forwarded-Proto https;`(因为 `$scheme` 在这里是 http)。
+- web 镜像**必须用 https 构建**:`NEXT_PUBLIC_API_BASE=https://你的域名`。否则页面是 https、API 是
+  http 会被浏览器按 **mixed-content** 拦掉;用 https 后实时连接也会自动变 `wss://`,经上游透传。
+- 若该域名的 `/` 原本指向旧服务且**不再使用**,直接把 `location /` 换成指向 loadify web、
+  并新增 `/api/` 即可(替换)。要保留旧服务则给 loadify 单独子域名。
