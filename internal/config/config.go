@@ -100,7 +100,7 @@ func LoadCoordinator() Coordinator {
 // LoadWorker builds Worker config from the environment.
 func LoadWorker() Worker {
 	return Worker{
-		WorkerID:        env("LOADIFY_WORKER_ID", hostnameOr("worker")),
+		WorkerID:        envNonEmpty("LOADIFY_WORKER_ID", hostnameOr("worker")),
 		CoordinatorGRPC: env("LOADIFY_COORDINATOR_GRPC", "coordinatord:7070"),
 		HTTPAddr:        env("LOADIFY_WORKER_HTTP_ADDR", ":8090"),
 		Region:          env("LOADIFY_WORKER_REGION", "default"),
@@ -124,6 +124,15 @@ func loadClickHouse() ClickHouse {
 
 func env(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
+}
+
+// envNonEmpty is like env but also falls back to def when the variable is set
+// but empty — so a compose "${VAR:-}" passthrough doesn't blank out the value.
+func envNonEmpty(key, def string) string {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return def

@@ -30,5 +30,9 @@ services:
       # Required: the central coordinator's gRPC address, reachable from this box.
       LOADIFY_COORDINATOR_GRPC: "${LOADIFY_COORDINATOR_GRPC:?set LOADIFY_COORDINATOR_GRPC=<coordinator-host>:7070 in .env}"
       LOADIFY_WORKER_HTTP_ADDR: ":8090"
+      # Node name shown in the UI; defaults to the container hostname. Must be
+      # UNIQUE across all workers (the coordinator keys on it — duplicates evict
+      # each other). Set a distinct name per box, e.g. worker1 / worker2.
+      LOADIFY_WORKER_ID: "${LOADIFY_WORKER_ID:-}"
       LOADIFY_WORKER_REGION: "${LOADIFY_WORKER_REGION:-remote}"
     restart: unless-stopped
