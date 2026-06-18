@@ -3,8 +3,12 @@
 import { clearSession, getToken } from "./auth";
 import type { AuditEntry, Capacity, DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
+// Default to SAME-ORIGIN (relative /api): the app is meant to run behind a
+// reverse proxy that serves the web UI and routes /api to apisrv, so it works on
+// any domain with no rebuild and never accidentally calls the *viewer's*
+// localhost. Set NEXT_PUBLIC_API_BASE to an absolute URL only when the API is on
+// a different origin (local dev / bare docker-compose without a proxy).
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 class APIError extends Error {
   status: number;
@@ -263,7 +267,14 @@ function authParam(): string {
 // JWT (or share token) as a query param (browsers cannot set headers on the WS
 // handshake).
 export function liveSocketURL(runId: string): string {
-  const base = API_BASE.replace(/^http/, "ws");
+  // A WebSocket URL must be absolute. With an absolute API_BASE, swap http→ws;
+  // with same-origin (empty), derive ws(s) + host from the page location.
+  let base = API_BASE;
+  if (base) {
+    base = base.replace(/^http/, "ws");
+  } else if (typeof window !== "undefined") {
+    base = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+  }
   return `${base}/api/v1/runs/${runId}/live?${authParam()}`;
 }
 
