@@ -7,11 +7,14 @@
 FROM --platform=$BUILDPLATFORM node:22-alpine AS deps
 WORKDIR /app
 COPY web/package.json web/package-lock.json ./
+# Restricted networks (e.g. China): override the npm registry via build-arg
+# (set in deploy/compose/.env). Default is the upstream registry.
+ARG NPM_REGISTRY=https://registry.npmjs.org
 # @playwright/test is a dev-only dep (E2E); skip its browser download in the
 # image build — the web runtime never needs it, and the E2E job installs the
 # browser separately.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --registry=${NPM_REGISTRY}
 
 FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /app

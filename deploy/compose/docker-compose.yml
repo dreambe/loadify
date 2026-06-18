@@ -8,6 +8,13 @@
 # Build context is the repo root (two levels up).
 name: loadify
 
+# Build-args shared by the Go service images. Override the mirrors in
+# deploy/compose/.env for restricted networks (China); defaults are upstream.
+x-go-build-args: &go-build-args
+  RUNTIME_BASE: "${LOADIFY_RUNTIME_BASE:-gcr.io/distroless/static-debian12:nonroot}"
+  GOPROXY: "${LOADIFY_GOPROXY:-https://proxy.golang.org,direct}"
+  GOSUMDB: "${LOADIFY_GOSUMDB:-sum.golang.org}"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -44,7 +51,9 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-      args: { SERVICE: coordinatord }
+      args:
+        <<: *go-build-args
+        SERVICE: coordinatord
     environment:
       LOADIFY_COORDINATOR_GRPC_ADDR: ":7070"
       LOADIFY_COORDINATOR_HTTP_ADDR: ":7071"
@@ -61,7 +70,9 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-      args: { SERVICE: apisrv }
+      args:
+        <<: *go-build-args
+        SERVICE: apisrv
     environment:
       LOADIFY_API_HTTP_ADDR: ":8080"
       LOADIFY_COORDINATOR_GRPC: "coordinatord:7070"
@@ -89,6 +100,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.web
       args:
         NEXT_PUBLIC_API_BASE: "${LOADIFY_API_BASE:-http://localhost:8080}"
+        NPM_REGISTRY: "${LOADIFY_NPM_REGISTRY:-https://registry.npmjs.org}"
     environment:
       # Baked into the client bundle at build time; also read at runtime.
       NEXT_PUBLIC_API_BASE: "${LOADIFY_API_BASE:-http://localhost:8080}"
@@ -100,7 +112,9 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-      args: { SERVICE: workerd }
+      args:
+        <<: *go-build-args
+        SERVICE: workerd
     environment:
       LOADIFY_COORDINATOR_GRPC: "coordinatord:7070"
       LOADIFY_WORKER_HTTP_ADDR: ":8090"
@@ -112,6 +126,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.echo
+      args:
+        <<: *go-build-args
     ports: ["8088:8088", "8089:8089"]
 
 volumes:
