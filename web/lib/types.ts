@@ -21,6 +21,7 @@ export interface TestDefinition {
   thresholds?: Threshold[];
   dataset?: unknown;
   tags?: string[];
+  baseline_run_id?: string | null;
   created_by?: string;
   creator_name?: string;
   created_at: string;

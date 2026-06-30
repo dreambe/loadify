@@ -30,6 +30,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   const [run, setRun] = useState<Run | null>(null);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [baselineRunId, setBaselineRunId] = useState<string | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const runId = params.id;
   const stopped = useRef(false);
@@ -73,6 +74,19 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     }
   }, [terminal, run?.test_def_id, share]);
 
+  useEffect(() => {
+    // Whether THIS run is its test's current baseline. The run payload can't tell
+    // us (the server skips self-comparison, so run.summary.baseline is empty on
+    // the baseline run itself) — read it from the test definition. Test-level
+    // endpoint, so skip in share mode like the trend above.
+    if (terminal && run?.test_def_id && !share) {
+      api
+        .getTest(run.test_def_id)
+        .then((td) => setBaselineRunId(td.baseline_run_id ?? null))
+        .catch(() => {});
+    }
+  }, [terminal, run?.test_def_id, share]);
+
   async function shareLink() {
     try {
       const { token } = await api.shareRun(runId);
@@ -87,6 +101,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     if (!run) return;
     try {
       await api.setBaseline(run.test_def_id, run.id);
+      setBaselineRunId(run.id);
       toast.success(t("run.baselineSet"));
     } catch (e: any) {
       toast.error(e.message);
@@ -97,6 +112,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     if (!run) return;
     try {
       await api.clearBaseline(run.test_def_id);
+      setBaselineRunId(null);
       toast.success(t("run.baselineCleared"));
       api.getRun(runId).then(setRun).catch(() => {});
     } catch (e: any) {
@@ -107,6 +123,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   if (!ready) return null;
   const canStop = roleAtLeast(user?.role, "operator");
   const baseline = run?.summary?.baseline;
+  const isBaseline = !!run && baselineRunId === run.id;
   // The closed (VU) model's latency is optimistic under saturation (coordinated
   // omission); flag it so the curve discloses its own caveat. QPS/arrival-rate
   // runs are not affected.
@@ -147,9 +164,15 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 >
                   <Icon name="rerun" /> {t("runs.rerun")}
                 </button>
-                <button className="ghost" onClick={setAsBaseline}>
-                  <Icon name="star" /> {t("run.setBaseline")}
-                </button>
+                {isBaseline ? (
+                  <button className="ghost" onClick={clearAsBaseline}>
+                    <Icon name="star" /> {t("run.clearBaseline")}
+                  </button>
+                ) : (
+                  <button className="ghost" onClick={setAsBaseline}>
+                    <Icon name="star" /> {t("run.setBaseline")}
+                  </button>
+                )}
               </>
             )}
             {terminal && (
@@ -167,6 +190,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 <Icon name="download" /> {t("run.exportCsv")}
               </a>
             )}
+            {isBaseline && <span className="badge ok">✯ {t("run.currentBaseline")}</span>}
             {run && <span className={`badge ${run.status}`}>{statusLabel(t, run.status)}</span>}
           </div>
         </div>
