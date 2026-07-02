@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 
 interface ConfirmOpts {
@@ -31,6 +31,17 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     setResolver(null);
     setOpts(null);
   };
+
+  // Escape cancels the dialog (matches native confirm and the rest of the app).
+  useEffect(() => {
+    if (!opts) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts]);
 
   return (
     <ConfirmContext.Provider value={confirm}>

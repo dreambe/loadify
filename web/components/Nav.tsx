@@ -167,14 +167,12 @@ function AccountMenu({ user }: { user: User | null }) {
             </div>
           </div>
 
-          {user.role === "admin" && (
-            <>
-              <div className="menu-sep" />
-              <Link role="menuitem" className="menu-item" href="/users" onClick={() => setOpen(false)}>
-                {t("nav.users")}
-              </Link>
-            </>
-          )}
+          {/* Everyone can reach /users for their own account (password, API
+              token, webhooks); admins additionally get user management there. */}
+          <div className="menu-sep" />
+          <Link role="menuitem" className="menu-item" href="/users" onClick={() => setOpen(false)}>
+            {t("nav.users")}
+          </Link>
 
           <div className="menu-sep" />
           <div className="menu-row">

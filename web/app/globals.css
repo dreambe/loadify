@@ -1383,28 +1383,18 @@ label.req::after {
 }
 
 /* --- modal (expanded chart) & inspect drawer ---------------------------- */
-.modal-backdrop,
+/* Reuse the existing .modal-backdrop (fixed, centered, dimmed) defined above for
+   the Confirm dialog; the drawer just re-anchors it to the right edge. */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(3, 8, 14, 0.62);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(2, 5, 10, 0.6);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   display: flex;
-  animation: fade-in 0.14s var(--ease) both;
-}
-.modal-backdrop {
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.drawer-backdrop {
   justify-content: flex-end;
-}
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  animation: toast-in 0.16s var(--ease) both;
 }
 .modal-panel {
   width: min(960px, 96vw);

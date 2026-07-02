@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, roleLabel } from "@/lib/i18n";
 import Help from "@/components/Help";
+import Modal from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import type { AuditEntry, User } from "@/lib/types";
@@ -21,6 +22,9 @@ export default function UsersPage() {
   const [role, setRole] = useState("viewer");
   const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [resetPw, setResetPw] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
   const [usersLoaded, setUsersLoaded] = useState(false);
 
   const isAdmin = roleAtLeast(user?.role, "admin");
@@ -67,14 +71,22 @@ export default function UsersPage() {
     }
   }
 
-  async function resetPassword(u: User) {
-    const pw = window.prompt(t("users.resetPrompt").replace("{email}", u.email));
-    if (!pw) return;
+  function resetPassword(u: User) {
+    setResetPw("");
+    setResetTarget(u);
+  }
+  async function submitReset() {
+    if (!resetTarget || resetPw.length < 8 || resetBusy) return;
+    setResetBusy(true);
     try {
-      await api.updateUser(u.id, { password: pw });
+      await api.updateUser(resetTarget.id, { password: resetPw });
       toast.success(t("users.resetDone"));
+      setResetTarget(null);
+      setResetPw("");
     } catch (e: any) {
       toast.error(e.message);
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -246,6 +258,34 @@ export default function UsersPage() {
           </>
         )}
       </div>
+
+      {resetTarget && (
+        <Modal title={`${t("users.resetTitle")} · ${resetTarget.email}`} onClose={() => setResetTarget(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitReset();
+            }}
+          >
+            <input
+              type="password"
+              autoFocus
+              value={resetPw}
+              onChange={(e) => setResetPw(e.target.value)}
+              placeholder={t("users.newPassword")}
+              style={{ width: "100%", fontFamily: "var(--font-mono)" }}
+            />
+            <div className="modal-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+              <button type="button" className="ghost" onClick={() => setResetTarget(null)}>
+                {t("common.cancel")}
+              </button>
+              <button type="submit" className="secondary" disabled={resetPw.length < 8 || resetBusy}>
+                {t("users.resetTitle")}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }
