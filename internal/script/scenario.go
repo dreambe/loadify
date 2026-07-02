@@ -57,17 +57,32 @@ function _get(o, path) {
   return o;
 }
 function _tmplFunc(token) {
-  // Built-in generators usable directly in {{...}}: uuid, timestamp, now,
-  // random, randomInt(a,b). Returns undefined when token is not a function.
+  // Built-in generators usable directly in {{...}}. Bare names work too
+  // ({{uuid}} == {{uuid()}}). Returns undefined when token is not a function.
   var m = token.match(/^(\w+)\s*\(([^)]*)\)$/);
   var name = m ? m[1] : token;
-  var args = m && m[2].trim() ? m[2].split(",").map(function (x) { return parseFloat(x); }) : [];
+  var raw = m ? m[2] : "";
+  var args = raw.trim() ? raw.split(",").map(function (x) { return parseFloat(x); }) : [];
   switch (name) {
     case "uuid": return uuid();
     case "timestamp": return timestamp();
     case "now": return now();
     case "random": return random();
     case "randomInt": return randomInt(args[0] || 0, args[1] || 0);
+    case "randomFloat": return randomFloat(args[0] || 0, args.length > 1 ? args[1] : 1);
+    case "randomString": return randomString(args[0] || 8);
+    case "randomDigits": return randomDigits(args[0] || 6);
+    case "randomHex": return randomHex(args[0] || 16);
+    case "seq": return seq();
+    case "mobile": return mobile();
+    case "email": return email();
+    case "ipv4": return ipv4();
+    case "pick": {
+      var opts = raw.split("|");
+      if (!raw.trim() || !opts.length) return "";
+      var p = opts[Math.floor(Math.random() * opts.length)];
+      return p.replace(/^\s+|\s+$/g, "");
+    }
   }
   return undefined;
 }

@@ -23,6 +23,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/vars"
 	"github.com/dreambe/loadify/internal/worker/protocols"
 	"github.com/dop251/goja"
 )
@@ -362,12 +363,30 @@ func bindSleep(rt *goja.Runtime) {
 //	uuid()            → RFC4122-ish random v4 string
 //	randomInt(a,b)    → integer in [a,b]
 //	random()          → float in [0,1)
+//	randomFloat(a,b)  → float in [a,b)
+//	randomString(n)   → n alphanumeric chars (default 8)
+//	randomDigits(n)   → n decimal digits (default 6)
+//	randomHex(n)      → n lowercase hex chars (default 16)
 //	timestamp()       → unix milliseconds
 //	now()             → RFC3339 timestamp
 //	counter()         → per-VU monotonically increasing integer (from 1)
+//	seq()             → node-wide monotonically increasing integer (from 1)
+//	mobile()          → plausible Chinese mobile number
+//	email()           → random @load.test address
+//	ipv4()            → random dotted-quad address
 //	randomItem(array) → a random element of the array
 func bindFuncs(rt *goja.Runtime) {
 	var ctr int64
+	nArg := func(call goja.FunctionCall, def int64) int {
+		n := call.Argument(0).ToInteger()
+		if n <= 0 {
+			n = def
+		}
+		if n > 4096 {
+			n = 4096
+		}
+		return int(n)
+	}
 	_ = rt.Set("uuid", func(goja.FunctionCall) goja.Value { return rt.ToValue(newUUID()) })
 	_ = rt.Set("randomInt", func(call goja.FunctionCall) goja.Value {
 		a := call.Argument(0).ToInteger()
@@ -378,12 +397,27 @@ func bindFuncs(rt *goja.Runtime) {
 		return rt.ToValue(a + mrand.Int63n(b-a+1))
 	})
 	_ = rt.Set("random", func(goja.FunctionCall) goja.Value { return rt.ToValue(mrand.Float64()) })
+	_ = rt.Set("randomFloat", func(call goja.FunctionCall) goja.Value {
+		a := call.Argument(0).ToFloat()
+		b := call.Argument(1).ToFloat()
+		if b < a {
+			a, b = b, a
+		}
+		return rt.ToValue(a + mrand.Float64()*(b-a))
+	})
+	_ = rt.Set("randomString", func(call goja.FunctionCall) goja.Value { return rt.ToValue(vars.RandomString(nArg(call, 8))) })
+	_ = rt.Set("randomDigits", func(call goja.FunctionCall) goja.Value { return rt.ToValue(vars.RandomDigits(nArg(call, 6))) })
+	_ = rt.Set("randomHex", func(call goja.FunctionCall) goja.Value { return rt.ToValue(vars.RandomHex(nArg(call, 16))) })
 	_ = rt.Set("timestamp", func(goja.FunctionCall) goja.Value { return rt.ToValue(time.Now().UnixMilli()) })
 	_ = rt.Set("now", func(goja.FunctionCall) goja.Value { return rt.ToValue(time.Now().Format(time.RFC3339)) })
 	_ = rt.Set("counter", func(goja.FunctionCall) goja.Value {
 		ctr++
 		return rt.ToValue(ctr)
 	})
+	_ = rt.Set("seq", func(goja.FunctionCall) goja.Value { return rt.ToValue(vars.NextSeq()) })
+	_ = rt.Set("mobile", func(goja.FunctionCall) goja.Value { return rt.ToValue(vars.Mobile()) })
+	_ = rt.Set("email", func(goja.FunctionCall) goja.Value { return rt.ToValue(vars.Email()) })
+	_ = rt.Set("ipv4", func(goja.FunctionCall) goja.Value { return rt.ToValue(vars.IPv4()) })
 	_ = rt.Set("randomItem", func(call goja.FunctionCall) goja.Value {
 		arr := call.Argument(0).Export()
 		if s, ok := arr.([]any); ok && len(s) > 0 {

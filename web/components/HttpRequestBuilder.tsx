@@ -167,6 +167,7 @@ export default function HttpRequestBuilder({
   const [debugging, setDebugging] = useState(false);
   const [debug, setDebug] = useState<DebugResponse | null>(null);
   const [respTree, setRespTree] = useState(true);
+  const [mtlsOpen, setMtlsOpen] = useState(false);
 
   function setHeader(i: number, patch: Partial<{ key: string; value: string }>) {
     onChange({ ...value, headers: value.headers.map((h, idx) => (idx === i ? { ...h, ...patch } : h)) });
@@ -406,32 +407,45 @@ export default function HttpRequestBuilder({
           <Help tip={t(help)} />
         </label>
       ))}
-      <label style={{ display: "block", marginTop: 10, fontSize: 12 }}>
+      {/* mTLS is a niche option; keep the two PEM textareas behind a disclosure
+          so the common path isn't dominated by empty certificate boxes. Open
+          automatically when values exist (editing an mTLS test). */}
+      <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, fontSize: 12 }}>
+        <input
+          type="checkbox"
+          checked={mtlsOpen || !!(value.clientCertPEM || value.clientKeyPEM)}
+          onChange={(e) => {
+            setMtlsOpen(e.target.checked);
+            if (!e.target.checked) onChange({ ...value, clientCertPEM: "", clientKeyPEM: "" });
+          }}
+        />
         {t("http.mtls")}
         <Help tip={t("http.mtlsHelp")} />
       </label>
-      <div className="row" style={{ marginTop: 4 }}>
-        <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 12 }}>{t("http.clientCert")}</label>
-          <textarea
-            rows={3}
-            value={value.clientCertPEM}
-            onChange={(e) => onChange({ ...value, clientCertPEM: e.target.value })}
-            placeholder="-----BEGIN CERTIFICATE-----"
-            style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
-          />
+      {(mtlsOpen || value.clientCertPEM || value.clientKeyPEM) && (
+        <div className="row" style={{ marginTop: 4 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12 }}>{t("http.clientCert")}</label>
+            <textarea
+              rows={3}
+              value={value.clientCertPEM}
+              onChange={(e) => onChange({ ...value, clientCertPEM: e.target.value })}
+              placeholder="-----BEGIN CERTIFICATE-----"
+              style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 12 }}>{t("http.clientKey")}</label>
+            <textarea
+              rows={3}
+              value={value.clientKeyPEM}
+              onChange={(e) => onChange({ ...value, clientKeyPEM: e.target.value })}
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
+            />
+          </div>
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 12 }}>{t("http.clientKey")}</label>
-          <textarea
-            rows={3}
-            value={value.clientKeyPEM}
-            onChange={(e) => onChange({ ...value, clientKeyPEM: e.target.value })}
-            placeholder="-----BEGIN PRIVATE KEY-----"
-            style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }}
-          />
-        </div>
-      </div>
+      )}
 
       {debug && (
         <div

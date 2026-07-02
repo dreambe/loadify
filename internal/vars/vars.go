@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -63,11 +64,24 @@ func stringify(v any) string {
 }
 
 // builtin evaluates generator tokens, matching the scenario harness:
-// uuid, timestamp (unix ms), now (RFC3339), random (0-1), randomInt(a,b).
+// uuid, timestamp (unix ms), now (RFC3339), random (0-1), randomInt(a,b),
+// randomFloat(a,b), randomString(n), randomDigits(n), randomHex(n),
+// pick(a|b|c), seq (per-node counter), mobile, email, ipv4.
 func builtin(t string) (string, bool) {
 	name, args := t, ""
 	if i := strings.IndexByte(t, '('); i >= 0 && strings.HasSuffix(t, ")") {
 		name, args = t[:i], t[i+1:len(t)-1]
+	}
+	numArg := func(i int, def float64) float64 {
+		parts := strings.Split(args, ",")
+		if i >= len(parts) {
+			return def
+		}
+		v, err := strconv.ParseFloat(strings.TrimSpace(parts[i]), 64)
+		if err != nil {
+			return def
+		}
+		return v
 	}
 	switch name {
 	case "uuid":
@@ -79,21 +93,105 @@ func builtin(t string) (string, bool) {
 	case "random":
 		return strconv.FormatFloat(rand.Float64(), 'f', -1, 64), true
 	case "randomInt":
-		a, b := 0.0, 0.0
-		parts := strings.Split(args, ",")
-		if len(parts) > 0 {
-			a, _ = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-		}
-		if len(parts) > 1 {
-			b, _ = strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-		}
-		lo, hi := int64(a), int64(b)
+		lo, hi := int64(numArg(0, 0)), int64(numArg(1, 0))
 		if hi < lo {
 			lo, hi = hi, lo
 		}
 		return strconv.FormatInt(lo+rand.Int64N(hi-lo+1), 10), true
+	case "randomFloat":
+		lo, hi := numArg(0, 0), numArg(1, 1)
+		if hi < lo {
+			lo, hi = hi, lo
+		}
+		return strconv.FormatFloat(lo+rand.Float64()*(hi-lo), 'f', -1, 64), true
+	case "randomString":
+		return RandomString(intArg(numArg(0, 8), 8)), true
+	case "randomDigits":
+		return RandomDigits(intArg(numArg(0, 6), 6)), true
+	case "randomHex":
+		return RandomHex(intArg(numArg(0, 16), 16)), true
+	case "pick":
+		opts := strings.Split(args, "|")
+		if len(opts) == 0 {
+			return "", true
+		}
+		return strings.TrimSpace(opts[rand.IntN(len(opts))]), true
+	case "seq":
+		return strconv.FormatUint(NextSeq(), 10), true
+	case "mobile":
+		return Mobile(), true
+	case "email":
+		return Email(), true
+	case "ipv4":
+		return IPv4(), true
 	}
 	return "", false
+}
+
+// intArg clamps a parsed numeric arg to a sane positive length.
+func intArg(v float64, def int) int {
+	n := int(v)
+	if n <= 0 {
+		return def
+	}
+	if n > 4096 {
+		return 4096
+	}
+	return n
+}
+
+const alnum = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// RandomString returns n random alphanumeric characters.
+func RandomString(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = alnum[rand.IntN(len(alnum))]
+	}
+	return string(b)
+}
+
+// RandomDigits returns n random decimal digits (e.g. verification codes).
+func RandomDigits(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte('0' + rand.IntN(10))
+	}
+	return string(b)
+}
+
+// RandomHex returns n random lowercase hex characters.
+func RandomHex(n int) string {
+	const hexdigits = "0123456789abcdef"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = hexdigits[rand.IntN(16)]
+	}
+	return string(b)
+}
+
+// Mobile returns a plausible Chinese mobile number (1[3-9] + 9 digits).
+func Mobile() string {
+	return "1" + strconv.Itoa(3+rand.IntN(7)) + RandomDigits(9)
+}
+
+// Email returns a random test-domain email address.
+func Email() string {
+	return strings.ToLower(RandomString(8)) + "@load.test"
+}
+
+// IPv4 returns a random dotted-quad address (octets 1-254).
+func IPv4() string {
+	oct := func() string { return strconv.Itoa(1 + rand.IntN(254)) }
+	return oct() + "." + oct() + "." + oct() + "." + oct()
+}
+
+var seqCounter atomic.Uint64
+
+// NextSeq returns a process-wide monotonically increasing integer (from 1) —
+// unique within one worker node, not across nodes.
+func NextSeq() uint64 {
+	return seqCounter.Add(1)
 }
 
 // newUUID returns a random RFC4122 v4 UUID string.

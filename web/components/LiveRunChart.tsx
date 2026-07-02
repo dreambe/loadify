@@ -23,7 +23,10 @@ export default function LiveRunChart({ runId, runName }: { runId: string; runNam
   const [everConnected, setEverConnected] = useState(false);
   const [closeInfo, setCloseInfo] = useState("");
   const [showLog, setShowLog] = useState(true);
-  const [errorsOnly, setErrorsOnly] = useState(false);
+  // Default to errors-only: during a run the errors are what need attention,
+  // and rendering every sampled row churns the DOM on long runs. Sampling is
+  // capped server-side either way — the toggle is purely a display filter.
+  const [errorsOnly, setErrorsOnly] = useState(true);
   const [hover, setHover] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -320,7 +323,7 @@ export default function LiveRunChart({ runId, runName }: { runId: string; runNam
                 {shownSamples.length === 0 && (
                   <tr>
                     <td colSpan={5} className="muted">
-                      {t("log.empty")}
+                      {errorsOnly && samples.length > 0 ? t("log.noErrors") : t("log.empty")}
                     </td>
                   </tr>
                 )}

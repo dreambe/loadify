@@ -581,6 +581,49 @@ a.cta:focus-visible {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* --- form sections -------------------------------------------------------- */
+/* Numbered sections give long forms a scannable rhythm: hairline rules between
+   sections (no nested boxes), an accent index, and a quiet one-line hint. */
+.form-section {
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.form-section:first-of-type {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: none;
+}
+.fs-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.fs-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+}
+.fs-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.fs-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 760px;
+  line-height: 1.55;
+}
+.fs-body {
+  margin-top: 6px;
+}
+.fs-body > label:first-child {
+  margin-top: var(--s2);
+}
+
 /* --- badges -------------------------------------------------------------- */
 
 .badge {

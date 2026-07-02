@@ -154,6 +154,45 @@ func TestScenarioTemplateFunctions(t *testing.T) {
 	}
 }
 
+// TestScenarioGeneratorFunctions covers the extended {{...}} generator set in
+// the JS harness (string/digit generators, pick, mobile) end to end.
+func TestScenarioGeneratorFunctions(t *testing.T) {
+	var gotURL atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURL.Store(r.URL.String())
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	sc := &plan.ScenarioConfig{
+		Mode: "sequence",
+		Steps: []plan.ScenarioStep{{
+			Method: "GET",
+			URL:    srv.URL + "/x/{{randomDigits(4)}}",
+			Params: []plan.ScenarioParam{
+				{Key: "s", Value: "{{randomString(10)}}"},
+				{Key: "c", Value: "{{pick(red|green|blue)}}"},
+				{Key: "m", Value: "{{mobile}}"},
+			},
+		}},
+	}
+	runScenario(t, sc)
+	u, _ := gotURL.Load().(string)
+	if u == "" || strings.Contains(u, "{{") || strings.Contains(u, "%7B") {
+		t.Fatalf("generators not interpolated: %q", u)
+	}
+	parts := strings.SplitN(u, "?", 2)
+	if len(parts[0]) != len("/x/")+4 {
+		t.Errorf("randomDigits(4) path = %q", parts[0])
+	}
+	q := parts[1]
+	if !strings.Contains(q, "c=red") && !strings.Contains(q, "c=green") && !strings.Contains(q, "c=blue") {
+		t.Errorf("pick() query = %q", q)
+	}
+	if !strings.Contains(q, "m=1") {
+		t.Errorf("mobile() query = %q", q)
+	}
+}
+
 func TestScenarioWeightedSelectsOneStep(t *testing.T) {
 	var a, b atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

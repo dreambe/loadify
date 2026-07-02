@@ -13,6 +13,7 @@ import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import SortableTh from "@/components/SortableTh";
 import NumberInput from "@/components/NumberInput";
+import FormSection from "@/components/FormSection";
 import Icon from "@/components/Icon";
 import { parseCSV } from "@/lib/csv";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
@@ -406,122 +407,68 @@ export default function TestsPage() {
 
         {canCreate && showForm && (
           <form className="panel" onSubmit={submit} ref={formRef}>
-            <h2>{editingId ? t("tests.editTitle") : t("tests.new")}</h2>
-            <div className="form-grid">
-              <div className="field span-2">
-                <label className="req">{t("tests.name")}</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-              <div className="field span-2">
-                <label>
-                  {t("tests.tags")}
-                  <Help tip={t("tests.tagsHelp")} />
-                </label>
-                <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t("tests.tagsPh")} />
-              </div>
-              <div className="field">
-                <label>{t("tests.protocol")}</label>
-                <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
-                  <option value="http">HTTP / HTTPS</option>
-                  <option value="scenario">{t("tests.protoScenario")}</option>
-                  <option value="grpc">gRPC</option>
-                  <option value="websocket">WebSocket</option>
-                  <option value="sse">SSE</option>
-                  <option value="script">{t("tests.protoScript")}</option>
-                </select>
-              </div>
-            </div>
-            {isHTTP && (
-              <>
-                <label>
-                  {t("tests.request")}
-                  <Help tip={t("tests.requestHelp")} />
-                </label>
-                <HttpRequestBuilder value={http} onChange={setHttp} />
-              </>
-            )}
-            {protocol === "scenario" && (
-              <>
-                <label>
-                  {t("tests.scenario")}
-                  <Help tip={t("tests.scenarioBuilderHelp")} />
-                </label>
-                <ScenarioBuilder value={scenario} onChange={setScenario} />
-              </>
-            )}
-            {protocol === "sse" && (
-              <>
-                <label>{t("tests.sse")}</label>
-                <SSEBuilder value={sse} onChange={setSse} />
-              </>
-            )}
-            {!isHTTP && protocol !== "script" && protocol !== "sse" && protocol !== "scenario" && (
-              <>
-                <label>{t("tests.plan")}</label>
-                <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
-              </>
-            )}
-            <label>
-              {t("tests.ramp")}
-              <Help tip={t("tests.rampHelp")} />
-            </label>
-            <RampBuilder value={ramp} onChange={setRamp} />
-            <label>
-              {t("tests.thresholds")}
-              <Help tip={t("tests.thresholdsHelp")} />
-            </label>
-            <ThresholdsEditor value={thresholds} onChange={setThresholds} />
-            <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
-              <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
-                <input type="checkbox" checked={autoStop} onChange={(e) => setAutoStop(e.target.checked)} />
-                {t("tests.autoStop")}
-                <Help tip={t("tests.autoStopHelp")} />
-              </label>
-              {autoStop && (
-                <div>
-                  <label style={{ margin: 0 }}>{t("tests.autoStopPct")}</label>
-                  <NumberInput min={1} max={100} value={autoStopPct} onChange={setAutoStopPct} style={{ width: 90 }} />
+            <h2 style={{ marginBottom: 0 }}>{editingId ? t("tests.editTitle") : t("tests.new")}</h2>
+
+            <FormSection num="01" title={t("tests.secBasics")}>
+              <div className="form-grid">
+                <div className="field span-2">
+                  <label className="req">{t("tests.name")}</label>
+                  <input value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
-              )}
-            </div>
-            <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
-              <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
-                <input type="checkbox" checked={alertOn} onChange={(e) => setAlertOn(e.target.checked)} />
-                {t("tests.alert")}
-                <Help tip={t("tests.alertHelp")} />
-              </label>
-              {alertOn && (
-                <div>
-                  <label style={{ margin: 0 }}>{t("tests.alertPct")}</label>
-                  <NumberInput min={1} max={100} value={alertPct} onChange={setAlertPct} style={{ width: 90 }} />
+                <div className="field span-2">
+                  <label>
+                    {t("tests.tags")}
+                    <Help tip={t("tests.tagsHelp")} />
+                  </label>
+                  <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t("tests.tagsPh")} />
                 </div>
+                <div className="field">
+                  <label>{t("tests.protocol")}</label>
+                  <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
+                    <option value="http">HTTP / HTTPS</option>
+                    <option value="scenario">{t("tests.protoScenario")}</option>
+                    <option value="grpc">gRPC</option>
+                    <option value="websocket">WebSocket</option>
+                    <option value="sse">SSE</option>
+                    <option value="script">{t("tests.protoScript")}</option>
+                  </select>
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection num="02" title={t("tests.secRequest")} hint={t("tests.secRequestHint")}>
+              {isHTTP && <HttpRequestBuilder value={http} onChange={setHttp} />}
+              {protocol === "scenario" && <ScenarioBuilder value={scenario} onChange={setScenario} />}
+              {protocol === "sse" && <SSEBuilder value={sse} onChange={setSse} />}
+              {protocol === "script" && (
+                <>
+                  <label className="req">
+                    {t("tests.script")}
+                    <Help tip={t("tests.scriptHelp")} />
+                  </label>
+                  <textarea
+                    rows={10}
+                    value={script}
+                    onChange={(e) => setScript(e.target.value)}
+                    placeholder={SCRIPT_TEMPLATE}
+                  />
+                </>
               )}
-            </div>
-            {protocol === "script" && (
-              <>
-                <label className="req">
-                  {t("tests.script")}
-                  <Help tip={t("tests.scriptHelp")} />
-                </label>
-                <textarea
-                  rows={10}
-                  value={script}
-                  onChange={(e) => setScript(e.target.value)}
-                  placeholder={SCRIPT_TEMPLATE}
-                />
-              </>
-            )}
+              {!isHTTP && protocol !== "script" && protocol !== "sse" && protocol !== "scenario" && (
+                <>
+                  <label>{t("tests.plan")}</label>
+                  <textarea rows={6} value={plan} onChange={(e) => setPlan(e.target.value)} />
+                </>
+              )}
+            </FormSection>
+
             {/* Data feeder — dynamic per-request parameters. Available wherever
                 the engine interpolates {{var}}: single HTTP requests (httpd
                 driver), scenarios and scripts. CSV columns / JSON keys become
                 {{column}} tokens in URL, params, headers and body. */}
             {(isHTTP || protocol === "scenario" || protocol === "script") && (
-              <>
-                <label>
-                  {t("tests.dataset")}
-                  <Help tip={t("tests.datasetHelp")} />
-                </label>
-                <div className="row" style={{ marginBottom: 6 }}>
+              <FormSection num="03" title={t("tests.secData")} hint={t("tests.secDataHint")}>
+                <div className="row" style={{ marginBottom: 6, marginTop: 8 }}>
                   <label className="secondary" style={{ margin: 0, cursor: "pointer", padding: "8px 11px", border: "1px solid var(--border-strong)", borderRadius: 8 }}>
                     ⬆ {t("tests.dataUpload")}
                     <input
@@ -549,8 +496,47 @@ export default function TestsPage() {
                   onChange={(e) => setDataset(e.target.value)}
                   placeholder={'[{"user":"alice"},{"user":"bob"}]  →  {{user}}'}
                 />
-              </>
+              </FormSection>
             )}
+
+            <FormSection num={isHTTP || protocol === "scenario" || protocol === "script" ? "04" : "03"} title={t("tests.secLoad")}>
+              <RampBuilder value={ramp} onChange={setRamp} />
+            </FormSection>
+
+            <FormSection num={isHTTP || protocol === "scenario" || protocol === "script" ? "05" : "04"} title={t("tests.secPass")}>
+              <label>
+                {t("tests.thresholds")}
+                <Help tip={t("tests.thresholdsHelp")} />
+              </label>
+              <ThresholdsEditor value={thresholds} onChange={setThresholds} />
+              <div className="row" style={{ alignItems: "center", marginTop: 12 }}>
+                <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="checkbox" checked={autoStop} onChange={(e) => setAutoStop(e.target.checked)} />
+                  {t("tests.autoStop")}
+                  <Help tip={t("tests.autoStopHelp")} />
+                </label>
+                {autoStop && (
+                  <div>
+                    <label style={{ margin: 0 }}>{t("tests.autoStopPct")}</label>
+                    <NumberInput min={1} max={100} value={autoStopPct} onChange={setAutoStopPct} style={{ width: 90 }} />
+                  </div>
+                )}
+              </div>
+              <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+                <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="checkbox" checked={alertOn} onChange={(e) => setAlertOn(e.target.checked)} />
+                  {t("tests.alert")}
+                  <Help tip={t("tests.alertHelp")} />
+                </label>
+                {alertOn && (
+                  <div>
+                    <label style={{ margin: 0 }}>{t("tests.alertPct")}</label>
+                    <NumberInput min={1} max={100} value={alertPct} onChange={setAlertPct} style={{ width: 90 }} />
+                  </div>
+                )}
+              </div>
+            </FormSection>
+
             {err && <div className="error">{err}</div>}
             {ok && savedId && (
               <div className="row" style={{ alignItems: "center", marginTop: 8 }}>
@@ -560,7 +546,7 @@ export default function TestsPage() {
                 </button>
               </div>
             )}
-            <div className="row" style={{ marginTop: 12 }}>
+            <div className="row" style={{ marginTop: 22, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
               <button type="submit" disabled={submitting}>{editingId ? t("tests.save") : t("tests.create")}</button>
               <button
                 type="button"
