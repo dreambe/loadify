@@ -13,7 +13,7 @@ import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import Icon from "@/components/Icon";
-import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
+import { useAuth, roleAtLeast, ownsOrAdmin, getToken } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
 import { chartColor, latencyColors, latencyBandColor } from "@/lib/colors";
@@ -235,7 +235,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
 
   return (
     <>
-      <Nav />
+      {/* An anonymous share viewer gets brand-only chrome: the tabs and account
+          menu would all dead-end at the login page. */}
+      <Nav brandOnly={!!share && !getToken()} />
       <div className="container">
         {!share && (
           <Link href="/runs" className="muted" style={{ fontSize: 13, display: "inline-block", marginBottom: 4 }}>

@@ -51,13 +51,14 @@ export function PulseMark({ size = 20 }: { size?: number }) {
   );
 }
 
-export default function Nav() {
+export default function Nav({ brandOnly }: { brandOnly?: boolean }) {
   const pathname = usePathname();
   const { t } = useI18n();
   // Start from the cached session, then refresh once so the avatar appears
   // for sessions created before avatars existed.
   const [user, setUser] = useState<User | null>(null);
   useEffect(() => {
+    if (brandOnly) return;
     setUser(getUser());
     if (getToken()) {
       api
@@ -68,7 +69,20 @@ export default function Nav() {
         })
         .catch(() => {});
     }
-  }, []);
+  }, [brandOnly]);
+
+  // Share-link (anonymous) chrome: just the brand — every tab and the account
+  // menu would dead-end at the login page for a viewer with no session.
+  if (brandOnly) {
+    return (
+      <nav className="nav">
+        <span className="brand">
+          <PulseMark size={24} />
+          Loadify
+        </span>
+      </nav>
+    );
+  }
 
   const item = (href: string, label: string) => {
     // "/" must match exactly (it's a prefix of everything); others match by prefix.
