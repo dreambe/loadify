@@ -294,6 +294,16 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 </button>
                 {exportOpen && (
                   <div className="menu" role="menu">
+                    <Link
+                      className="menu-item"
+                      role="menuitem"
+                      href={`/compare?a=${runId}${baselineRunId && baselineRunId !== runId ? `&b=${baselineRunId}` : ""}`}
+                      onClick={() => setExportOpen(false)}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Icon name="compare" /> {t("run.compare")}
+                      </span>
+                    </Link>
                     <a
                       className="menu-item"
                       role="menuitem"

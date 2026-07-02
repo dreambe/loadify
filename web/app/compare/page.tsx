@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import LineChart, { formatElapsed } from "@/components/LineChart";
 import EntityPicker from "@/components/EntityPicker";
@@ -37,14 +38,27 @@ function metricsOf(r?: Run) {
 
 function CompareInner() {
   const { t } = useI18n();
+  const params = useSearchParams();
   const [runs, setRuns] = useState<Run[]>([]);
   const [tests, setTests] = useState<TestDefinition[]>([]);
-  const [aId, setAId] = useState("");
-  const [bId, setBId] = useState("");
+  // Seed the two sides from the URL so a comparison is a shareable link
+  // (/compare?a=<run>&b=<run>) and the run page can deep-link into it.
+  const [aId, setAId] = useState(() => params.get("a") || "");
+  const [bId, setBId] = useState(() => params.get("b") || "");
   const [a, setA] = useState<Side>({ series: [] });
   const [b, setB] = useState<Side>({ series: [] });
   const [hover, setHover] = useState<number | null>(null);
   const [err, setErr] = useState("");
+
+  // Keep the URL in sync with the current selection without a full navigation,
+  // so copying the address bar reproduces the comparison.
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (aId) q.set("a", aId);
+    if (bId) q.set("b", bId);
+    const qs = q.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [aId, bId]);
 
   useEffect(() => {
     // Pull a deep history so older runs are searchable here, not just the last
