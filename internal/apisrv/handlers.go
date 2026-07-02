@@ -67,6 +67,20 @@ type createTestReq struct {
 	Tags       []string        `json:"tags,omitempty"`
 }
 
+// validateDataset rejects a data feeder that isn't an array of flat JSON
+// objects, so the mistake surfaces at save time instead of as a worker-side
+// run failure.
+func validateDataset(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return errors.New(`dataset must be a JSON array of objects, e.g. [{"user":"alice"}]`)
+	}
+	return nil
+}
+
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	var req createTestReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -75,6 +89,10 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	}
 	// Validate the plan up-front.
 	if _, err := plan.Parse(req.Plan); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateDataset(req.Dataset); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -131,6 +149,10 @@ func (s *Server) handleUpdateTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := plan.Parse(req.Plan); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateDataset(req.Dataset); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -449,9 +471,16 @@ func (s *Server) launchRun(ctx context.Context, testID string, workers int, name
 	}
 	if mainJS != "" {
 		script = &loadifyv1.ScriptBundle{MainJs: mainJS}
-		if len(td.DataJSON) > 0 {
-			script.Modules = map[string]string{"__data__": string(td.DataJSON)}
+	}
+	// The dataset rides in the bundle's reserved "__data__" module for every
+	// protocol: the script driver reads it itself; for plain protocols the
+	// worker agent lifts it into the parsed plan so drivers (httpd) can feed
+	// {{var}} tokens per request.
+	if len(td.DataJSON) > 0 {
+		if script == nil {
+			script = &loadifyv1.ScriptBundle{}
 		}
+		script.Modules = map[string]string{"__data__": string(td.DataJSON)}
 	}
 	startReq := &loadifyv1.StartRunRequest{
 		RunId:          runID,
@@ -513,6 +542,15 @@ func buildRunSnapshot(td *postgres.TestDefinition, planJSON json.RawMessage, scr
 			maskedVars[k] = "••••••"
 		}
 		snap["environment"] = map[string]any{"name": envName, "vars": maskedVars}
+	}
+	// Datasets can be large and carry user PII; the snapshot keeps only the
+	// row count (enough to know the run was data-driven), never the rows.
+	if len(td.DataJSON) > 0 {
+		delete(snap, "dataset")
+		var rows []map[string]any
+		if err := json.Unmarshal(td.DataJSON, &rows); err == nil {
+			snap["dataset_rows"] = len(rows)
+		}
 	}
 	out, err := json.Marshal(snap)
 	if err != nil {

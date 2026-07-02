@@ -19,6 +19,7 @@ import (
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/plan"
+	"github.com/dreambe/loadify/internal/vars"
 	"github.com/dreambe/loadify/internal/worker/protocols"
 )
 
@@ -35,7 +36,7 @@ func factory(p *plan.Plan) (protocols.Driver, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-	return &Driver{cfg: p.HTTP}, nil
+	return &Driver{cfg: p.HTTP, feed: p.Dataset}, nil
 }
 
 // Driver is an HTTP/HTTPS load driver backed by a tuned shared transport.
@@ -46,6 +47,15 @@ type Driver struct {
 	timeout time.Duration
 	group   string
 	url     string // cfg.URL with structured query params appended
+
+	// Dynamic parameters: feed rows cycle per request (shared counter across
+	// this worker's VUs, so concurrent VUs draw different rows) and dynamic
+	// marks that the request template must be re-rendered per request —
+	// because a feed exists or the template itself contains {{...}} tokens
+	// (dataset columns or built-in generators like {{uuid}}).
+	feed    []map[string]any
+	feedIdx atomic.Uint64
+	dynamic bool
 
 	// Per-VU clients (own cookie jar, shared transport) when CookieJar is on,
 	// so each virtual user keeps its own session.
@@ -112,22 +122,16 @@ func (d *Driver) Prepare(_ context.Context) error {
 	d.timeout = timeout
 	d.client = &http.Client{Transport: tr, Timeout: timeout, CheckRedirect: d.redirectPolicy()}
 
-	// Resolve structured query params once (values are static post env-substitution).
+	// A request is dynamic when a data feed is present or any field carries a
+	// {{...}} token; then URL/params/headers/body are rendered per request.
+	d.dynamic = len(d.feed) > 0 || vars.Has(d.cfg.URL) || vars.Has(d.cfg.Body) || anyTemplated(d.cfg)
+
+	// Resolve structured query params once (values are static post
+	// env-substitution) — only for static requests; dynamic ones interpolate
+	// values first and encode per request.
 	d.url = d.cfg.URL
-	if len(d.cfg.Params) > 0 {
-		qs := url.Values{}
-		for _, p := range d.cfg.Params {
-			if p.Key != "" {
-				qs.Add(p.Key, p.Value)
-			}
-		}
-		if enc := qs.Encode(); enc != "" {
-			sep := "?"
-			if strings.Contains(d.url, "?") {
-				sep = "&"
-			}
-			d.url += sep + enc
-		}
+	if !d.dynamic && len(d.cfg.Params) > 0 {
+		d.url = appendParams(d.cfg.URL, d.cfg.Params, nil)
 	}
 
 	d.group = d.cfg.Group
@@ -137,20 +141,93 @@ func (d *Driver) Prepare(_ context.Context) error {
 	return nil
 }
 
+// anyTemplated reports whether any param or header value/key carries a
+// {{...}} token.
+func anyTemplated(cfg *plan.HTTPConfig) bool {
+	for _, p := range cfg.Params {
+		if vars.Has(p.Key) || vars.Has(p.Value) {
+			return true
+		}
+	}
+	for k, v := range cfg.Headers {
+		if vars.Has(k) || vars.Has(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// appendParams interpolates (when row != nil) and URL-encodes structured query
+// params onto base. Interpolate THEN encode, so {{var}} resolves before
+// escaping — mirroring the scenario harness.
+func appendParams(base string, params []plan.ScenarioParam, row map[string]any) string {
+	if len(params) == 0 {
+		return base
+	}
+	qs := url.Values{}
+	for _, p := range params {
+		if p.Key == "" {
+			continue
+		}
+		if row != nil || vars.Has(p.Key) || vars.Has(p.Value) {
+			qs.Add(vars.Interp(p.Key, row), vars.Interp(p.Value, row))
+		} else {
+			qs.Add(p.Key, p.Value)
+		}
+	}
+	enc := qs.Encode()
+	if enc == "" {
+		return base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + enc
+}
+
+// nextRow returns the next data row (cycling; nil without a feed). The shared
+// counter means this worker's VUs collectively walk the dataset in order.
+func (d *Driver) nextRow() map[string]any {
+	if len(d.feed) == 0 {
+		return nil
+	}
+	n := d.feedIdx.Add(1) - 1
+	return d.feed[n%uint64(len(d.feed))]
+}
+
 // Exec performs one HTTP request and captures phase timings via httptrace.
 func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
-	res := protocols.Result{Group: d.group, Method: d.cfg.Method, URL: d.url}
+	// Static fast path: the prebuilt URL/body; dynamic requests render their
+	// fields from the next data row (and built-in generators) per request.
+	reqURL, reqBodyStr := d.url, d.cfg.Body
+	var headers map[string]string
+	if d.dynamic {
+		row := d.nextRow()
+		reqURL = appendParams(vars.Interp(d.cfg.URL, row), d.cfg.Params, row)
+		reqBodyStr = vars.Interp(d.cfg.Body, row)
+		if len(d.cfg.Headers) > 0 {
+			headers = make(map[string]string, len(d.cfg.Headers))
+			for k, v := range d.cfg.Headers {
+				headers[vars.Interp(k, row)] = vars.Interp(v, row)
+			}
+		}
+	} else {
+		headers = d.cfg.Headers
+	}
+
+	res := protocols.Result{Group: d.group, Method: d.cfg.Method, URL: reqURL}
 
 	var body io.Reader
-	if d.cfg.Body != "" {
-		body = strings.NewReader(d.cfg.Body)
+	if reqBodyStr != "" {
+		body = strings.NewReader(reqBodyStr)
 	}
-	req, err := http.NewRequestWithContext(ctx, d.cfg.Method, d.url, body)
+	req, err := http.NewRequestWithContext(ctx, d.cfg.Method, reqURL, body)
 	if err != nil {
 		res.ErrorKind = "build_request"
 		return res
 	}
-	for k, v := range d.cfg.Headers {
+	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	// OTel: a fresh sampled W3C trace context per request so the target's APM
@@ -158,8 +235,8 @@ func (d *Driver) Exec(ctx context.Context, vu *protocols.VU) protocols.Result {
 	if d.cfg.TraceHeader && req.Header.Get("traceparent") == "" {
 		req.Header.Set("traceparent", newTraceparent())
 	}
-	res.SentBytes = int64(len(d.cfg.Body))
-	if reqBody := d.cfg.Body; reqBody != "" {
+	res.SentBytes = int64(len(reqBodyStr))
+	if reqBody := reqBodyStr; reqBody != "" {
 		if len(reqBody) > protocols.RespBodyCap {
 			reqBody = reqBody[:protocols.RespBodyCap]
 		}

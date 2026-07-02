@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -171,6 +172,17 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 	if err != nil {
 		log.Error("invalid plan", "err", err)
 		return
+	}
+	// Lift the assignment's data feed into the plan so plain-protocol drivers
+	// (httpd) can interpolate {{var}} tokens per request. The script driver
+	// reads the bundle itself, so this is only load-bearing when MainJs is empty.
+	if asg.Script != nil {
+		if raw := asg.Script.Modules["__data__"]; raw != "" {
+			if derr := json.Unmarshal([]byte(raw), &p.Dataset); derr != nil {
+				log.Error("invalid data feeder JSON", "err", derr)
+				return
+			}
+		}
 	}
 	var drv protocols.Driver
 	if asg.Script != nil && asg.Script.MainJs != "" {

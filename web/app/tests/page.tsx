@@ -509,6 +509,14 @@ export default function TestsPage() {
                   onChange={(e) => setScript(e.target.value)}
                   placeholder={SCRIPT_TEMPLATE}
                 />
+              </>
+            )}
+            {/* Data feeder — dynamic per-request parameters. Available wherever
+                the engine interpolates {{var}}: single HTTP requests (httpd
+                driver), scenarios and scripts. CSV columns / JSON keys become
+                {{column}} tokens in URL, params, headers and body. */}
+            {(isHTTP || protocol === "scenario" || protocol === "script") && (
+              <>
                 <label>
                   {t("tests.dataset")}
                   <Help tip={t("tests.datasetHelp")} />
@@ -539,7 +547,7 @@ export default function TestsPage() {
                   rows={3}
                   value={dataset}
                   onChange={(e) => setDataset(e.target.value)}
-                  placeholder={'[{"user":"alice"},{"user":"bob"}]'}
+                  placeholder={'[{"user":"alice"},{"user":"bob"}]  →  {{user}}'}
                 />
               </>
             )}

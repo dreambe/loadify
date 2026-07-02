@@ -62,6 +62,12 @@ type Plan struct {
 	// MaxRequestBodyBytes caps the size of any request body template. 0 uses the
 	// default (DefaultMaxRequestBody).
 	MaxRequestBodyBytes int `json:"max_request_body_bytes,omitempty"`
+	// Dataset is the per-request data feed (one map per row). It never travels
+	// inside the plan JSON — the worker agent fills it from the assignment's
+	// ScriptBundle "__data__" module — so it is excluded from (de)serialization.
+	// Protocol drivers that support {{var}} interpolation (httpd; scripts read
+	// the bundle themselves) draw rows from it.
+	Dataset []map[string]any `json:"-"`
 }
 
 // DefaultScriptTimeout bounds a single script iteration so an infinite loop in
