@@ -450,6 +450,14 @@ textarea:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* Unified keyboard focus ring — links and custom tabbables get the same accent
+   ring as form controls, so focus is always visible and always the same. */
+a:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: 3px;
+}
 textarea {
   width: 100%;
   font-family: var(--font-mono);

@@ -167,6 +167,31 @@ export default function ScenarioBuilder({
     setRawView((r) => remapAfterRemove(r, i));
   };
 
+  // remapAfterSwap swaps two index keys in an index-keyed record, keeping
+  // cached debug/raw-view state attached to the steps that moved.
+  function remapAfterSwap<T>(rec: Record<number, T>, i: number, j: number): Record<number, T> {
+    const out = { ...rec };
+    const a = out[i];
+    const b = out[j];
+    delete out[i];
+    delete out[j];
+    if (a !== undefined) out[j] = a;
+    if (b !== undefined) out[i] = b;
+    return out;
+  }
+
+  // moveStep swaps a step with its neighbor. In sequence mode order IS the
+  // request chain, so reordering must not require deleting and re-entering.
+  const moveStep = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= value.steps.length) return;
+    const steps = [...value.steps];
+    [steps[i], steps[j]] = [steps[j], steps[i]];
+    onChange({ ...value, steps });
+    setDebug((d) => remapAfterSwap(d, i, j));
+    setRawView((r) => remapAfterSwap(r, i, j));
+  };
+
   // payloadStep serializes a builder step into the debug-scenario wire shape.
   const payloadStep = (s: ScenarioStep) => {
     const headers: Record<string, string> = {};
@@ -270,9 +295,31 @@ export default function ScenarioBuilder({
               {weighted ? "◆" : `${i + 1}.`} {st.name || t("scenario.step") + " " + (i + 1)}
             </b>
             {value.steps.length > 1 && (
-              <button type="button" className="secondary" onClick={() => removeStep(i)}>
-                {t("ramp.remove")}
-              </button>
+              <div className="row" style={{ gap: 4, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="ghost sm"
+                  disabled={i === 0}
+                  title={t("scenario.moveUp")}
+                  aria-label={t("scenario.moveUp")}
+                  onClick={() => moveStep(i, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="ghost sm"
+                  disabled={i === value.steps.length - 1}
+                  title={t("scenario.moveDown")}
+                  aria-label={t("scenario.moveDown")}
+                  onClick={() => moveStep(i, 1)}
+                >
+                  ↓
+                </button>
+                <button type="button" className="secondary" onClick={() => removeStep(i)}>
+                  {t("ramp.remove")}
+                </button>
+              </div>
             )}
           </div>
 
