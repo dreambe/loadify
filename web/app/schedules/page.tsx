@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import Help from "@/components/Help";
+import EntityPicker from "@/components/EntityPicker";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
@@ -94,14 +95,17 @@ export default function SchedulesPage() {
             <div className="row" style={{ alignItems: "flex-end" }}>
               <div>
                 <label className="req">{t("runs.test")}</label>
-                <select value={testId} onChange={(e) => setTestId(e.target.value)} style={{ minWidth: 240 }}>
-                  <option value="">{t("runs.searchTest")}</option>
-                  {tests.map((td) => (
-                    <option key={td.id} value={td.id}>
-                      {td.name} ({td.protocol})
-                    </option>
-                  ))}
-                </select>
+                <EntityPicker
+                  items={tests}
+                  value={testId}
+                  onChange={setTestId}
+                  idOf={(td) => td.id}
+                  label={(td) => `${td.name} (${td.protocol})`}
+                  keys={(td) => [td.id, td.name, td.protocol]}
+                  placeholder={t("runs.searchTest")}
+                  listId="sched-test"
+                  style={{ minWidth: 240 }}
+                />
               </div>
               <div>
                 <label>{t("sched.every")}</label>

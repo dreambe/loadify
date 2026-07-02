@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
 import Icon from "./Icon";
 import SampleTable from "./SampleTable";
+import { useFocusTrap } from "./useFocusTrap";
 import type { DrillSample, SeriesPoint } from "@/lib/types";
 
 // InspectDrawer slides in from the right when a chart point is clicked. It shows
@@ -29,14 +30,8 @@ export default function InspectDrawer({
   const [samples, setSamples] = useState<DrillSample[] | null>(null);
   const [loading, setLoading] = useState(false);
   const point = series[index];
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const drawerRef = useRef<HTMLElement>(null);
+  useFocusTrap(drawerRef, onClose);
 
   useEffect(() => {
     if (!point) return;
@@ -59,7 +54,7 @@ export default function InspectDrawer({
 
   return createPortal(
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      <aside className="drawer" role="dialog" aria-modal="true" tabIndex={-1} ref={drawerRef} onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head">
           <div>
             <div className="caption" style={{ color: "var(--muted)" }}>{t("drawer.title")}</div>

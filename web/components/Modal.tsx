@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Icon from "./Icon";
+import { useFocusTrap } from "./useFocusTrap";
 
 // Modal is a centered overlay dialog. Closes on backdrop click, the ✕ button, or
 // Escape. Used for the expanded (fullscreen) chart view.
@@ -17,18 +18,8 @@ export default function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, onClose);
 
   if (typeof document === "undefined") return null;
 
@@ -41,6 +32,8 @@ export default function Modal({
         className={"modal-panel" + (wide ? " wide" : "")}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
+        ref={panelRef}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
