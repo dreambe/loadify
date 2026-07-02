@@ -91,6 +91,9 @@ func (f *fakeMeta) GetRunDispatch(_ context.Context, id string) ([]byte, error) 
 	return f.dispatch[id], nil
 }
 func (f *fakeMeta) ListRuns(_ context.Context, _ int) ([]postgres.Run, error) { return nil, nil }
+func (f *fakeMeta) RunStats(_ context.Context) (postgres.RunStats, error) {
+	return postgres.RunStats{}, nil
+}
 func (f *fakeMeta) ListRunsByTest(_ context.Context, _ string, _ int) ([]postgres.Run, error) {
 	return nil, nil
 }

@@ -13,7 +13,7 @@ import { fmtMs } from "@/lib/format";
 import { latencyColors } from "@/lib/colors";
 import type { Run, WorkerInfo } from "@/lib/types";
 
-const terminalStatuses = new Set(["completed", "failed", "stopped"]);
+const terminalStatuses = new Set(["completed", "failed", "aborted"]);
 
 export default function DashboardPage() {
   const { t } = useI18n();
@@ -23,6 +23,13 @@ export default function DashboardPage() {
   const [hover, setHover] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
+  // Whole-table KPI aggregates from the server (correct beyond the capped runs
+  // list); null until the first fetch resolves.
+  const [rstats, setRstats] = useState<{
+    running: number;
+    last24h: number;
+    pass_rate: number | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -31,10 +38,11 @@ export default function DashboardPage() {
       return;
     }
     const load = () => {
-      Promise.all([api.listRuns(), api.listWorkers()])
-        .then(([r, w]) => {
+      Promise.all([api.listRuns(), api.listWorkers(), api.runStats()])
+        .then(([r, w, st]) => {
           setRuns(r);
           setWorkers(w);
+          setRstats(st);
           setErr("");
         })
         .catch((e: any) => setErr(e?.message || "load failed"))
@@ -47,6 +55,11 @@ export default function DashboardPage() {
 
   const stats = useMemo(() => {
     const healthy = workers.filter((w) => w.status === "healthy").length;
+    // Prefer the server-side aggregates (whole history); fall back to the
+    // fetched page only while the first /runs/stats call is still in flight.
+    if (rstats) {
+      return { healthy, total: workers.length, running: rstats.running, last24h: rstats.last24h, passRate: rstats.pass_rate };
+    }
     const running = runs.filter((r) => !terminalStatuses.has(r.status)).length;
     const cutoff = Date.now() - 24 * 3600 * 1000;
     const last24h = runs.filter((r) => new Date(r.created_at).getTime() >= cutoff).length;
@@ -55,7 +68,7 @@ export default function DashboardPage() {
     const passed = judged.filter((r) => r.summary?.passed).length;
     const passRate = judged.length ? Math.round((passed / judged.length) * 100) : null;
     return { healthy, total: workers.length, running, last24h, passRate };
-  }, [runs, workers]);
+  }, [runs, workers, rstats]);
 
   // p95 of the most recent finished runs, oldest→newest, for the SLA trend line.
   const trend = useMemo(() => {

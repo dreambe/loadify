@@ -27,6 +27,7 @@ type metaStore interface {
 	SetRunDispatch(ctx context.Context, id string, payload []byte) error
 	GetRunDispatch(ctx context.Context, id string) ([]byte, error)
 	ListRuns(ctx context.Context, limit int) ([]postgres.Run, error)
+	RunStats(ctx context.Context) (postgres.RunStats, error)
 	ListRunsByTest(ctx context.Context, testID string, limit int) ([]postgres.Run, error)
 	ListActiveRuns(ctx context.Context) ([]postgres.Run, error)
 	SetBaseline(ctx context.Context, testID, runID string) error

@@ -163,6 +163,12 @@ export const api = {
     }),
 
   listRuns: (limit?: number) => reqList<Run>(`/api/v1/runs${limit ? `?limit=${limit}` : ""}`),
+  // Whole-table run aggregates for the dashboard KPIs (correct beyond the
+  // capped runs list). pass_rate is null when no finished run has a verdict.
+  runStats: () =>
+    req<{ total: number; running: number; last24h: number; scored: number; passed: number; pass_rate: number | null }>(
+      "/api/v1/runs/stats"
+    ),
   getRun: (id: string) => req<Run>(`/api/v1/runs/${id}`),
   startRun: (testId: string, desiredWorkers: number, name = "", environmentId = "") =>
     req<{ run_id: string; status: string }>("/api/v1/runs", {

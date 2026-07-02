@@ -131,6 +131,8 @@ func (s *Server) routes() {
 		r.With(viewer).Get("/tests/{id}/trend", s.handleTestTrend)
 		r.With(operator).Post("/tests/{id}/baseline", s.handleSetBaseline)
 		r.With(viewer).Get("/runs", s.handleListRuns)
+		// Static segment registered before /runs/{id} so it isn't captured as an id.
+		r.With(viewer).Get("/runs/stats", s.handleRunStats)
 		// Run read endpoints accept a session OR a run-scoped ?share= token, so a
 		// shared link drives the real interactive run page without login.
 		r.With(s.runRead).Get("/runs/{id}", s.handleGetRun)

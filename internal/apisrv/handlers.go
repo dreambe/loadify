@@ -817,6 +817,32 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, runs)
 }
 
+// handleRunStats returns whole-table run aggregates for the dashboard KPIs, so
+// the numbers are correct regardless of history size (the runs list is capped).
+func (s *Server) handleRunStats(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	st, err := s.pg.RunStats(ctx)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var passRate *int
+	if st.Scored > 0 {
+		// Round to nearest whole percent without importing math.
+		p := (st.Passed*100 + st.Scored/2) / st.Scored
+		passRate = &p
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total":     st.Total,
+		"running":   st.Running,
+		"last24h":   st.Last24h,
+		"scored":    st.Scored,
+		"passed":    st.Passed,
+		"pass_rate": passRate,
+	})
+}
+
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()

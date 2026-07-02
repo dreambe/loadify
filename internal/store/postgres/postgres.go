@@ -321,6 +321,31 @@ func (s *Store) ListRuns(ctx context.Context, limit int) ([]Run, error) {
 	return scanRuns(rows)
 }
 
+// RunStats is a whole-table aggregate for the dashboard KPIs. Computing it in
+// the DB keeps the numbers correct no matter how many runs exist — the runs
+// list is capped, so aggregating it client-side silently truncates.
+type RunStats struct {
+	Total   int `json:"total"`
+	Running int `json:"running"` // active: not yet in a terminal state
+	Last24h int `json:"last24h"`
+	Scored  int `json:"scored"` // finished runs carrying a pass/fail verdict
+	Passed  int `json:"passed"`
+}
+
+// RunStats returns aggregate run counts across all runs.
+func (s *Store) RunStats(ctx context.Context) (RunStats, error) {
+	var st RunStats
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+		  count(*),
+		  count(*) FILTER (WHERE status NOT IN ('completed','failed','aborted')),
+		  count(*) FILTER (WHERE created_at > now() - interval '24 hours'),
+		  count(*) FILTER (WHERE status IN ('completed','failed','aborted') AND summary ? 'passed'),
+		  count(*) FILTER (WHERE status IN ('completed','failed','aborted') AND (summary->>'passed') = 'true')
+		FROM runs`).Scan(&st.Total, &st.Running, &st.Last24h, &st.Scored, &st.Passed)
+	return st, err
+}
+
 func scanRuns(rows pgx.Rows) ([]Run, error) {
 	out := []Run{}
 	for rows.Next() {
