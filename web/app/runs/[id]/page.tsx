@@ -7,6 +7,8 @@ import LiveRunChart from "@/components/LiveRunChart";
 import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL, shareRunURL, setShareToken } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
+import Modal from "@/components/Modal";
+import InspectDrawer from "@/components/InspectDrawer";
 import Help from "@/components/Help";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
@@ -14,7 +16,7 @@ import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
-import { chartColor, latencyColors } from "@/lib/colors";
+import { chartColor, latencyColors, latencyBandColor } from "@/lib/colors";
 import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
@@ -31,7 +33,14 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [baselineRunId, setBaselineRunId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
+  // Shared across all three charts so they zoom to the same x-window together.
+  const [zoom, setZoom] = useState<{ lo: number; hi: number } | null>(null);
+  // A clicked moment (opens the inspect drawer) and the chart expanded fullscreen.
+  const [selected, setSelected] = useState<number | null>(null);
+  const [expandedChart, setExpandedChart] = useState<string | null>(null);
   const runId = params.id;
   const stopped = useRef(false);
 
@@ -87,6 +96,23 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     }
   }, [terminal, run?.test_def_id, share]);
 
+  // Close the export menu on outside click / Escape (the canonical menu pattern).
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExportOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [exportOpen]);
+
   async function shareLink() {
     try {
       const { token } = await api.shareRun(runId);
@@ -124,6 +150,12 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   const canStop = roleAtLeast(user?.role, "operator");
   const baseline = run?.summary?.baseline;
   const isBaseline = !!run && baselineRunId === run.id;
+  // Headline numbers for the KPI strip (lead with the verdict, then the charts).
+  const sum = run?.summary?.summary;
+  const elapsedMs =
+    run?.started_at && run?.ended_at ? new Date(run.ended_at).getTime() - new Date(run.started_at).getTime() : 0;
+  const avgRps =
+    run?.summary?.total_requests && elapsedMs > 0 ? run.summary.total_requests / (elapsedMs / 1000) : null;
   // The closed (VU) model's latency is optimistic under saturation (coordinated
   // omission); flag it so the curve discloses its own caveat. QPS/arrival-rate
   // runs are not affected.
@@ -132,6 +164,74 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
   // X-axis: elapsed test time from the first series point.
   const seriesBase = series.length > 0 ? new Date(series[0].ts).getTime() : 0;
   const xLabels = series.map((p) => formatElapsed((new Date(p.ts).getTime() - seriesBase) / 1000));
+
+  // Seconds that had errors — flagged with a dot on the error chart so it's
+  // obvious where to click to drill in.
+  const errorIdx = series.reduce<number[]>((a, p, i) => {
+    if (p.error_rate > 0) a.push(i);
+    return a;
+  }, []);
+
+  // One source of truth for the three charts, reused by the inline panels and
+  // the fullscreen modal.
+  const chartDefs: {
+    key: string;
+    title: string;
+    unit?: string;
+    help?: string;
+    header?: React.ReactNode;
+    series: { label: string; color: string; data: number[] }[];
+    band?: { lower: number[]; upper: number[]; color: string };
+    markIndices?: number[];
+    markColor?: string;
+  }[] = [
+    {
+      key: "qps",
+      title: t("run.throughput"),
+      series: [{ label: "qps", color: chartColor.accent, data: series.map((p) => p.rps) }],
+    },
+    {
+      key: "latency",
+      title: t("run.latency"),
+      unit: "ms",
+      help: vuMode ? t("run.coOmissionNote") : undefined,
+      header: vuMode ? <span className="badge queued">{t("run.coOmissionBadge")}</span> : undefined,
+      series: [
+        { label: "p50", color: latencyColors.p50, data: series.map((p) => p.p50_ms) },
+        { label: "p90", color: latencyColors.p90, data: series.map((p) => p.p90_ms) },
+        { label: "p95", color: latencyColors.p95, data: series.map((p) => p.p95_ms) },
+        { label: "p99", color: latencyColors.p99, data: series.map((p) => p.p99_ms) },
+      ],
+      band: { lower: series.map((p) => p.p50_ms), upper: series.map((p) => p.p99_ms), color: latencyBandColor },
+    },
+    {
+      key: "error",
+      title: t("run.errorRate"),
+      unit: "%",
+      series: [{ label: "errors", color: chartColor.red, data: series.map((p) => p.error_rate * 100) }],
+      markIndices: errorIdx,
+      markColor: chartColor.red,
+    },
+  ];
+
+  const renderLineChart = (d: (typeof chartDefs)[number], height?: number, panZoom?: boolean) => (
+    <LineChart
+      series={d.series}
+      unit={d.unit}
+      band={d.band}
+      markIndices={d.markIndices}
+      markColor={d.markColor}
+      height={height}
+      xLabels={xLabels}
+      hoverIndex={hover}
+      onHover={setHover}
+      zoom={zoom}
+      onZoom={setZoom}
+      onSelect={setSelected}
+      panZoom={panZoom}
+      fileName={[run?.name || `run-${runId.slice(0, 8)}`, d.title].join(" - ")}
+    />
+  );
 
   return (
     <>
@@ -142,8 +242,15 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             ← {t("run.backToRuns")}
           </Link>
         )}
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h1>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          {/* Title + run status. Status is information, not an action, so it lives
+              by the name — never mixed into the action row. */}
+          <div className="row" style={{ alignItems: "center", gap: 12 }}>
+            <h1 style={{ margin: 0 }}>{run?.name || `${t("run.title")} ${runId.slice(0, 8)}`}</h1>
+            {run && <span className={`badge ${run.status}`}>{statusLabel(t, run.status)}</span>}
+          </div>
+          {/* Actions: rerun (primary) · baseline toggle (state+action in one
+              control) · export/share grouped into one menu to keep the bar calm. */}
           <div className="row" style={{ alignItems: "center" }}>
             {terminal && run && canStop && (
               <>
@@ -164,34 +271,70 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 >
                   <Icon name="rerun" /> {t("runs.rerun")}
                 </button>
-                {isBaseline ? (
-                  <button className="ghost" onClick={clearAsBaseline}>
-                    <Icon name="star" /> {t("run.clearBaseline")}
-                  </button>
-                ) : (
-                  <button className="ghost" onClick={setAsBaseline}>
-                    <Icon name="star" /> {t("run.setBaseline")}
-                  </button>
-                )}
+                <button
+                  className={"ghost" + (isBaseline ? " on" : "")}
+                  aria-pressed={isBaseline}
+                  title={isBaseline ? t("run.clearBaseline") : undefined}
+                  onClick={isBaseline ? clearAsBaseline : setAsBaseline}
+                >
+                  <Icon name="star" /> {isBaseline ? t("run.currentBaseline") : t("run.setBaseline")}
+                </button>
               </>
             )}
             {terminal && (
-              <a className="badge" href={reportURL(runId)} target="_blank" rel="noreferrer">
-                <Icon name="report" /> {t("run.report")}
-              </a>
+              <div style={{ position: "relative" }} ref={exportRef}>
+                <button
+                  className="ghost"
+                  aria-haspopup="menu"
+                  aria-expanded={exportOpen}
+                  onClick={() => setExportOpen((v) => !v)}
+                >
+                  <Icon name="download" /> {t("run.exportMenu")}
+                  <Icon name="chevron" size={13} className={"nav-caret" + (exportOpen ? " up" : "")} />
+                </button>
+                {exportOpen && (
+                  <div className="menu" role="menu">
+                    <a
+                      className="menu-item"
+                      role="menuitem"
+                      href={reportURL(runId)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => setExportOpen(false)}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Icon name="report" /> {t("run.report")}
+                      </span>
+                    </a>
+                    <a
+                      className="menu-item"
+                      role="menuitem"
+                      href={exportCSVURL(runId)}
+                      download
+                      onClick={() => setExportOpen(false)}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Icon name="download" /> {t("run.exportCsv")}
+                      </span>
+                    </a>
+                    {canStop && (
+                      <button
+                        className="menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportOpen(false);
+                          shareLink();
+                        }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <Icon name="upload" /> {t("run.share")}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
-            {terminal && canStop && (
-              <button className="badge" onClick={shareLink}>
-                <Icon name="upload" /> {t("run.share")}
-              </button>
-            )}
-            {terminal && (
-              <a className="badge" href={exportCSVURL(runId)} download>
-                <Icon name="download" /> {t("run.exportCsv")}
-              </a>
-            )}
-            {isBaseline && <span className="badge ok">✯ {t("run.currentBaseline")}</span>}
-            {run && <span className={`badge ${run.status}`}>{statusLabel(t, run.status)}</span>}
           </div>
         </div>
         {run && (
@@ -312,49 +455,71 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
 
         {terminal && (
           <div>
-            <div className="panel">
-              <h2>{t("run.throughput")}</h2>
-              <LineChart
-                series={[{ label: "qps", color: chartColor.accent, data: series.map((p) => p.rps) }]}
-                xLabels={xLabels}
-                hoverIndex={hover}
-                onHover={setHover}
-              />
-            </div>
-            <div className="panel">
-              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                <h2 style={{ margin: 0 }}>
-                  {t("run.latency")}
-                  {vuMode && <Help tip={t("run.coOmissionNote")} />}
-                </h2>
-                {vuMode && <span className="badge queued">{t("run.coOmissionBadge")}</span>}
+            {sum && (
+              <div className="panel">
+                <div className="metrics-grid">
+                  <div className="metric">
+                    <div className="label">{t("run.kpiTotal")}</div>
+                    <div className="value">{(run?.summary?.total_requests ?? 0).toLocaleString()}</div>
+                  </div>
+                  {avgRps !== null && (
+                    <div className="metric">
+                      <div className="label">{t("run.kpiAvgRps")}</div>
+                      <div className="value">{avgRps.toFixed(avgRps < 100 ? 1 : 0)}</div>
+                    </div>
+                  )}
+                  <div className="metric">
+                    <div className="label">p50</div>
+                    <div className="value">{fmtMs(sum.p50_ms ?? 0)}</div>
+                  </div>
+                  <div className="metric">
+                    <div className="label">p95</div>
+                    <div className="value">{fmtMs(sum.p95_ms ?? 0)}</div>
+                  </div>
+                  <div className="metric">
+                    <div className="label">p99</div>
+                    <div className="value">{fmtMs(sum.p99_ms ?? 0)}</div>
+                  </div>
+                  <div className="metric">
+                    <div className="label">{t("run.errorRate")}</div>
+                    <div className="value">{((sum.error_rate ?? 0) * 100).toFixed(2)}%</div>
+                  </div>
+                  {(run?.summary?.checks?.length ?? 0) > 0 && (
+                    <div className="metric">
+                      <div className="label">SLA</div>
+                      <div className="value">
+                        <span className={`badge ${run?.summary?.passed ? "ok" : "failed"}`}>
+                          {run?.summary?.passed ? t("run.passed") : t("run.failed")}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div style={{ height: 12 }} />
-              <LineChart
-                unit="ms"
-                series={[
-                  { label: "p50", color: latencyColors.p50, data: series.map((p) => p.p50_ms) },
-                  { label: "p90", color: latencyColors.p90, data: series.map((p) => p.p90_ms) },
-                  { label: "p95", color: latencyColors.p95, data: series.map((p) => p.p95_ms) },
-                  { label: "p99", color: latencyColors.p99, data: series.map((p) => p.p99_ms) },
-                ]}
-                xLabels={xLabels}
-                hoverIndex={hover}
-                onHover={setHover}
-              />
-            </div>
-            <div className="panel">
-              <h2>{t("run.errorRate")}</h2>
-              <LineChart
-                unit="%"
-                series={[
-                  { label: "errors", color: chartColor.red, data: series.map((p) => p.error_rate * 100) },
-                ]}
-                xLabels={xLabels}
-                hoverIndex={hover}
-                onHover={setHover}
-              />
-            </div>
+            )}
+            {chartDefs.map((d) => (
+              <div className="panel" key={d.key}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <h2 style={{ margin: 0 }}>
+                    {d.title}
+                    {d.help && <Help tip={d.help} />}
+                  </h2>
+                  <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                    {d.header}
+                    <button
+                      className="ghost sm"
+                      title={t("chart.expand")}
+                      aria-label={t("chart.expand")}
+                      onClick={() => setExpandedChart(d.key)}
+                    >
+                      ⤢
+                    </button>
+                  </div>
+                </div>
+                <div style={{ height: 10 }} />
+                {renderLineChart(d)}
+              </div>
+            ))}
             {run?.summary?.checks && run.summary.checks.length > 0 && (
               <div className="panel">
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -435,6 +600,40 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
 
         {run?.test_snapshot != null && <SnapshotPanel snapshot={run.test_snapshot} t={t} />}
       </div>
+
+      {expandedChart &&
+        (() => {
+          const d = chartDefs.find((c) => c.key === expandedChart);
+          if (!d) return null;
+          return (
+            <Modal
+              wide
+              title={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                  {d.title}
+                  {d.header}
+                </span>
+              }
+              onClose={() => setExpandedChart(null)}
+            >
+              {renderLineChart(
+                d,
+                typeof window !== "undefined" ? Math.max(380, Math.round(window.innerHeight * 0.66)) : 560,
+                true
+              )}
+            </Modal>
+          );
+        })()}
+
+      {selected !== null && series[selected] && (
+        <InspectDrawer
+          runId={runId}
+          series={series}
+          index={selected}
+          label={xLabels[selected] ?? `#${selected + 1}`}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </>
   );
 }

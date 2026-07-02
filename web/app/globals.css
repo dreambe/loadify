@@ -15,6 +15,9 @@
   --accent: #36d6e7;
   --accent-soft: rgba(54, 214, 231, 0.14);
   --accent-2: #7c8cf8;
+  /* Latency tail (p99) color — magenta, distinct from the cyan/indigo/amber of
+     the lower percentiles. Percentiles avoid red/green (reserved for verdicts). */
+  --lat-hi: #f07fc4;
   --green: #3ddc97;
   --red: #ff5d73;
   --yellow: #ffc857;
@@ -74,6 +77,7 @@ html[data-theme="light"] {
   --accent: #0d96a8;
   --accent-soft: rgba(13, 150, 168, 0.16);
   --accent-2: #5667e0;
+  --lat-hi: #cf569f;
   --green: #109a64;
   --red: #d6304b;
   --yellow: #b07b10;
@@ -475,6 +479,14 @@ button.ghost:hover:not(:disabled) {
   color: var(--accent);
   box-shadow: none;
   transform: none;
+}
+/* Active toggle (e.g. "current baseline" star). Accent = interactive + selected,
+   never green: green is reserved for verdicts (SLA pass / no regression). */
+button.ghost.on,
+button.ghost.on:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 /* Danger: destructive actions (delete). */
 button.danger {
@@ -1368,4 +1380,65 @@ label.req::after {
 .jx-more {
   color: var(--muted);
   padding-left: 4px;
+}
+
+/* --- modal (expanded chart) & inspect drawer ---------------------------- */
+.modal-backdrop,
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(3, 8, 14, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  animation: fade-in 0.14s var(--ease) both;
+}
+.modal-backdrop {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.drawer-backdrop {
+  justify-content: flex-end;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.modal-panel {
+  width: min(960px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--surface-pop);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  padding: 18px 24px 22px;
+  animation: menu-in 0.18s var(--ease) both;
+}
+.modal-panel.wide {
+  width: min(1720px, 96vw);
+}
+.modal-head,
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.drawer {
+  width: min(560px, 100%);
+  height: 100%;
+  overflow: auto;
+  background: var(--surface-pop);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-pop);
+  padding: 20px 22px 28px;
+  animation: drawer-in 0.2s var(--ease) both;
+}
+@keyframes drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }

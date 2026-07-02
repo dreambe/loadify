@@ -180,16 +180,21 @@ export const api = {
     req<{ token: string; expires_at: string }>(`/api/v1/runs/${id}/share`, { method: "POST" }),
   // Persistent CLI/agent token (Feishu-style): getApiToken returns the current
   // one (minted lazily on first read); resetApiToken rotates it.
-  getApiToken: () => req<{ token: string }>(`/api/v1/auth/token`),
+  getApiToken: () => req<{ exists: boolean }>(`/api/v1/auth/token`),
   resetApiToken: () => req<{ token: string }>(`/api/v1/auth/token`, { method: "POST" }),
   runSeries: (id: string, group = "*", res = 1) =>
     reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
-  runSamples: (id: string, filter: { status_class?: string; error_kind?: string; group?: string; limit?: number } = {}) => {
+  runSamples: (
+    id: string,
+    filter: { status_class?: string; error_kind?: string; group?: string; limit?: number; from_ms?: number; to_ms?: number } = {}
+  ) => {
     const q = new URLSearchParams();
     if (filter.status_class) q.set("status_class", filter.status_class);
     if (filter.error_kind) q.set("error_kind", filter.error_kind);
     if (filter.group) q.set("group", filter.group);
     if (filter.limit) q.set("limit", String(filter.limit));
+    if (filter.from_ms) q.set("from_ms", String(Math.round(filter.from_ms)));
+    if (filter.to_ms) q.set("to_ms", String(Math.round(filter.to_ms)));
     return req<{ sampled: boolean; samples: DrillSample[] }>(`/api/v1/runs/${id}/samples?${q.toString()}`);
   },
 

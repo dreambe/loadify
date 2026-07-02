@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useToast } from "@/components/Toast";
 
@@ -22,6 +22,14 @@ export default function LineChart({
   xLabels,
   hoverIndex,
   onHover,
+  band,
+  zoom: zoomProp,
+  onZoom,
+  onSelect,
+  markIndices,
+  markColor,
+  panZoom,
+  fileName,
 }: {
   series: Series[];
   height?: number;
@@ -29,11 +37,44 @@ export default function LineChart({
   xLabels?: string[];
   hoverIndex?: number | null;
   onHover?: (i: number | null) => void;
+  // Optional shaded envelope between two series (e.g. the p50–p99 latency spread).
+  band?: { lower: number[]; upper: number[]; color: string };
+  // Controlled x-zoom window (share it across charts so they zoom together);
+  // falls back to internal state when onZoom is omitted.
+  zoom?: { lo: number; hi: number } | null;
+  onZoom?: (z: { lo: number; hi: number } | null) => void;
+  // Fires when a point is clicked (not dragged) — used to inspect that moment.
+  onSelect?: (index: number) => void;
+  // Indices to flag with a dot (e.g. seconds that had errors) + the dot color.
+  markIndices?: number[];
+  markColor?: string;
+  // K-line-style interaction: wheel to zoom the time axis in/out (anchored at
+  // the cursor) and drag to pan. Enabled in the expanded (fullscreen) view.
+  panZoom?: boolean;
+  // Base name for the exported PNG (e.g. "<run> - 吞吐 (QPS)"); ".png" is added.
+  fileName?: string;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const svgRef = useRef<SVGSVGElement>(null);
-  const width = 760;
+  // Disambiguate single-click (inspect) from double-click (reset): a click waits
+  // briefly and is cancelled if a second click arrives.
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Responsive width: match the container so the chart fills any panel or the
+  // expanded modal exactly (viewBox == element width → no letterboxing).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [measuredW, setMeasuredW] = useState(760);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setMeasuredW(Math.round(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const width = Math.max(320, measuredW);
   const pad = { top: 10, right: 12, bottom: 22, left: 48 };
 
   // exportPNG rasterizes the chart SVG to a PNG download. Hardened so it can
@@ -84,7 +125,7 @@ export default function LineChart({
             }
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
-            a.download = "loadify-chart.png";
+            a.download = (fileName ? fileName.replace(/[\\/:*?"<>|]+/g, "-").trim() : "loadify-chart") + ".png";
             a.href = url;
             document.body.appendChild(a);
             a.click();
@@ -125,8 +166,17 @@ export default function LineChart({
   // Click a legend entry to hide/show that series.
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   // Drag across the plot to zoom into an x-index window; double-click resets.
-  const [zoom, setZoom] = useState<{ lo: number; hi: number } | null>(null);
+  // Controlled by the parent when onZoom is given (so sibling charts share one
+  // window), otherwise kept locally.
+  const [localZoom, setLocalZoom] = useState<{ lo: number; hi: number } | null>(null);
+  const zoom = onZoom ? zoomProp ?? null : localZoom;
+  const setZoom = (z: { lo: number; hi: number } | null) => (onZoom ? onZoom(z) : setLocalZoom(z));
   const [drag, setDrag] = useState<{ start: number; cur: number } | null>(null);
+  // Pan origin for panZoom mode — pixel-anchored so it stays stable while the
+  // zoom window shifts under it.
+  const [pan, setPan] = useState<{ startX: number; startIdx: number; lo: number; hi: number; moved: boolean } | null>(
+    null
+  );
 
   const maxLen = Math.max(1, ...series.map((s) => s.data.length));
   const lo = zoom ? zoom.lo : 0;
@@ -161,6 +211,22 @@ export default function LineChart({
     return d;
   };
 
+  // Shaded band between two ordered series (upper >= lower, so the polygon is
+  // always well-formed): forward along the upper edge, back along the lower.
+  const bandPath = (() => {
+    if (!band) return "";
+    const pts: string[] = [];
+    for (let i = lo; i <= hi && i < band.upper.length; i++) {
+      const v = band.upper[i];
+      if (Number.isFinite(v)) pts.push(`${pts.length ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+    }
+    for (let i = Math.min(hi, band.lower.length - 1); i >= lo; i--) {
+      const v = band.lower[i];
+      if (Number.isFinite(v)) pts.push(`L${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+    }
+    return pts.length ? pts.join("") + "Z" : "";
+  })();
+
   // Single visible series gets a soft gradient area fill under the line.
   const areaSeries = visible.length === 1 && visible[0].data.length > 1 ? visible[0] : null;
   const areaPath = areaSeries
@@ -190,6 +256,33 @@ export default function LineChart({
     return Math.max(lo, Math.min(hi, Math.round(lo + frac * span)));
   }
 
+  // Unclamped fractional x position across the plot (0..1), for stable panning.
+  function fracAt(clientX: number, rect: DOMRect): number {
+    const scale = Math.min(rect.width / width, rect.height / height);
+    const offsetX = (rect.width - width * scale) / 2;
+    const px = (clientX - rect.left - offsetX) / scale;
+    return (px - pad.left) / innerW;
+  }
+
+  // Wheel zooms the time axis in/out, anchored at the cursor (K-line style).
+  function onWheel(e: React.WheelEvent<SVGSVGElement>) {
+    if (!panZoom || maxLen <= 2) return;
+    const anchor = idxAt(e);
+    const curLo = zoom ? zoom.lo : 0;
+    const curHi = zoom ? zoom.hi : maxLen - 1;
+    const curSpan = Math.max(1, curHi - curLo);
+    let newSpan = Math.round(curSpan * (e.deltaY > 0 ? 1.3 : 1 / 1.3));
+    newSpan = Math.max(2, Math.min(maxLen - 1, newSpan));
+    if (newSpan >= maxLen - 1) {
+      setZoom(null);
+      return;
+    }
+    const rel = (anchor - curLo) / curSpan;
+    let newLo = Math.round(anchor - rel * newSpan);
+    newLo = Math.max(0, Math.min(maxLen - 1 - newSpan, newLo));
+    setZoom({ lo: newLo, hi: newLo + newSpan });
+  }
+
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     if (maxLen <= 1) {
       setHover(0);
@@ -197,18 +290,46 @@ export default function LineChart({
     }
     const idx = idxAt(e);
     setHover(idx);
+    if (panZoom && pan) {
+      const span0 = pan.hi - pan.lo;
+      const deltaFrac = fracAt(e.clientX, e.currentTarget.getBoundingClientRect()) - fracAt(pan.startX, e.currentTarget.getBoundingClientRect());
+      let newLo = Math.round(pan.lo - deltaFrac * span0);
+      newLo = Math.max(0, Math.min(maxLen - 1 - span0, newLo));
+      if (!pan.moved && Math.abs(deltaFrac) > 0.008) setPan({ ...pan, moved: true });
+      setZoom({ lo: newLo, hi: newLo + span0 });
+      return;
+    }
     if (drag) setDrag({ ...drag, cur: idx });
   }
   function onDown(e: React.MouseEvent<SVGSVGElement>) {
     if (maxLen <= 1) return;
     const idx = idxAt(e);
+    if (panZoom) {
+      setPan({ startX: e.clientX, startIdx: idx, lo: zoom ? zoom.lo : 0, hi: zoom ? zoom.hi : maxLen - 1, moved: false });
+      return;
+    }
     setDrag({ start: idx, cur: idx });
   }
+  // Delay the click so a double-click (reset) can cancel it before it inspects.
+  function scheduleSelect(idx: number) {
+    if (!onSelect) return;
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null;
+      onSelect(idx);
+    }, 220);
+  }
   function onUp() {
+    if (panZoom) {
+      if (pan && !pan.moved) scheduleSelect(pan.startIdx); // a click, not a pan
+      setPan(null);
+      return;
+    }
     if (drag) {
       const a = Math.min(drag.start, drag.cur);
       const b = Math.max(drag.start, drag.cur);
       if (b - a >= 2) setZoom({ lo: a, hi: b });
+      else scheduleSelect(drag.start); // no meaningful drag → treat as a click
       setDrag(null);
     }
   }
@@ -220,7 +341,7 @@ export default function LineChart({
     validHover !== null ? xLabels?.[validHover] ?? `#${validHover + 1}` : "";
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={wrapRef} style={{ position: "relative" }}>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
@@ -228,15 +349,23 @@ export default function LineChart({
         height={height}
         role="img"
         aria-label="time series chart"
-        style={{ cursor: drag ? "ew-resize" : "crosshair" }}
+        style={{ cursor: panZoom ? (pan?.moved ? "grabbing" : "grab") : drag ? "ew-resize" : "crosshair" }}
         onMouseMove={onMove}
         onMouseDown={onDown}
         onMouseUp={onUp}
+        onWheel={onWheel}
         onMouseLeave={() => {
           setHover(null);
           setDrag(null);
+          setPan(null);
         }}
-        onDoubleClick={() => setZoom(null)}
+        onDoubleClick={() => {
+          if (clickTimer.current) {
+            clearTimeout(clickTimer.current);
+            clickTimer.current = null;
+          }
+          setZoom(null);
+        }}
       >
         {areaSeries && (
           <defs>
@@ -284,6 +413,7 @@ export default function LineChart({
             </text>
           ))}
         {areaSeries && <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />}
+        {band && bandPath && <path d={bandPath} fill={band.color} fillOpacity={0.1} stroke="none" />}
         {visible.map((s) => (
           <path
             key={s.label}
@@ -295,6 +425,21 @@ export default function LineChart({
             strokeLinecap="round"
           />
         ))}
+
+        {/* Flagged points (e.g. seconds that had errors) — a dot on the line. */}
+        {markIndices?.map((i) =>
+          i >= lo && i <= hi && Number.isFinite(series[0]?.data[i]) ? (
+            <circle
+              key={"mk" + i}
+              cx={x(i)}
+              cy={y(series[0].data[i])}
+              r={3}
+              fill={markColor ?? "var(--red)"}
+              stroke="var(--bg)"
+              strokeWidth={1}
+            />
+          ) : null
+        )}
 
         {/* Drag-to-zoom selection band. */}
         {drag && drag.start !== drag.cur && (
@@ -402,7 +547,12 @@ export default function LineChart({
             </button>
           );
         })}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          {(onZoom || onSelect) && (
+            <span className="caption" style={{ color: "var(--muted)" }}>
+              {panZoom ? t("chart.hintPan") : t("chart.hint")}
+            </span>
+          )}
           {zoom && (
             <button type="button" className="ghost sm" onClick={() => setZoom(null)}>
               ⤢ {t("chart.resetZoom")}
