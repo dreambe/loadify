@@ -514,6 +514,33 @@ button.sm {
   font-size: 12.5px;
 }
 
+/* Primary call-to-action rendered as a link (real navigation, e.g. "start a
+   run"). Mirrors the primary button so an action never borrows the badge
+   style — badges signal status/verdict, not "click me". */
+a.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #46e2f2, #1db5cb);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: #03222a;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: transform 0.12s ease, box-shadow 0.15s ease;
+}
+a.cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+a.cta:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* --- badges -------------------------------------------------------------- */
 
 .badge {

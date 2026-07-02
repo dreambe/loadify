@@ -289,7 +289,7 @@ export default function RunsPage() {
               hint={runs.length === 0 && canRun ? t("runs.emptyHint") : undefined}
               action={
                 runs.length === 0 && canRun ? (
-                  <Link className="badge" href="/tests">
+                  <Link className="cta" href="/tests">
                     + {t("runs.emptyCta")}
                   </Link>
                 ) : undefined

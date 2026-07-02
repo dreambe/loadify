@@ -95,7 +95,7 @@ export default function DashboardPage() {
       <div className="container">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <h1>{t("dashboard.title")}</h1>
-          <Link className="badge" href="/runs">
+          <Link className="cta" href="/runs">
             <Icon name="play" /> {t("dashboard.start")}
           </Link>
         </div>
