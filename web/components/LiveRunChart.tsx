@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { liveSocketURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { LiveTick, LogSample } from "@/lib/types";
-import { chartColor, latencyColors } from "@/lib/colors";
+import { chartColor, latencyColors, latencyBandColor } from "@/lib/colors";
 import LineChart, { formatElapsed } from "./LineChart";
 
 const MAX_POINTS = 120;
@@ -15,7 +15,7 @@ const MAX_LOG = 500;
 // All charts share one hover crosshair so a moment can be read across metrics.
 type KeyedSample = LogSample & { _id: number };
 
-export default function LiveRunChart({ runId }: { runId: string }) {
+export default function LiveRunChart({ runId, runName }: { runId: string; runName?: string }) {
   const { t } = useI18n();
   const [ticks, setTicks] = useState<LiveTick[]>([]);
   const [samples, setSamples] = useState<KeyedSample[]>([]);
@@ -122,6 +122,14 @@ export default function LiveRunChart({ runId }: { runId: string }) {
   const base = startRef.current ?? ticks[0]?.ts_unix_ms ?? 0;
   const xLabels = ticks.map((tk) => formatElapsed((tk.ts_unix_ms - base) / 1000));
 
+  // Ticks that saw errors — dotted on the error chart so the eye lands on where
+  // trouble happened, matching the finished-run view.
+  const errorIdx = ticks.reduce<number[]>((a, tk, i) => {
+    if (tk.error_rate > 0) a.push(i);
+    return a;
+  }, []);
+  const chartName = runName || `run-${runId.slice(0, 8)}`;
+
   // Distinguish connecting (never opened yet) / live (open, data flowing) /
   // waiting (open, no ticks yet — e.g. no workers reporting) / closed.
   const statusValue = connected
@@ -170,6 +178,7 @@ export default function LiveRunChart({ runId }: { runId: string }) {
           xLabels={xLabels}
           hoverIndex={hover}
           onHover={setHover}
+          fileName={`${chartName} - ${t("run.throughput")}`}
         />
       </div>
 
@@ -183,9 +192,11 @@ export default function LiveRunChart({ runId }: { runId: string }) {
             { label: "p95", color: latencyColors.p95, data: ticks.map((tk) => tk.p95_ms) },
             { label: "p99", color: latencyColors.p99, data: ticks.map((tk) => tk.p99_ms) },
           ]}
+          band={{ lower: ticks.map((tk) => tk.p50_ms), upper: ticks.map((tk) => tk.p99_ms), color: latencyBandColor }}
           xLabels={xLabels}
           hoverIndex={hover}
           onHover={setHover}
+          fileName={`${chartName} - ${t("run.latency")}`}
         />
       </div>
 
@@ -196,9 +207,12 @@ export default function LiveRunChart({ runId }: { runId: string }) {
           series={[
             { label: "errors", color: chartColor.red, data: ticks.map((tk) => tk.error_rate * 100) },
           ]}
+          markIndices={errorIdx}
+          markColor={chartColor.red}
           xLabels={xLabels}
           hoverIndex={hover}
           onHover={setHover}
+          fileName={`${chartName} - ${t("run.errorRate")}`}
         />
       </div>
 

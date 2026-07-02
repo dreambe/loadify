@@ -451,7 +451,9 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
           </div>
         )}
 
-        {!terminal && run?.status !== "queued" && <LiveRunChart runId={runId} />}
+        {!terminal && run?.status !== "queued" && (
+          <LiveRunChart runId={runId} runName={run?.name || `run-${runId.slice(0, 8)}`} />
+        )}
 
         {terminal && (
           <div>
