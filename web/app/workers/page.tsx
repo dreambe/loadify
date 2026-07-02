@@ -12,14 +12,18 @@ export default function WorkersPage() {
   const { ready } = useAuth();
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!ready) return;
     const load = () =>
       api
         .listWorkers()
-        .then(setWorkers)
-        .catch(() => {})
+        .then((w) => {
+          setWorkers(w);
+          setErr("");
+        })
+        .catch((e: any) => setErr(e?.message || "load failed"))
         .finally(() => setLoaded(true));
     load();
     const id = setInterval(load, 3000);
@@ -36,6 +40,8 @@ export default function WorkersPage() {
       <Nav />
       <div className="container">
         <h1>{t("workers.title")}</h1>
+
+        {err && <div className="error">{err}</div>}
 
         <div className="metrics-grid">
           <Metric label={t("workers.nodes")} value={`${healthy}/${workers.length}`} />

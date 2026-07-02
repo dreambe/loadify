@@ -44,12 +44,18 @@ function CompareInner() {
   const [a, setA] = useState<Side>({ series: [] });
   const [b, setB] = useState<Side>({ series: [] });
   const [hover, setHover] = useState<number | null>(null);
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     // Pull a deep history so older runs are searchable here, not just the last
     // 100 the runs list shows.
-    api.listRuns(500).then(setRuns).catch(() => {});
-    api.listTests().then(setTests).catch(() => {});
+    Promise.all([api.listRuns(500), api.listTests()])
+      .then(([r, ts]) => {
+        setRuns(r);
+        setTests(ts);
+        setErr("");
+      })
+      .catch((e: any) => setErr(e?.message || "load failed"));
   }, []);
 
   // Map a run to its test (用例) name so the picker can search and label by it —
@@ -129,6 +135,7 @@ function CompareInner() {
       <Nav />
       <div className="container">
         <h1>{t("compare.title")}</h1>
+        {err && <div className="error">{err}</div>}
         <div className="panel">
           <div className="row">
             <div style={{ flex: "1 1 0", minWidth: 0 }}>

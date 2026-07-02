@@ -21,6 +21,8 @@ export default function DashboardPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [hover, setHover] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     if (!ready) return;
@@ -29,8 +31,14 @@ export default function DashboardPage() {
       return;
     }
     const load = () => {
-      api.listRuns().then(setRuns).catch(() => {});
-      api.listWorkers().then(setWorkers).catch(() => {});
+      Promise.all([api.listRuns(), api.listWorkers()])
+        .then(([r, w]) => {
+          setRuns(r);
+          setWorkers(w);
+          setErr("");
+        })
+        .catch((e: any) => setErr(e?.message || "load failed"))
+        .finally(() => setLoaded(true));
     };
     load();
     const id = setInterval(load, 5000);
@@ -78,6 +86,8 @@ export default function DashboardPage() {
             <Icon name="play" /> {t("dashboard.start")}
           </Link>
         </div>
+
+        {err && !loaded && <div className="error">{err}</div>}
 
         <div className="metrics-grid">
           <Metric label={t("dashboard.workers")} value={`${stats.healthy}/${stats.total}`} accent={stats.healthy === 0 ? "var(--red)" : undefined} />
