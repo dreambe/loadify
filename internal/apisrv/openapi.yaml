@@ -462,6 +462,13 @@ paths:
         "202": { description: "accepted; returns { run_id, status: running|queued }" }
         "400": { description: test archived or invalid plan }
         "404": { description: test not found }
+  /api/v1/runs/stats:
+    get:
+      tags: [runs]
+      summary: Whole-table run aggregates for dashboard KPIs (role viewer+)
+      responses:
+        "200":
+          description: "{ total, running, last24h, scored, passed, pass_rate (percent, null when no finished run has a verdict) }"
   /api/v1/runs/{id}:
     get:
       tags: [runs]
