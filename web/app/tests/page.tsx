@@ -99,6 +99,23 @@ export default function TestsPage() {
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Id of the test whose run is being launched — guards against a double-click
+  // firing two runs before the page navigates to the new run.
+  const [launchingId, setLaunchingId] = useState<string | null>(null);
+
+  // launch starts a run for a test and navigates to it, ignoring re-entry while
+  // a launch is already in flight.
+  function launch(id: string) {
+    if (launchingId) return;
+    setLaunchingId(id);
+    api
+      .startRun(id, 1, "")
+      .then((res) => (window.location.href = `/runs/${res.run_id}`))
+      .catch((e) => {
+        toast.error(e.message);
+        setLaunchingId(null);
+      });
+  }
   const formRef = useRef<HTMLFormElement>(null);
 
   const isHTTP = protocol === "http";
@@ -211,14 +228,9 @@ export default function TestsPage() {
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
-  async function quickRun() {
+  function quickRun() {
     if (!savedId) return;
-    try {
-      const res = await api.startRun(savedId, 1, "");
-      window.location.href = `/runs/${res.run_id}`;
-    } catch (e: any) {
-      setErr(e.message);
-    }
+    launch(savedId);
   }
 
   async function submit(e: React.FormEvent) {
@@ -526,7 +538,7 @@ export default function TestsPage() {
             {ok && savedId && (
               <div className="row" style={{ alignItems: "center", marginTop: 8 }}>
                 <span style={{ color: "var(--green)" }}>{ok}</span>
-                <button type="button" onClick={quickRun}>
+                <button type="button" onClick={quickRun} disabled={launchingId === savedId}>
                   <Icon name="play" /> {t("tests.runNow")}
                 </button>
               </div>
@@ -612,12 +624,8 @@ export default function TestsPage() {
                           <div className="actions">
                             <button
                               className="ghost sm"
-                              onClick={() =>
-                                api
-                                  .startRun(td.id, 1, "")
-                                  .then((res) => (window.location.href = `/runs/${res.run_id}`))
-                                  .catch((e) => toast.error(e.message))
-                              }
+                              disabled={launchingId === td.id}
+                              onClick={() => launch(td.id)}
                             >
                               <Icon name="play" /> {t("tests.run")}
                             </button>

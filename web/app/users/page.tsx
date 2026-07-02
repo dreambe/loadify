@@ -628,9 +628,12 @@ function ChangePasswordPanel({
   const { t } = useI18n();
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
+  const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     try {
       await api.changePassword(oldPw, newPw);
       setOldPw("");
@@ -638,6 +641,8 @@ function ChangePasswordPanel({
       onDone();
     } catch (e: any) {
       onError(e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -659,7 +664,7 @@ function ChangePasswordPanel({
             required
           />
         </div>
-        <button type="submit">{t("users.changePw")}</button>
+        <button type="submit" disabled={busy}>{t("users.changePw")}</button>
       </div>
     </form>
   );
