@@ -160,8 +160,11 @@ export default function RampBuilder({
 }
 
 // RampPreview draws the load profile the stages describe: linear ramp from
-// the previous target to each stage's target over its duration.
-function RampPreview({ stages, unit }: { stages: Stage[]; unit: string }) {
+// the previous target to each stage's target over its duration. Exported so
+// the run page's snapshot panel can show the profile exactly as the test
+// builder does. caption=false hides the "preview" heading when the chart sits
+// under an external label.
+export function RampPreview({ stages, unit, caption = true }: { stages: Stage[]; unit: string; caption?: boolean }) {
   const { t } = useI18n();
   const width = 720;
   const height = 130;
@@ -187,10 +190,12 @@ function RampPreview({ stages, unit }: { stages: Stage[]; unit: string }) {
   const area = `${path} L${x(total).toFixed(1)},${(pad.top + innerH).toFixed(1)} L${pad.left},${(pad.top + innerH).toFixed(1)} Z`;
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-        {t("ramp.preview")}
-      </div>
+    <div style={{ marginTop: caption ? 12 : 6 }}>
+      {caption && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+          {t("ramp.preview")}
+        </div>
+      )}
       <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-label="ramp preview">
         <defs>
           <linearGradient id="ramp-fill" x1="0" y1="0" x2="0" y2="1">

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
+import { RampPreview } from "@/components/RampBuilder";
 import LineChart, { formatElapsed } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL, shareRunURL, setShareToken } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
@@ -734,30 +735,17 @@ function splitURL(u: string): { base: string; params: [string, string][] } {
   return { base: u.slice(0, qi), params };
 }
 
-// KVList renders a compact, readable key/value block (query params, headers).
-function KVList({ label, rows }: { label: string; rows: [string, string][] }) {
-  if (rows.length === 0) return null;
+// KVRows renders key/value pairs (query params, headers) the way the test
+// builder lays out its key/value inputs: two aligned columns.
+function KVRows({ rows }: { rows: [string, string][] }) {
   return (
-    <div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>{label}</div>
-      <div style={{ display: "grid", gap: 2 }}>
-        {rows.map(([k, v], i) => (
-          <div key={i} style={snapMono}>
-            <span style={{ color: "var(--muted)" }}>{k}</span>
-            <span style={{ color: "var(--border-strong)" }}> = </span>
-            {v || "—"}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SnapField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", gap: 10 }}>
-      <div className="muted" style={{ width: 84, flex: "none", fontSize: 12.5 }}>{label}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(80px, max-content) 1fr", columnGap: 14, rowGap: 4 }}>
+      {rows.map(([k, v], i) => (
+        <Fragment key={i}>
+          <span style={{ ...snapMono, color: "var(--muted)" }}>{k}</span>
+          <span style={snapMono}>{v || "—"}</span>
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -774,6 +762,15 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
   const envKeys = env?.vars ? Object.keys(env.vars) : [];
   const req = http ? splitURL(http.url || "") : null;
   const httpHeaders: [string, string][] = http?.headers ? Object.entries(http.headers).map(([k, v]) => [k, String(v)]) : [];
+  // Snapshot ramp entries ({target_vus|target_rps, duration_ms}) → the builder's
+  // Stage shape, so the profile renders with the exact same table + preview
+  // chart the user configured it with.
+  const isRps = ramp.some((st) => (st.target_rps ?? 0) > 0);
+  const stages = ramp.map((st) => ({
+    target: isRps ? st.target_rps ?? 0 : st.target_vus ?? 0,
+    duration_s: Math.round((st.duration_ms || 0) / 1000),
+  }));
+  const label = (text: string) => <label style={{ marginTop: 12 }}>{text}</label>;
   return (
     <div className="panel">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -782,9 +779,10 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
           {open ? t("run.snapshotHide") : t("run.snapshotShow")}
         </button>
       </div>
+      {/* Collapsed summary: name · protocol (+scenario shape) — the request
+          itself lives in the fields below, never duplicated here. */}
       <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
         {snapshot?.name} · {snapshot?.protocol}
-        {req ? ` · ${http.method} ${req.base}` : ""}
         {scenario ? ` · ${scenario.mode} · ${scenario.steps?.length ?? 0} ${t("run.steps")}` : ""}
       </div>
       {env?.name && (
@@ -796,75 +794,134 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
         </div>
       )}
       {open && (
-        <div style={{ marginTop: 12, display: "grid", gap: 10, fontSize: 13 }}>
-          <SnapField label={t("run.snapTarget")}>
-            {req ? (
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={snapMono}>
-                  <b>{http.method}</b> {req.base}
+        <div style={{ marginTop: 4, fontSize: 13 }}>
+          {/* Request — laid out like the test builder: method + URL side by
+              side, then params / headers / body as labeled sections. */}
+          {req && (
+            <>
+              <div className="row">
+                <div>
+                  {label(t("http.method"))}
+                  <div style={{ ...snapMono, fontWeight: 700 }}>{http.method || "GET"}</div>
                 </div>
-                <KVList label={t("run.snapParams")} rows={req.params} />
-                <KVList label={t("run.snapHeaders")} rows={httpHeaders} />
-                {http.body ? (
-                  <div>
-                    <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>{t("run.snapReqBody")}</div>
-                    <pre style={{ margin: 0, maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12 }}>
-                      {http.body}
-                    </pre>
-                  </div>
-                ) : null}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {label(t("http.url"))}
+                  <div style={snapMono}>{req.base}</div>
+                </div>
               </div>
-            ) : scenario ? (
-              <span>
-                {scenario.mode} · {scenario.steps?.length ?? 0} {t("run.steps")}
-              </span>
-            ) : (
-              <span style={snapMono}>{snapshot?.protocol}</span>
-            )}
-          </SnapField>
-
-          {ramp.length > 0 && (
-            <SnapField label={t("run.snapRamp")}>
-              <div style={{ display: "grid", gap: 2 }}>
-                {ramp.map((st, i) => {
-                  const isRps = (st.target_rps ?? 0) > 0;
-                  const tgt = isRps ? `${st.target_rps} QPS` : `${st.target_vus ?? 0} VU`;
-                  return (
-                    <div key={i} style={snapMono}>
-                      → {tgt} · {t("run.snapForS")} {Math.round((st.duration_ms || 0) / 1000)}s
-                    </div>
-                  );
-                })}
-              </div>
-            </SnapField>
+              {req.params.length > 0 && (
+                <>
+                  {label(t("run.snapParams"))}
+                  <KVRows rows={req.params} />
+                </>
+              )}
+              {httpHeaders.length > 0 && (
+                <>
+                  {label(t("run.snapHeaders"))}
+                  <KVRows rows={httpHeaders} />
+                </>
+              )}
+              {http.body ? (
+                <>
+                  {label(t("run.snapReqBody"))}
+                  <pre style={{ margin: 0, maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12 }}>
+                    {http.body}
+                  </pre>
+                </>
+              ) : null}
+            </>
           )}
 
-          {thresholds.length > 0 && (
-            <SnapField label={t("run.snapThresholds")}>
-              <div style={{ display: "grid", gap: 2 }}>
-                {thresholds.map((th, i) => (
+          {/* Scenario — numbered steps like the scenario builder's step cards. */}
+          {scenario && (
+            <>
+              {label(t("scenario.step"))}
+              <div style={{ display: "grid", gap: 4 }}>
+                {(scenario.steps ?? []).map((s: any, i: number) => (
                   <div key={i} style={snapMono}>
-                    {th.metric} {th.op} {th.value}
+                    <span style={{ color: "var(--muted)" }}>{scenario.mode === "weighted" ? "◆" : `${i + 1}.`}</span>{" "}
+                    <b>{s.method || "GET"}</b> {s.url}
+                    {s.name ? <span style={{ color: "var(--muted)" }}> · {s.name}</span> : null}
+                    {scenario.mode === "weighted" && s.weight ? (
+                      <span style={{ color: "var(--muted)" }}> · ×{s.weight}</span>
+                    ) : null}
                   </div>
                 ))}
               </div>
-            </SnapField>
+            </>
           )}
 
-          {(plan.think_time_ms || plan.think_time) && (
-            <SnapField label={t("run.snapThink")}>
-              <span style={snapMono}>
-                {plan.think_time_ms ? `${plan.think_time_ms} ms` : plan.think_time?.distribution}
-              </span>
-            </SnapField>
+          {/* Load profile — the builder's stages table plus its preview chart. */}
+          {stages.length > 0 && (
+            <>
+              {label(t("run.snapRamp"))}
+              <table style={{ maxWidth: 460 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 60 }}>{t("ramp.stage")}</th>
+                    <th>{isRps ? t("ramp.targetRps") : t("ramp.targetVus")}</th>
+                    <th>{t("ramp.durationS")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stages.map((s, i) => (
+                    <tr key={i}>
+                      <td className="muted">#{i + 1}</td>
+                      <td style={snapMono}>{s.target}</td>
+                      <td style={snapMono}>{s.duration_s}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <RampPreview stages={stages} unit={isRps ? "req/s" : "VU"} caption={false} />
+            </>
           )}
-          {plan.max_vus ? (
-            <SnapField label={t("run.snapMaxVus")}>
-              <span style={snapMono}>{plan.max_vus}</span>
-            </SnapField>
-          ) : null}
 
-          <div>
+          {/* SLA thresholds — same table shape as the thresholds editor. */}
+          {thresholds.length > 0 && (
+            <>
+              {label(t("run.snapThresholds"))}
+              <table style={{ maxWidth: 460 }}>
+                <thead>
+                  <tr>
+                    <th>{t("sla.metric")}</th>
+                    <th>{t("sla.op")}</th>
+                    <th>{t("sla.value")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {thresholds.map((th, i) => (
+                    <tr key={i}>
+                      <td style={snapMono}>{th.metric}</td>
+                      <td style={snapMono}>{th.op}</td>
+                      <td style={snapMono}>{th.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {(plan.think_time_ms || plan.think_time || plan.max_vus) && (
+            <div className="row">
+              {(plan.think_time_ms || plan.think_time) && (
+                <div>
+                  {label(t("run.snapThink"))}
+                  <div style={snapMono}>
+                    {plan.think_time_ms ? `${plan.think_time_ms} ms` : plan.think_time?.distribution}
+                  </div>
+                </div>
+              )}
+              {plan.max_vus ? (
+                <div>
+                  {label(t("run.snapMaxVus"))}
+                  <div style={snapMono}>{plan.max_vus}</div>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div style={{ marginTop: 14 }}>
             <button className="ghost sm" onClick={() => setRaw((v) => !v)}>
               {raw ? t("run.snapRawHide") : t("run.snapRaw")}
             </button>
