@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import RunStatus from "@/components/RunStatus";
 import Help from "@/components/Help";
 import Icon from "@/components/Icon";
 import { Pager, usePager } from "@/components/Pager";
@@ -324,7 +325,7 @@ export default function RunsPage() {
                       </td>
                       <td className="muted">{testName(r.test_def_id)}</td>
                       <td>
-                        <span className={`badge ${r.status}`}>{statusLabel(t, r.status)}</span>
+                        <RunStatus run={r} />
                       </td>
                       <td className="muted">
                         {r.creator_name || t("run.creatorSystem")}

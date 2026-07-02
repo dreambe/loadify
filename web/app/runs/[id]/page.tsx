@@ -695,6 +695,50 @@ function maskSnapshot(snapshot: any): any {
 
 const snapMono: React.CSSProperties = { fontFamily: "var(--font-mono)", wordBreak: "break-all" };
 
+// safeDecode + splitURL break a baked request URL into a readable base path and
+// a key/value list of query params, so the snapshot reads like the test builder
+// instead of one unreadable query-string blob. Works on templated URLs too.
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s.replace(/\+/g, " "));
+  } catch {
+    return s;
+  }
+}
+function splitURL(u: string): { base: string; params: [string, string][] } {
+  if (!u) return { base: "", params: [] };
+  const qi = u.indexOf("?");
+  if (qi < 0) return { base: u, params: [] };
+  const params = u
+    .slice(qi + 1)
+    .split("&")
+    .filter(Boolean)
+    .map((kv): [string, string] => {
+      const eq = kv.indexOf("=");
+      return eq < 0 ? [safeDecode(kv), ""] : [safeDecode(kv.slice(0, eq)), safeDecode(kv.slice(eq + 1))];
+    });
+  return { base: u.slice(0, qi), params };
+}
+
+// KVList renders a compact, readable key/value block (query params, headers).
+function KVList({ label, rows }: { label: string; rows: [string, string][] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>{label}</div>
+      <div style={{ display: "grid", gap: 2 }}>
+        {rows.map(([k, v], i) => (
+          <div key={i} style={snapMono}>
+            <span style={{ color: "var(--muted)" }}>{k}</span>
+            <span style={{ color: "var(--border-strong)" }}> = </span>
+            {v || "—"}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SnapField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", gap: 10 }}>
@@ -714,6 +758,8 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
   const thresholds: any[] = Array.isArray(snapshot?.thresholds) ? snapshot.thresholds : [];
   const env = snapshot?.environment;
   const envKeys = env?.vars ? Object.keys(env.vars) : [];
+  const req = http ? splitURL(http.url || "") : null;
+  const httpHeaders: [string, string][] = http?.headers ? Object.entries(http.headers).map(([k, v]) => [k, String(v)]) : [];
   return (
     <div className="panel">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -724,7 +770,7 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
       </div>
       <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
         {snapshot?.name} · {snapshot?.protocol}
-        {http ? ` · ${http.method} ${http.url}` : ""}
+        {req ? ` · ${http.method} ${req.base}` : ""}
         {scenario ? ` · ${scenario.mode} · ${scenario.steps?.length ?? 0} ${t("run.steps")}` : ""}
       </div>
       {env?.name && (
@@ -738,10 +784,22 @@ function SnapshotPanel({ snapshot, t }: { snapshot: any; t: (k: string) => strin
       {open && (
         <div style={{ marginTop: 12, display: "grid", gap: 10, fontSize: 13 }}>
           <SnapField label={t("run.snapTarget")}>
-            {http ? (
-              <span style={snapMono}>
-                {http.method} {http.url}
-              </span>
+            {req ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={snapMono}>
+                  <b>{http.method}</b> {req.base}
+                </div>
+                <KVList label={t("run.snapParams")} rows={req.params} />
+                <KVList label={t("run.snapHeaders")} rows={httpHeaders} />
+                {http.body ? (
+                  <div>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>{t("run.snapReqBody")}</div>
+                    <pre style={{ margin: 0, maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", fontSize: 12 }}>
+                      {http.body}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
             ) : scenario ? (
               <span>
                 {scenario.mode} · {scenario.steps?.length ?? 0} {t("run.steps")}

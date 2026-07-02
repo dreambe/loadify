@@ -5,9 +5,10 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import Icon from "@/components/Icon";
 import LineChart from "@/components/LineChart";
+import RunStatus from "@/components/RunStatus";
 import { api } from "@/lib/api";
 import { getToken, useAuth } from "@/lib/auth";
-import { useI18n, statusLabel } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
 import { latencyColors } from "@/lib/colors";
 import type { Run, WorkerInfo } from "@/lib/types";
@@ -105,12 +106,11 @@ export default function DashboardPage() {
                       <Link href={`/runs/${r.id}`}>{r.name || r.id.slice(0, 8)}</Link>
                     </td>
                     <td>
-                      <span className={`badge ${r.status}`}>{statusLabel(t, r.status)}</span>
+                      <RunStatus run={r} />
                     </td>
                     <td className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
                       {r.summary?.summary?.p95_ms != null ? `p95 ${fmtMs(r.summary.summary.p95_ms)}` : "—"}
                     </td>
-                    <td>{slaBadge(r, t)}</td>
                     <td className="muted" style={{ textAlign: "right" }}>
                       {r.started_at ? new Date(r.started_at).toLocaleString() : new Date(r.created_at).toLocaleString()}
                     </td>
@@ -135,17 +135,6 @@ export default function DashboardPage() {
         )}
       </div>
     </>
-  );
-}
-
-function slaBadge(r: Run, t: (k: string) => string) {
-  if (!terminalStatuses.has(r.status) || r.summary?.passed === undefined) {
-    return <span className="muted">{t("dashboard.slaNa")}</span>;
-  }
-  return r.summary.passed ? (
-    <span className="badge ok">{t("dashboard.slaOk")}</span>
-  ) : (
-    <span className="badge failed">{t("dashboard.slaFail")}</span>
   );
 }
 
