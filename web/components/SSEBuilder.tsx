@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/lib/i18n";
+import NumberInput from "./NumberInput";
 
 // SSEConfig is the structured form of a Server-Sent-Events plan.
 export interface SSEConfig {
@@ -62,22 +63,11 @@ export default function SSEBuilder({
         </div>
         <div className="field">
           <label>{t("sse.maxEvents")}</label>
-          <input
-            type="number"
-            min={1}
-            value={value.maxEvents}
-            onChange={(e) => onChange({ ...value, maxEvents: parseInt(e.target.value || "1", 10) })}
-          />
+          <NumberInput min={1} value={value.maxEvents} onChange={(n) => onChange({ ...value, maxEvents: n })} />
         </div>
         <div className="field">
           <label>{t("sse.timeoutMs")}</label>
-          <input
-            type="number"
-            min={1000}
-            step={1000}
-            value={value.timeoutMs}
-            onChange={(e) => onChange({ ...value, timeoutMs: parseInt(e.target.value || "1000", 10) })}
-          />
+          <NumberInput min={1000} value={value.timeoutMs} onChange={(n) => onChange({ ...value, timeoutMs: n })} />
         </div>
       </div>
       <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>

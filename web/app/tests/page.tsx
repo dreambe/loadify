@@ -12,6 +12,7 @@ import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import SortableTh from "@/components/SortableTh";
+import NumberInput from "@/components/NumberInput";
 import Icon from "@/components/Icon";
 import { parseCSV } from "@/lib/csv";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
@@ -479,14 +480,7 @@ export default function TestsPage() {
               {autoStop && (
                 <div>
                   <label style={{ margin: 0 }}>{t("tests.autoStopPct")}</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={autoStopPct}
-                    onChange={(e) => setAutoStopPct(parseInt(e.target.value || "50", 10))}
-                    style={{ width: 90 }}
-                  />
+                  <NumberInput min={1} max={100} value={autoStopPct} onChange={setAutoStopPct} style={{ width: 90 }} />
                 </div>
               )}
             </div>
@@ -499,14 +493,7 @@ export default function TestsPage() {
               {alertOn && (
                 <div>
                   <label style={{ margin: 0 }}>{t("tests.alertPct")}</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={alertPct}
-                    onChange={(e) => setAlertPct(parseInt(e.target.value || "30", 10))}
-                    style={{ width: 90 }}
-                  />
+                  <NumberInput min={1} max={100} value={alertPct} onChange={setAlertPct} style={{ width: 90 }} />
                 </div>
               )}
             </div>

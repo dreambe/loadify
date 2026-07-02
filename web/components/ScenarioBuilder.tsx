@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 import Icon from "./Icon";
 import JsonExplorer from "./JsonExplorer";
+import NumberInput from "./NumberInput";
 
 // A scenario is a multi-step HTTP plan: steps run in sequence (chaining
 // extracted variables) or one-per-iteration by weight (traffic mix).
@@ -362,13 +363,7 @@ export default function ScenarioBuilder({
                   {t("scenario.weight")}
                   <Help tip={t("scenario.weightHelp")} />
                 </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={st.weight}
-                  onChange={(e) => setStep(i, { weight: parseInt(e.target.value || "1", 10) })}
-                  style={{ width: 80 }}
-                />
+                <NumberInput min={1} value={st.weight ?? 1} onChange={(n) => setStep(i, { weight: n })} style={{ width: 80 }} />
                 <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
                   {totalWeight > 0 ? Math.round(((st.weight || 1) / totalWeight) * 100) : 0}%
                 </div>

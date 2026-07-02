@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
+import NumberInput from "./NumberInput";
 
 // Stage is one segment of the load profile: a target (VUs or req/s depending on
 // the mode) reached over a duration, linearly interpolated from the previous.
@@ -94,13 +95,7 @@ export default function RampBuilder({
             {t("ramp.maxVus")}
             <Help tip={t("ramp.maxVusHelp")} />
           </label>
-          <input
-            type="number"
-            min={0}
-            value={value.maxVus}
-            onChange={(e) => set({ maxVus: parseInt(e.target.value || "0", 10) })}
-            style={{ width: 100 }}
-          />
+          <NumberInput min={0} value={value.maxVus} onChange={(n) => set({ maxVus: n })} style={{ width: 100 }} />
         </div>
       </div>
 
@@ -135,22 +130,10 @@ export default function RampBuilder({
             <tr key={i}>
               <td className="muted">#{i + 1}</td>
               <td>
-                <input
-                  type="number"
-                  min={0}
-                  value={s.target}
-                  onChange={(e) => updateStage(i, { target: parseInt(e.target.value || "0", 10) })}
-                  style={{ width: 120 }}
-                />
+                <NumberInput min={0} value={s.target} onChange={(n) => updateStage(i, { target: n })} style={{ width: 120 }} />
               </td>
               <td>
-                <input
-                  type="number"
-                  min={1}
-                  value={s.duration_s}
-                  onChange={(e) => updateStage(i, { duration_s: parseInt(e.target.value || "1", 10) })}
-                  style={{ width: 120 }}
-                />
+                <NumberInput min={1} value={s.duration_s} onChange={(n) => updateStage(i, { duration_s: n })} style={{ width: 120 }} />
               </td>
               <td>
                 <button type="button" className="secondary" onClick={() => removeStage(i)}>
@@ -255,13 +238,7 @@ function NumField({
   return (
     <div>
       <label>{label}</label>
-      <input
-        type="number"
-        min={min}
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value || "0", 10))}
-        style={{ width: 90 }}
-      />
+      <NumberInput min={min} value={value} onChange={onChange} style={{ width: 90 }} />
     </div>
   );
 }

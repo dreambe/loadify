@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/lib/i18n";
+import NumberInput from "./NumberInput";
 import type { Threshold } from "@/lib/types";
 
 const METRICS = ["p50_ms", "p90_ms", "p95_ms", "p99_ms", "error_rate", "qps"];
@@ -57,12 +58,7 @@ export default function ThresholdsEditor({
                   </select>
                 </td>
                 <td>
-                  <input
-                    type="number"
-                    value={th.value}
-                    onChange={(e) => update(i, { value: parseFloat(e.target.value || "0") })}
-                    style={{ width: 120 }}
-                  />
+                  <NumberInput float value={th.value} onChange={(n) => update(i, { value: n })} style={{ width: 120 }} />
                 </td>
                 <td>
                   <button type="button" className="secondary" onClick={() => remove(i)}>

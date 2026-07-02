@@ -5,6 +5,7 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import Help from "@/components/Help";
 import EntityPicker from "@/components/EntityPicker";
+import NumberInput from "@/components/NumberInput";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
@@ -109,11 +110,11 @@ export default function SchedulesPage() {
               </div>
               <div>
                 <label>{t("sched.every")}</label>
-                <input type="number" min={1} value={interval} onChange={(e) => setInterval(parseInt(e.target.value || "1", 10))} style={{ width: 100 }} />
+                <NumberInput min={1} value={interval} onChange={setInterval} style={{ width: 100 }} />
               </div>
               <div>
                 <label>{t("runs.workers")}</label>
-                <input type="number" min={1} value={workers} onChange={(e) => setWorkers(parseInt(e.target.value || "1", 10))} style={{ width: 90 }} />
+                <NumberInput min={1} value={workers} onChange={setWorkers} style={{ width: 90 }} />
               </div>
               <button onClick={create} disabled={!testId || creating}>
                 {t("sched.create")}
@@ -205,9 +206,9 @@ function ScheduleEditor({
   const why = disabled ? t("common.ownerOnly") : undefined;
   return (
     <div className="row" style={{ gap: 6, alignItems: "center" }} title={why}>
-      <input type="number" min={1} disabled={disabled} value={min} onChange={(e) => setMin(parseInt(e.target.value || "1", 10))} style={{ width: 70 }} />
+      <NumberInput min={1} disabled={disabled} value={min} onChange={setMin} style={{ width: 70 }} />
       <span className="muted">{t("sched.minShort")} ·</span>
-      <input type="number" min={1} disabled={disabled} value={w} onChange={(e) => setW(parseInt(e.target.value || "1", 10))} style={{ width: 56 }} />
+      <NumberInput min={1} disabled={disabled} value={w} onChange={setW} style={{ width: 56 }} />
       <span className="muted">w</span>
       {dirty && (
         <button className="secondary sm" disabled={disabled} onClick={() => onSave(sc, min, w)}>
