@@ -3,6 +3,7 @@ package apisrv
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
 	"time"
@@ -14,12 +15,19 @@ import (
 // logs/config and distinct from JWT session tokens.
 const apiTokenPrefix = "lfy_"
 
-// handleGetAPIToken returns the caller's persistent CLI/agent token, minting one
-// on first access. The token is permanent (Feishu-style app secret): it never
-// expires, is viewable any time here, and is invalidated only by reset
-// (handleResetAPIToken) or by disabling the account. Used by the CLI
-// (loadifyctl) and AI agents (loadify-mcp) via LOADIFY_TOKEN so an agent can
-// create tests and run load tests on the user's behalf.
+// hashAPIToken is what we persist: only the SHA-256 of the token is stored, so a
+// database read never yields a usable credential. The raw token is shown to the
+// user exactly once, at generation/reset.
+func hashAPIToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// handleGetAPIToken reports whether the caller has a persistent CLI/agent token
+// (used by loadifyctl and loadify-mcp via LOADIFY_TOKEN). Only a SHA-256 of the
+// token is stored, so the raw value can't be shown again here — it is returned
+// exactly once, at generation/reset (handleResetAPIToken). The token never
+// expires and is invalidated only by reset or by disabling the account.
 func (s *Server) handleGetAPIToken(w http.ResponseWriter, r *http.Request) {
 	c, ok := auth.FromContext(r.Context())
 	if !ok {
@@ -33,15 +41,7 @@ func (s *Server) handleGetAPIToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	tok := u.APIToken
-	if tok == "" {
-		// Lazily mint on first view so the panel always has a token to show.
-		if tok, err = s.rotateAPIToken(ctx, c.Subject); err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": tok})
+	writeJSON(w, http.StatusOK, map[string]any{"exists": u.APIToken != ""})
 }
 
 // handleResetAPIToken generates a fresh persistent token, invalidating the old
@@ -69,7 +69,8 @@ func (s *Server) rotateAPIToken(ctx context.Context, userID string) (string, err
 	if err != nil {
 		return "", err
 	}
-	if err := s.pg.SetUserAPIToken(ctx, userID, tok); err != nil {
+	// Persist only the hash; the raw token is returned to the caller once.
+	if err := s.pg.SetUserAPIToken(ctx, userID, hashAPIToken(tok)); err != nil {
 		return "", err
 	}
 	return tok, nil
@@ -85,7 +86,7 @@ func (s *Server) resolveAPIToken(raw string) (*auth.Claims, bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	u, err := s.pg.GetUserByAPIToken(ctx, raw)
+	u, err := s.pg.GetUserByAPIToken(ctx, hashAPIToken(raw))
 	if err != nil || u == nil || u.Disabled {
 		return nil, false
 	}

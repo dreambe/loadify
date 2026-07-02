@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/dreambe/loadify/internal/clusterauth"
 	"github.com/dreambe/loadify/internal/config"
 	"github.com/dreambe/loadify/internal/obs"
 	"github.com/dreambe/loadify/internal/version"
@@ -27,6 +28,7 @@ func main() {
 	conn, err := grpc.NewClient(cfg.CoordinatorGRPC,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(64<<20)),
+		clusterauth.DialOption(cfg.ClusterToken),
 	)
 	if err != nil {
 		log.Error("dial coordinator failed", "err", err)

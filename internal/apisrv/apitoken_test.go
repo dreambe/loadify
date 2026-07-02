@@ -11,16 +11,18 @@ import (
 	"github.com/dreambe/loadify/internal/store/postgres"
 )
 
-// TestPersistentAPIToken covers the Feishu-style token lifecycle: GET mints &
-// returns a stable token, repeated GET returns the same value, POST rotates it,
-// and the opaque token authenticates as a bearer (the JWT-fallback resolver).
+// TestPersistentAPIToken covers the GitHub-PAT-style token lifecycle: only a
+// hash is stored, so GET never returns a raw token (just whether one exists),
+// POST mints/rotates and returns the raw value once, the raw token
+// authenticates as a bearer (JWT-fallback resolver), and reset invalidates the
+// old one.
 func TestPersistentAPIToken(t *testing.T) {
 	meta := newFakeMeta()
 	meta.usersByID = map[string]*postgres.User{"u": {ID: "u", Email: "u@x", Name: "U", Role: "operator"}}
 	srv := newTestServer(meta, &fakeCoord{})
 	h := srv.Handler()
 
-	getTok := func(method string) string {
+	call := func(method string) map[string]any {
 		req := httptest.NewRequest(method, "/api/v1/auth/token", nil)
 		req.Header.Set("Authorization", "Bearer "+token(t, auth.RoleOperator))
 		rr := httptest.NewRecorder()
@@ -28,42 +30,50 @@ func TestPersistentAPIToken(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("%s token: got %d, body %s", method, rr.Code, rr.Body.String())
 		}
-		var out struct {
-			Token string `json:"token"`
-		}
-		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		var m map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
 			t.Fatal(err)
 		}
-		return out.Token
+		return m
+	}
+	authCode := func(tok string) int {
+		req := httptest.NewRequest("GET", "/api/v1/tests", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr.Code
 	}
 
-	first := getTok("GET")
-	if !strings.HasPrefix(first, apiTokenPrefix) {
-		t.Fatalf("token missing prefix: %q", first)
-	}
-	if again := getTok("GET"); again != first {
-		t.Fatalf("GET not stable: %q != %q", first, again)
+	// GET never returns a raw token; initially none exists.
+	if m := call("GET"); m["exists"] != false || m["token"] != nil {
+		t.Fatalf("expected no token initially: %v", m)
 	}
 
-	// The opaque token authenticates a real request via the bearer fallback.
-	req := httptest.NewRequest("GET", "/api/v1/tests", nil)
-	req.Header.Set("Authorization", "Bearer "+first)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("auth with API token: got %d want 200", rr.Code)
+	// POST mints and returns the raw token exactly once.
+	minted, _ := call("POST")["token"].(string)
+	if !strings.HasPrefix(minted, apiTokenPrefix) {
+		t.Fatalf("minted token missing prefix: %q", minted)
 	}
 
-	// Reset rotates the value and invalidates the old one.
-	rotated := getTok("POST")
-	if rotated == first {
-		t.Fatal("POST did not rotate token")
+	// GET now reports existence but still withholds the raw token.
+	if m := call("GET"); m["exists"] != true || m["token"] != nil {
+		t.Fatalf("expected exists=true and no raw token: %v", m)
 	}
-	req = httptest.NewRequest("GET", "/api/v1/tests", nil)
-	req.Header.Set("Authorization", "Bearer "+first)
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("old token after reset: got %d want 401", rr.Code)
+
+	// The raw token authenticates via the bearer fallback (hash round-trips).
+	if code := authCode(minted); code != http.StatusOK {
+		t.Fatalf("auth with API token: got %d want 200", code)
+	}
+
+	// Reset rotates: a new raw token works, the old one stops.
+	rotated, _ := call("POST")["token"].(string)
+	if rotated == minted || rotated == "" {
+		t.Fatalf("POST did not rotate token: %q -> %q", minted, rotated)
+	}
+	if code := authCode(minted); code != http.StatusUnauthorized {
+		t.Fatalf("old token after reset: got %d want 401", code)
+	}
+	if code := authCode(rotated); code != http.StatusOK {
+		t.Fatalf("rotated token: got %d want 200", code)
 	}
 }

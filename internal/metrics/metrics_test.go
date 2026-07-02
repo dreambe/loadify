@@ -80,3 +80,26 @@ func TestRecorder(t *testing.T) {
 		t.Errorf("5xx bucket wrong: %+v", bad)
 	}
 }
+
+// TestPercentilesAreNotAverageable documents why the run summary / series must
+// merge the stored per-second histograms instead of count-weighting the
+// per-second p*_ms columns: a percentile of the whole run is NOT the average of
+// per-window percentiles. A calm second (10ms) and a bad second (1000ms) have
+// per-window p99s of 10ms and 1000ms (avg 505ms), but the true p99 over both
+// seconds is ~1000ms — averaging would under-report the tail by ~2x.
+func TestPercentilesAreNotAverageable(t *testing.T) {
+	fast := NewHistogram()
+	slow := NewHistogram()
+	for i := 0; i < 1000; i++ {
+		_ = fast.RecordValue(10_000)    // 10ms
+		_ = slow.RecordValue(1_000_000) // 1000ms
+	}
+	naiveAvg := (PercentilesOf(fast).P99 + PercentilesOf(slow).P99) / 2
+	merged := NewHistogram()
+	merged.Merge(fast)
+	merged.Merge(slow)
+	trueP99 := PercentilesOf(merged).P99
+	if trueP99 <= naiveAvg*1.5 {
+		t.Fatalf("merged p99 %.0fms should be far above the per-window average %.0fms — percentiles don't average", trueP99, naiveAvg)
+	}
+}

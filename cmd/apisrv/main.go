@@ -12,6 +12,7 @@ import (
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/apisrv"
 	"github.com/dreambe/loadify/internal/auth"
+	"github.com/dreambe/loadify/internal/clusterauth"
 	"github.com/dreambe/loadify/internal/config"
 	"github.com/dreambe/loadify/internal/obs"
 	chstore "github.com/dreambe/loadify/internal/store/clickhouse"
@@ -83,7 +84,10 @@ func main() {
 	defer ch.Close()
 	log.Info("clickhouse ready")
 
-	conn, err := grpc.NewClient(cfg.CoordinatorGRPC, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cfg.CoordinatorGRPC,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		clusterauth.DialOption(cfg.ClusterToken),
+	)
 	if err != nil {
 		log.Error("dial coordinator failed", "err", err)
 		return

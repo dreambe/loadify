@@ -74,6 +74,10 @@ type SampleFilter struct {
 	StatusClass string
 	ErrorKind   string
 	Limit       int
+	// From/To bound the sample time window (zero = unbounded), used to drill
+	// into a single moment picked off a chart.
+	From time.Time
+	To   time.Time
 }
 
 // SampleStore persists and queries the sampled request detail.

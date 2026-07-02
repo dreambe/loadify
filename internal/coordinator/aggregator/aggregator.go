@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -316,9 +317,14 @@ func (a *Aggregator) collect(sec int64, ts time.Time, bk map[metrics.Key]*metric
 			MaxMs:       float64(b.Hist.Max()) / 1000.0,
 			Hist:        metrics.EncodeHistogram(b.Hist),
 		})
-		count += b.Count
-		errors += b.Errors
-		total.Merge(b.Hist)
+		// The scenario transaction pseudo-group (latency = sum of its steps) is a
+		// per-group breakdown row only; it must never enter the request-level
+		// top-line, or RPS is inflated and the aggregate latency is polluted.
+		if !strings.HasPrefix(k.Group, "txn:") {
+			count += b.Count
+			errors += b.Errors
+			total.Merge(b.Hist)
+		}
 		g := groups[k.Group]
 		if g == nil {
 			g = &loadifyv1.GroupTick{}

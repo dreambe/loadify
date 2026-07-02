@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -494,17 +495,24 @@ func buildRunSnapshot(td *postgres.TestDefinition, planJSON json.RawMessage, scr
 	if b, err := json.Marshal(td); err == nil {
 		_ = json.Unmarshal(b, &snap)
 	}
-	snap["plan"] = json.RawMessage(planJSON)
+	// Keep the UNRESOLVED plan template (with {{KEY}} placeholders) that
+	// json.Marshal(td) already put in snap["plan"]. The interpolated planJSON
+	// would embed substituted secret values, and the snapshot is served to any
+	// viewer and through public share links — so it must never be persisted.
+	_ = planJSON
 	if scriptJS != "" {
 		snap["script"] = scriptJS
 	} else {
 		delete(snap, "script")
 	}
 	if envName != "" {
-		if envVars == nil {
-			envVars = map[string]string{}
+		// Never persist environment values (secrets); keep the keys so the run
+		// stays reproducible ("which vars, which env") without exposing them.
+		maskedVars := make(map[string]string, len(envVars))
+		for k := range envVars {
+			maskedVars[k] = "••••••"
 		}
-		snap["environment"] = map[string]any{"name": envName, "vars": envVars}
+		snap["environment"] = map[string]any{"name": envName, "vars": maskedVars}
 	}
 	out, err := json.Marshal(snap)
 	if err != nil {
@@ -913,8 +921,27 @@ func (s *Server) handleRunExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Name the download after the run so it's easy to find; keep an ASCII
+	// run-<id> fallback and put the (possibly non-ASCII, e.g. Chinese) name in
+	// filename* per RFC 5987 so browsers use the friendly name.
+	name := strings.TrimSpace(run.Name)
+	if name == "" {
+		name = "run-" + runID
+	}
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\r', '\t':
+			return '-'
+		}
+		return r
+	}, name)
+	shortID := runID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="run-`+runID+`.csv"`)
+	w.Header().Set("Content-Disposition",
+		`attachment; filename="run-`+shortID+`.csv"; filename*=UTF-8''`+url.PathEscape(name)+`.csv`)
 	cw := csv.NewWriter(w)
 	// error_rate_pct is a percentage (0-100) to match every on-screen surface
 	// (run charts, summary, report all show percent); QuerySeries returns a
@@ -940,6 +967,13 @@ func (s *Server) handleRunExport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRunSamples(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	var from, to time.Time
+	if ms, _ := strconv.ParseInt(r.URL.Query().Get("from_ms"), 10, 64); ms > 0 {
+		from = time.UnixMilli(ms)
+	}
+	if ms, _ := strconv.ParseInt(r.URL.Query().Get("to_ms"), 10, 64); ms > 0 {
+		to = time.UnixMilli(ms)
+	}
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()
 	rows, err := s.ch.QuerySamples(ctx, runID, store.SampleFilter{
@@ -947,6 +981,8 @@ func (s *Server) handleRunSamples(w http.ResponseWriter, r *http.Request) {
 		StatusClass: r.URL.Query().Get("status_class"),
 		ErrorKind:   r.URL.Query().Get("error_kind"),
 		Limit:       limit,
+		From:        from,
+		To:          to,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

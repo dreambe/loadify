@@ -543,6 +543,13 @@ func TestUserManagementGuards(t *testing.T) {
 // TestDebugRequest exercises the test-builder debug endpoint against a real
 // local HTTP server: the response status/body must round-trip to the caller.
 func TestDebugRequest(t *testing.T) {
+	// The httptest server binds loopback, which the SSRF guard blocks; disable
+	// the guard for this happy-path test (the guard itself is unit-tested in
+	// TestBlockInternalDial).
+	old := debugDialControl
+	debugDialControl = nil
+	defer func() { debugDialControl = old }()
+
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 		_, _ = w.Write([]byte(`{"hello":"world"}`))

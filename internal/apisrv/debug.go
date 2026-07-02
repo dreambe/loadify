@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
@@ -62,6 +65,11 @@ func (s *Server) handleDebugRequest(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
+			// SSRF guard: this fetch runs on the apisrv host, so block never-legit
+			// targets — loopback and link-local (incl. cloud metadata 169.254.169.254).
+			// RFC1918 private ranges stay allowed: load-testing internal services is
+			// the whole point. The check is on the *resolved* IP, defeating DNS rebinding.
+			DialContext: (&net.Dialer{Timeout: timeout, Control: debugDialControl}).DialContext,
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: req.InsecureSkipVerify}, //nolint:gosec // opt-in, mirrors the load driver
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -211,4 +219,29 @@ func (s *Server) handleDebugScenario(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// debugDialControl is the dial guard used by the debug fetch. It's a seam so
+// tests (which can only bind loopback) can disable it; production keeps the
+// SSRF block.
+var debugDialControl = blockInternalDial
+
+// blockInternalDial rejects connections to loopback and link-local addresses
+// (including the cloud metadata endpoint 169.254.169.254) — SSRF targets that
+// are never a legitimate load-test destination. It runs on the *resolved*
+// address, so it also defeats DNS rebinding. RFC1918 private ranges are allowed
+// on purpose: testing internal services is the point of the tool.
+func blockInternalDial(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return fmt.Errorf("blocked internal address %s (loopback/link-local)", ip)
+	}
+	return nil
 }

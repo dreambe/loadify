@@ -32,6 +32,7 @@ type APIServer struct {
 	Env               string // deployment environment: dev (default) | prod
 	HTTPAddr          string
 	CoordinatorGRPC   string
+	ClusterToken      string // shared bearer for the internal gRPC plane (empty = off)
 	JWTSecret         string
 	JWTTTLHours       int
 	FeishuAppID       string
@@ -48,6 +49,7 @@ type APIServer struct {
 // Coordinator configures the scheduler plane.
 type Coordinator struct {
 	GRPCAddr           string
+	ClusterToken       string // shared bearer required on the gRPC plane (empty = off)
 	HTTPAddr           string // healthz/metrics
 	MaxConcurrentRuns  int    // admission cap; extra runs queue
 	WorkerCPUMaxPct    int    // per-node protection threshold: workers at/above this CPU% take no new runs (0 = off)
@@ -59,6 +61,7 @@ type Coordinator struct {
 type Worker struct {
 	WorkerID        string
 	CoordinatorGRPC string
+	ClusterToken    string // shared bearer for the gRPC plane (empty = off)
 	HTTPAddr        string // healthz/metrics
 	Region          string
 }
@@ -69,6 +72,7 @@ func LoadAPIServer() APIServer {
 		Env:               env("LOADIFY_ENV", "dev"),
 		HTTPAddr:          env("LOADIFY_API_HTTP_ADDR", ":8080"),
 		CoordinatorGRPC:   env("LOADIFY_COORDINATOR_GRPC", "coordinatord:7070"),
+		ClusterToken:      env("LOADIFY_CLUSTER_TOKEN", ""),
 		JWTSecret:         env("LOADIFY_JWT_SECRET", insecureJWTSecret),
 		JWTTTLHours:       EnvInt("LOADIFY_JWT_TTL_HOURS", 24),
 		FeishuAppID:       env("LOADIFY_FEISHU_APP_ID", ""),
@@ -87,6 +91,7 @@ func LoadAPIServer() APIServer {
 func LoadCoordinator() Coordinator {
 	return Coordinator{
 		GRPCAddr:          env("LOADIFY_COORDINATOR_GRPC_ADDR", ":7070"),
+		ClusterToken:      env("LOADIFY_CLUSTER_TOKEN", ""),
 		HTTPAddr:          env("LOADIFY_COORDINATOR_HTTP_ADDR", ":7071"),
 		MaxConcurrentRuns: EnvInt("LOADIFY_MAX_CONCURRENT_RUNS", 8),
 		// Default-on per-node protection: a worker pegged at/above 85% CPU stops
@@ -102,6 +107,7 @@ func LoadWorker() Worker {
 	return Worker{
 		WorkerID:        envNonEmpty("LOADIFY_WORKER_ID", hostnameOr("worker")),
 		CoordinatorGRPC: env("LOADIFY_COORDINATOR_GRPC", "coordinatord:7070"),
+		ClusterToken:    env("LOADIFY_CLUSTER_TOKEN", ""),
 		HTTPAddr:        env("LOADIFY_WORKER_HTTP_ADDR", ":8090"),
 		Region:          env("LOADIFY_WORKER_REGION", "default"),
 	}

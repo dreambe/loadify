@@ -16,7 +16,9 @@ func TestBuildRunSnapshot(t *testing.T) {
 		PlanJSON: json.RawMessage(`{"protocol":"http","http":{"url":"https://{{base_url}}/cart"}}`),
 		RampJSON: json.RawMessage(`[{"duration_ms":30000,"target_vus":50}]`),
 	}
-	// Resolved plan (what actually ran) + the environment used.
+	// The interpolated plan (what actually ran) is passed in, but the snapshot is
+	// served to any viewer and via public share links, so it must NOT embed the
+	// substituted secret ("api.prod.com") — it keeps the {{base_url}} template.
 	resolved := json.RawMessage(`{"protocol":"http","http":{"url":"https://api.prod.com/cart"}}`)
 	snap := buildRunSnapshot(td, resolved, "", "prod", map[string]string{"base_url": "api.prod.com"})
 
@@ -25,16 +27,17 @@ func TestBuildRunSnapshot(t *testing.T) {
 		t.Fatalf("snapshot not valid json: %v", err)
 	}
 
-	// The snapshot must carry the resolved target, not the {{base_url}} template.
+	// The snapshot keeps the template and must never leak the resolved value.
 	planBytes, _ := json.Marshal(m["plan"])
-	if !strings.Contains(string(planBytes), "api.prod.com") {
-		t.Errorf("snapshot plan missing resolved target: %s", planBytes)
+	if strings.Contains(string(planBytes), "api.prod.com") {
+		t.Errorf("snapshot plan leaked the resolved (secret) target: %s", planBytes)
 	}
-	if strings.Contains(string(planBytes), "{{base_url}}") {
-		t.Errorf("snapshot plan still templated: %s", planBytes)
+	if !strings.Contains(string(planBytes), "{{base_url}}") {
+		t.Errorf("snapshot plan should keep the template: %s", planBytes)
 	}
 
-	// The environment used is captured so a later edit can't rewrite history.
+	// The environment name + keys are captured for reproducibility, but VALUES
+	// are masked — the raw secret must not be persisted.
 	env, ok := m["environment"].(map[string]any)
 	if !ok {
 		t.Fatal("snapshot missing environment block")
@@ -42,8 +45,15 @@ func TestBuildRunSnapshot(t *testing.T) {
 	if env["name"] != "prod" {
 		t.Errorf("environment name = %v, want prod", env["name"])
 	}
-	if vars, ok := env["vars"].(map[string]any); !ok || vars["base_url"] != "api.prod.com" {
-		t.Errorf("environment vars not snapshotted: %v", env["vars"])
+	vars, ok := env["vars"].(map[string]any)
+	if !ok {
+		t.Fatalf("environment vars missing: %v", env["vars"])
+	}
+	if _, present := vars["base_url"]; !present {
+		t.Errorf("env var key not preserved: %v", vars)
+	}
+	if v, _ := vars["base_url"].(string); strings.Contains(v, "api.prod.com") {
+		t.Errorf("env var value leaked instead of being masked: %v", vars)
 	}
 
 	// Identity fields are preserved; ramp survives for the load-model detector.

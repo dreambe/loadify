@@ -9,6 +9,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/dreambe/loadify/internal/config"
+	"github.com/dreambe/loadify/internal/metrics"
 	"github.com/dreambe/loadify/internal/store"
 	"github.com/dreambe/loadify/migrations"
 )
@@ -126,6 +127,14 @@ func (s *Store) QuerySamples(ctx context.Context, runID string, f store.SampleFi
 		q += " AND error_kind = ?"
 		args = append(args, f.ErrorKind)
 	}
+	if !f.From.IsZero() {
+		q += " AND ts >= ?"
+		args = append(args, f.From)
+	}
+	if !f.To.IsZero() {
+		q += " AND ts <= ?"
+		args = append(args, f.To)
+	}
 	q += " ORDER BY ts DESC LIMIT ?"
 	args = append(args, limit)
 
@@ -159,21 +168,18 @@ func (s *Store) QuerySeries(ctx context.Context, runID, group string, from, to t
 	if group != "" && group != "*" {
 		where += " AND `group` = ?"
 		args = append(args, group)
+	} else {
+		// Combined view: exclude the transaction pseudo-group (sum-of-steps).
+		where += " AND " + notTxn
 	}
-	// Count-weighted percentile averaging keeps the query cheap; per-second
-	// single-group rows are exact, coarser buckets are approximate.
+	// Percentiles are not averageable, and a single bucket aggregates several
+	// (group, status_class) rows even at 1s resolution — so merge the stored
+	// per-second histograms per bucket and read exact percentiles off the merge,
+	// rather than count-weighting the per-row p*_ms columns.
 	query := fmt.Sprintf(`
-		SELECT
-			toStartOfInterval(ts, INTERVAL %d second) AS bucket,
-			sum(count) AS cnt,
-			sum(errors) AS errs,
-			sum(p50_ms * count) / sum(count) AS p50,
-			sum(p90_ms * count) / sum(count) AS p90,
-			sum(p95_ms * count) / sum(count) AS p95,
-			sum(p99_ms * count) / sum(count) AS p99
+		SELECT toStartOfInterval(ts, INTERVAL %d second) AS bucket, count, errors, hist
 		FROM rollup_1s
 		WHERE %s
-		GROUP BY bucket
 		ORDER BY bucket`, resSeconds, where)
 
 	rrows, err := s.conn.Query(ctx, query, args...)
@@ -183,53 +189,97 @@ func (s *Store) QuerySeries(ctx context.Context, runID, group string, from, to t
 	defer rrows.Close()
 
 	var out []store.SeriesPoint
-	for rrows.Next() {
-		var (
-			bucket    time.Time
-			cnt, errs uint64
-			p50, p90, p95, p99 float64
-		)
-		if err := rrows.Scan(&bucket, &cnt, &errs, &p50, &p90, &p95, &p99); err != nil {
-			return nil, err
+	var curBucket time.Time
+	var have bool
+	var cnt, errs uint64
+	merged := metrics.NewHistogram()
+	flush := func() {
+		if !have {
+			return
 		}
+		pct := metrics.PercentilesOf(merged)
 		errRate := 0.0
 		if cnt > 0 {
 			errRate = float64(errs) / float64(cnt)
 		}
 		out = append(out, store.SeriesPoint{
-			TS:        bucket,
+			TS:        curBucket,
 			RPS:       float64(cnt) / float64(resSeconds),
 			ErrorRate: errRate,
-			P50ms:     p50,
-			P90ms:     p90,
-			P95ms:     p95,
-			P99ms:     p99,
+			P50ms:     pct.P50,
+			P90ms:     pct.P90,
+			P95ms:     pct.P95,
+			P99ms:     pct.P99,
 		})
 	}
+	for rrows.Next() {
+		var (
+			bucket time.Time
+			c, e   uint64
+			blob   []byte
+		)
+		if err := rrows.Scan(&bucket, &c, &e, &blob); err != nil {
+			return nil, err
+		}
+		if !have || !bucket.Equal(curBucket) {
+			flush()
+			curBucket, have, cnt, errs = bucket, true, 0, 0
+			merged = metrics.NewHistogram()
+		}
+		cnt += c
+		errs += e
+		if h := metrics.DecodeHistogram(blob); h != nil {
+			merged.Merge(h)
+		}
+	}
+	flush()
 	return out, rrows.Err()
 }
 
-// Summary returns aggregate totals for a finished run.
+// mergedPercentiles merges the stored per-second HdrHistograms matching the
+// WHERE clause and computes exact latency percentiles from the combined
+// distribution. Percentiles are NOT averageable, so this is the only correct
+// way to get a run's (or a coarse bucket's) tail — the per-second p*_ms columns
+// are exact only within their own 1-second window.
+func (s *Store) mergedPercentiles(ctx context.Context, where string, args []any) (metrics.Percentiles, error) {
+	merged := metrics.NewHistogram()
+	rows, err := s.conn.Query(ctx, "SELECT hist FROM rollup_1s WHERE "+where+" AND length(hist) > 0", args...)
+	if err != nil {
+		return metrics.Percentiles{}, fmt.Errorf("clickhouse: read hists: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var blob []byte
+		if err := rows.Scan(&blob); err != nil {
+			return metrics.Percentiles{}, err
+		}
+		if h := metrics.DecodeHistogram(blob); h != nil {
+			merged.Merge(h)
+		}
+	}
+	return metrics.PercentilesOf(merged), rows.Err()
+}
+
+// notTxn excludes the scenario transaction pseudo-group (its latency is the sum
+// of the steps, so it must never pollute the request-level headline).
+const notTxn = "`group` NOT LIKE 'txn:%'"
+
+// Summary returns aggregate totals for a finished run: exact percentiles from
+// the merged histogram, request-level counts (transaction rows excluded).
 func (s *Store) Summary(ctx context.Context, runID string) (store.SeriesPoint, int64, error) {
-	row := s.conn.QueryRow(ctx, `
-		SELECT
-			sum(count) AS cnt,
-			sum(errors) AS errs,
-			sum(p50_ms * count) / sum(count) AS p50,
-			sum(p90_ms * count) / sum(count) AS p90,
-			sum(p95_ms * count) / sum(count) AS p95,
-			sum(p99_ms * count) / sum(count) AS p99
-		FROM rollup_1s WHERE run_id = ?`, runID)
-	var (
-		cnt, errs uint64
-		p50, p90, p95, p99 float64
-	)
-	if err := row.Scan(&cnt, &errs, &p50, &p90, &p95, &p99); err != nil {
+	var cnt, errs uint64
+	if err := s.conn.QueryRow(ctx,
+		"SELECT sum(count), sum(errors) FROM rollup_1s WHERE run_id = ? AND "+notTxn, runID,
+	).Scan(&cnt, &errs); err != nil {
+		return store.SeriesPoint{}, 0, err
+	}
+	pct, err := s.mergedPercentiles(ctx, "run_id = ? AND "+notTxn, []any{runID})
+	if err != nil {
 		return store.SeriesPoint{}, 0, err
 	}
 	errRate := 0.0
 	if cnt > 0 {
 		errRate = float64(errs) / float64(cnt)
 	}
-	return store.SeriesPoint{ErrorRate: errRate, P50ms: p50, P90ms: p90, P95ms: p95, P99ms: p99}, int64(cnt), nil
+	return store.SeriesPoint{ErrorRate: errRate, P50ms: pct.P50, P90ms: pct.P90, P95ms: pct.P95, P99ms: pct.P99}, int64(cnt), nil
 }

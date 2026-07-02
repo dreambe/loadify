@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
+	"github.com/dreambe/loadify/internal/clusterauth"
 	"github.com/dreambe/loadify/internal/config"
 	"github.com/dreambe/loadify/internal/coordinator"
 	"github.com/dreambe/loadify/internal/obs"
@@ -53,7 +54,16 @@ func main() {
 	svc.SetLimits(cfg.MaxConcurrentRuns, float64(cfg.WorkerCPUMaxPct))
 	svc.RegisterMetrics()
 	log.Info("admission limits", "max_concurrent_runs", cfg.MaxConcurrentRuns, "worker_cpu_max_pct", cfg.WorkerCPUMaxPct)
-	gsrv := grpc.NewServer(grpc.MaxRecvMsgSize(64 << 20))
+	if cfg.ClusterToken == "" {
+		log.Warn("cluster token not set — gRPC plane is UNAUTHENTICATED; set LOADIFY_CLUSTER_TOKEN in any real deployment")
+	} else {
+		log.Info("cluster token enabled — gRPC plane requires a shared bearer")
+	}
+	gsrv := grpc.NewServer(
+		grpc.MaxRecvMsgSize(64<<20),
+		grpc.ChainUnaryInterceptor(clusterauth.UnaryInterceptor(cfg.ClusterToken)),
+		grpc.ChainStreamInterceptor(clusterauth.StreamInterceptor(cfg.ClusterToken)),
+	)
 	loadifyv1.RegisterWorkerServiceServer(gsrv, svc)
 	loadifyv1.RegisterCoordinatorServiceServer(gsrv, svc)
 
