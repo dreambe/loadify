@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
+import DocumentTitle from "@/components/DocumentTitle";
 import Footer from "@/components/Footer";
 import PageTransition from "@/components/PageTransition";
 import { ToastProvider } from "@/components/Toast";
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN" className={`${grotesk.variable} ${plexMono.variable}`}>
       <body>
         <LocaleProvider>
+          <DocumentTitle />
           <ToastProvider>
             <ConfirmProvider>
               <PageTransition>{children}</PageTransition>
