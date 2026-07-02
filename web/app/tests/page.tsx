@@ -11,6 +11,7 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
+import SortableTh from "@/components/SortableTh";
 import Icon from "@/components/Icon";
 import { parseCSV } from "@/lib/csv";
 import RampBuilder, { defaultRamp, type RampSpec } from "@/components/RampBuilder";
@@ -102,6 +103,10 @@ export default function TestsPage() {
   // Id of the test whose run is being launched — guards against a double-click
   // firing two runs before the page navigates to the new run.
   const [launchingId, setLaunchingId] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: "name" | "protocol" | "creator" | "created"; dir: "asc" | "desc" }>({
+    key: "created",
+    dir: "desc",
+  });
 
   // launch starts a run for a test and navigates to it, ignoring re-entry while
   // a launch is already in flight.
@@ -138,7 +143,24 @@ export default function TestsPage() {
           .includes(filter.toLowerCase())
       )
     : tests;
-  const pager = usePager(filtered, 10);
+  // Sort a copy by the active column (default: newest first, matching the API).
+  const sorted = [...filtered].sort((a, b) => {
+    const key = (td: TestDefinition) =>
+      sort.key === "name"
+        ? td.name.toLowerCase()
+        : sort.key === "protocol"
+          ? td.protocol
+          : sort.key === "creator"
+            ? (td.creator_name || "").toLowerCase()
+            : td.created_at;
+    const av = key(a);
+    const bv = key(b);
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+  const pager = usePager(sorted, 10);
+  const toggleSort = (k: typeof sort.key) =>
+    setSort((s) => ({ key: k, dir: s.key === k && s.dir === "desc" ? "asc" : "desc" }));
 
   function resetForm() {
     setEditingId(null);
@@ -588,10 +610,10 @@ export default function TestsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>{t("tests.colName")}</th>
-                    <th>{t("tests.colProtocol")}</th>
-                    <th>{t("tests.colCreator")}</th>
-                    <th>{t("tests.colCreated")}</th>
+                    <SortableTh label={t("tests.colName")} active={sort.key === "name"} dir={sort.dir} onToggle={() => toggleSort("name")} />
+                    <SortableTh label={t("tests.colProtocol")} active={sort.key === "protocol"} dir={sort.dir} onToggle={() => toggleSort("protocol")} />
+                    <SortableTh label={t("tests.colCreator")} active={sort.key === "creator"} dir={sort.dir} onToggle={() => toggleSort("creator")} />
+                    <SortableTh label={t("tests.colCreated")} active={sort.key === "created"} dir={sort.dir} onToggle={() => toggleSort("created")} />
                     {canCreate && <th>{t("tests.colActions")}</th>}
                   </tr>
                 </thead>

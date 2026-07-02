@@ -10,6 +10,7 @@ import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import EntityPicker from "@/components/EntityPicker";
+import SortableTh from "@/components/SortableTh";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
@@ -175,7 +176,6 @@ export default function RunsPage() {
   const statuses = Array.from(new Set(runs.map((r) => r.status)));
   const toggleSort = (k: "name" | "status" | "started") =>
     setSort((s) => ({ key: k, dir: s.key === k && s.dir === "desc" ? "asc" : "desc" }));
-  const sortMark = (k: string) => (sort.key === k ? (sort.dir === "desc" ? " ▼" : " ▲") : "");
 
   if (!ready) return null;
   const canRun = roleAtLeast(user?.role, "operator");
@@ -300,20 +300,11 @@ export default function RunsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th onClick={() => toggleSort("name")} style={{ cursor: "pointer", userSelect: "none" }}>
-                      {t("runs.colName")}
-                      {sortMark("name")}
-                    </th>
+                    <SortableTh label={t("runs.colName")} active={sort.key === "name"} dir={sort.dir} onToggle={() => toggleSort("name")} />
                     <th>{t("runs.colTest")}</th>
-                    <th onClick={() => toggleSort("status")} style={{ cursor: "pointer", userSelect: "none" }}>
-                      {t("runs.colStatus")}
-                      {sortMark("status")}
-                    </th>
+                    <SortableTh label={t("runs.colStatus")} active={sort.key === "status"} dir={sort.dir} onToggle={() => toggleSort("status")} />
                     <th>{t("runs.colCreator")}</th>
-                    <th onClick={() => toggleSort("started")} style={{ cursor: "pointer", userSelect: "none" }}>
-                      {t("runs.colStarted")}
-                      {sortMark("started")}
-                    </th>
+                    <SortableTh label={t("runs.colStarted")} active={sort.key === "started"} dir={sort.dir} onToggle={() => toggleSort("started")} />
                     {canRun && <th>{t("runs.colActions")}</th>}
                   </tr>
                 </thead>

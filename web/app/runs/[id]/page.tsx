@@ -599,7 +599,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 <h2>{t("run.trend")}</h2>
                 <LineChart
                   unit="ms"
-                  series={[{ label: "p95", color: chartColor.accent, data: trend.map((p) => p.metrics.p95_ms) }]}
+                  series={[{ label: "p95", color: latencyColors.p95, data: trend.map((p) => p.metrics.p95_ms) }]}
                   xLabels={trend.map((p) => (p.ended_at ? new Date(p.ended_at).toLocaleDateString() : ""))}
                 />
                 <p className="muted" style={{ fontSize: 12 }}>{t("run.trendHint")}</p>
