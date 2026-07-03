@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
@@ -109,6 +109,34 @@ export default function TestsPage() {
     key: "created",
     dir: "desc",
   });
+
+  // Live-parsed dataset shape: row count + column names. Feeds the {{...}}
+  // autocomplete in the builders and the status line under the dataset field.
+  const dataInfo = useMemo(() => {
+    if (!dataset.trim()) return null;
+    try {
+      const rows = JSON.parse(dataset);
+      if (Array.isArray(rows) && rows.length > 0 && rows.every((r) => r && typeof r === "object" && !Array.isArray(r))) {
+        return { rows: rows.length, cols: Object.keys(rows[0]) };
+      }
+    } catch {
+      /* invalid JSON → status line shows the format hint */
+    }
+    return { rows: 0, cols: [] as string[] };
+  }, [dataset]);
+  const dataColumns = dataInfo?.cols ?? [];
+
+  // downloadTemplate hands the user a working CSV example — the fastest way to
+  // communicate the expected format is a file that already has it.
+  function downloadTemplate() {
+    const csv = "user,password,phone\nalice,secret1,13800000001\nbob,secret2,13800000002\ncarol,secret3,13800000003\n";
+    const url = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "loadify-dataset-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   // launch starts a run for a test and navigates to it, ignoring re-entry while
   // a launch is already in flight.
@@ -437,8 +465,8 @@ export default function TestsPage() {
             </FormSection>
 
             <FormSection num="02" title={t("tests.secRequest")} hint={t("tests.secRequestHint")}>
-              {isHTTP && <HttpRequestBuilder value={http} onChange={setHttp} />}
-              {protocol === "scenario" && <ScenarioBuilder value={scenario} onChange={setScenario} />}
+              {isHTTP && <HttpRequestBuilder value={http} onChange={setHttp} dataColumns={dataColumns} />}
+              {protocol === "scenario" && <ScenarioBuilder value={scenario} onChange={setScenario} dataColumns={dataColumns} />}
               {protocol === "sse" && <SSEBuilder value={sse} onChange={setSse} />}
               {protocol === "script" && (
                 <>
@@ -468,7 +496,7 @@ export default function TestsPage() {
                 {{column}} tokens in URL, params, headers and body. */}
             {(isHTTP || protocol === "scenario" || protocol === "script") && (
               <FormSection num="03" title={t("tests.secData")} hint={t("tests.secDataHint")}>
-                <div className="row" style={{ marginBottom: 6, marginTop: 8 }}>
+                <div className="row" style={{ marginBottom: 6, marginTop: 8, alignItems: "center" }}>
                   <label className="secondary" style={{ margin: 0, cursor: "pointer", padding: "8px 11px", border: "1px solid var(--border-strong)", borderRadius: 8 }}>
                     ⬆ {t("tests.dataUpload")}
                     <input
@@ -489,6 +517,9 @@ export default function TestsPage() {
                     />
                   </label>
                   <Help tip={t("tests.dataUploadHelp")} />
+                  <button type="button" className="ghost sm" onClick={downloadTemplate}>
+                    ⬇ {t("tests.dataTemplate")}
+                  </button>
                 </div>
                 <textarea
                   rows={3}
@@ -496,6 +527,38 @@ export default function TestsPage() {
                   onChange={(e) => setDataset(e.target.value)}
                   placeholder={'[{"user":"alice"},{"user":"bob"}]  →  {{user}}'}
                 />
+                {/* Live parse status: the format contract, answered as the user
+                    types — valid rows become clickable {{column}} chips, invalid
+                    input says exactly what shape is expected. */}
+                {dataInfo &&
+                  (dataInfo.rows > 0 ? (
+                    <div className="row" style={{ alignItems: "center", gap: 6, marginTop: 6, fontSize: 12.5 }}>
+                      <span style={{ color: "var(--green)" }}>✓</span>
+                      <span className="muted">
+                        {t("tests.dataParsedA")}
+                        {dataInfo.rows}
+                        {t("tests.dataParsedB")}
+                      </span>
+                      {dataInfo.cols.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className="tag-chip"
+                          style={{ fontFamily: "var(--font-mono)" }}
+                          onClick={() => {
+                            navigator.clipboard.writeText(`{{${c}}}`);
+                            toast.success(t("tests.dataVarCopied"));
+                          }}
+                        >
+                          {"{{" + c + "}}"}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="muted" style={{ marginTop: 6, fontSize: 12.5, color: "var(--yellow)" }}>
+                      {t("tests.datasetErr")}
+                    </div>
+                  ))}
               </FormSection>
             )}
 

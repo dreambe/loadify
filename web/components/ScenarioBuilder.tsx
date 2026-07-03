@@ -7,6 +7,7 @@ import Help from "./Help";
 import Icon from "./Icon";
 import JsonExplorer from "./JsonExplorer";
 import NumberInput from "./NumberInput";
+import TemplateInput from "./TemplateInput";
 
 // A scenario is a multi-step HTTP plan: steps run in sequence (chaining
 // extracted variables) or one-per-iteration by weight (traffic mix).
@@ -129,9 +130,11 @@ function prettyBody(s: string): string {
 export default function ScenarioBuilder({
   value,
   onChange,
+  dataColumns,
 }: {
   value: ScenarioSpec;
   onChange: (s: ScenarioSpec) => void;
+  dataColumns?: string[];
 }) {
   const { t } = useI18n();
   const weighted = value.mode === "weighted";
@@ -350,11 +353,11 @@ export default function ScenarioBuilder({
             </div>
             <div style={{ flex: 1 }}>
               <label className="req">{t("http.url")}</label>
-              <input
+              <TemplateInput
                 value={st.url}
-                onChange={(e) => setStep(i, { url: e.target.value })}
+                onChange={(url) => setStep(i, { url })}
+                columns={dataColumns}
                 placeholder="https://api.example.com/v1/..."
-                style={{ width: "100%" }}
               />
             </div>
             {weighted && (
@@ -386,12 +389,13 @@ export default function ScenarioBuilder({
                 }
                 style={{ width: 200 }}
               />
-              <input
+              <TemplateInput
                 placeholder={t("scenario.valuePh")}
                 value={p.value}
-                onChange={(e) =>
-                  setStep(i, { params: st.params.map((x, xi) => (xi === pi ? { ...x, value: e.target.value } : x)) })
+                onChange={(v) =>
+                  setStep(i, { params: st.params.map((x, xi) => (xi === pi ? { ...x, value: v } : x)) })
                 }
+                columns={dataColumns}
                 style={{ flex: 1 }}
               />
               <button
@@ -425,12 +429,13 @@ export default function ScenarioBuilder({
                 }
                 style={{ width: 200 }}
               />
-              <input
+              <TemplateInput
                 placeholder={t("scenario.valuePh")}
                 value={h.value}
-                onChange={(e) =>
-                  setStep(i, { headers: st.headers.map((x, xi) => (xi === hi ? { ...x, value: e.target.value } : x)) })
+                onChange={(v) =>
+                  setStep(i, { headers: st.headers.map((x, xi) => (xi === hi ? { ...x, value: v } : x)) })
                 }
+                columns={dataColumns}
                 style={{ flex: 1 }}
               />
               <button
@@ -453,10 +458,12 @@ export default function ScenarioBuilder({
           </div>
 
           <label>{t("http.body")}</label>
-          <textarea
+          <TemplateInput
+            multiline
             rows={2}
             value={st.body}
-            onChange={(e) => setStep(i, { body: e.target.value })}
+            onChange={(body) => setStep(i, { body })}
+            columns={dataColumns}
             placeholder={weighted ? "" : t("scenario.bodyPh")}
           />
 

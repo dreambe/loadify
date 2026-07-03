@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 import Icon from "./Icon";
 import JsonExplorer from "./JsonExplorer";
+import TemplateInput from "./TemplateInput";
 
 // Assert mirrors the backend plan.HTTPAssert: one per-request check.
 export interface Assert {
@@ -159,9 +160,11 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
 export default function HttpRequestBuilder({
   value,
   onChange,
+  dataColumns,
 }: {
   value: HttpRequest;
   onChange: (r: HttpRequest) => void;
+  dataColumns?: string[];
 }) {
   const { t } = useI18n();
   const [debugging, setDebugging] = useState(false);
@@ -232,11 +235,11 @@ export default function HttpRequestBuilder({
         </div>
         <div style={{ flex: 1 }}>
           <label className="req">{t("http.url")}</label>
-          <input
+          <TemplateInput
             value={value.url}
-            onChange={(e) => onChange({ ...value, url: e.target.value })}
+            onChange={(url) => onChange({ ...value, url })}
+            columns={dataColumns}
             placeholder="https://api.example.com/v1/ping"
-            style={{ width: "100%" }}
             required
           />
         </div>
@@ -257,10 +260,11 @@ export default function HttpRequestBuilder({
             onChange={(e) => onChange({ ...value, params: value.params.map((x, idx) => (idx === i ? { ...x, key: e.target.value } : x)) })}
             style={{ width: 220 }}
           />
-          <input
+          <TemplateInput
             placeholder={t("kv.value")}
             value={p.value}
-            onChange={(e) => onChange({ ...value, params: value.params.map((x, idx) => (idx === i ? { ...x, value: e.target.value } : x)) })}
+            onChange={(v) => onChange({ ...value, params: value.params.map((x, idx) => (idx === i ? { ...x, value: v } : x)) })}
+            columns={dataColumns}
             style={{ flex: 1 }}
           />
           <button
@@ -289,10 +293,11 @@ export default function HttpRequestBuilder({
             onChange={(e) => setHeader(i, { key: e.target.value })}
             style={{ width: 220 }}
           />
-          <input
+          <TemplateInput
             placeholder={t("kv.value")}
             value={h.value}
-            onChange={(e) => setHeader(i, { value: e.target.value })}
+            onChange={(v) => setHeader(i, { value: v })}
+            columns={dataColumns}
             style={{ flex: 1 }}
           />
           <button
@@ -313,7 +318,7 @@ export default function HttpRequestBuilder({
       </button>
 
       <label>{t("http.body")}</label>
-      <textarea rows={4} value={value.body} onChange={(e) => onChange({ ...value, body: e.target.value })} />
+      <TemplateInput multiline rows={4} value={value.body} onChange={(body) => onChange({ ...value, body })} columns={dataColumns} />
 
       <label>
         {t("assert.title")}
