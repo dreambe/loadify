@@ -35,5 +35,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -
     -o /out/app ./cmd/${SERVICE}
 
 FROM ${RUNTIME_BASE}
+# Carry the CA bundle from the (Debian-based) build image so HTTPS to targets
+# works on ANY runtime base. This frees restricted-network deploys to point
+# RUNTIME_BASE at a reachable minimal image (e.g. docker.io alpine) instead of
+# the gcr distroless mirror, without losing TLS trust. distroless already ships
+# these certs, so the copy is a harmless overwrite there.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/app /app
 ENTRYPOINT ["/app"]
