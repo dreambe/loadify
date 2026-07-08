@@ -456,6 +456,13 @@ func (s *Service) drainLocked() {
 func (s *Service) StopRun(_ context.Context, req *loadifyv1.StopRunRequest) (*loadifyv1.StopRunResponse, error) {
 	s.mu.Lock()
 	rs := s.runs[req.RunId]
+	// Record the verdict for a still-running run so it finalizes as "aborted"
+	// with a clear reason, not a misleading "completed". A run already marked
+	// terminal (e.g. by the auto-stop breaker) keeps its own reason.
+	if rs != nil && rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
+		rs.status = loadifyv1.RunStatus_RUN_STATUS_ABORTED
+		rs.reason = "stopped by user"
+	}
 	s.mu.Unlock()
 	if rs == nil {
 		return nil, status.Error(codes.NotFound, "run not found")

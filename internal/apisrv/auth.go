@@ -11,6 +11,8 @@ import (
 	"github.com/dreambe/loadify/internal/auth"
 	"github.com/dreambe/loadify/internal/store/postgres"
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type loginReq struct {
@@ -429,7 +431,22 @@ func (s *Server) handleStopRun(w http.ResponseWriter, r *http.Request) {
 	if s.denyIfNotOwner(w, r, run.CreatedBy) {
 		return
 	}
-	if _, err := s.coord.StopRun(ctx, &loadifyv1.StopRunRequest{RunId: runID, Graceful: true}); err != nil {
+	// Already finished — nothing to stop (idempotent, avoids a confusing error).
+	if run.Status == "completed" || run.Status == "failed" || run.Status == "aborted" {
+		writeJSON(w, http.StatusOK, map[string]string{"run_id": runID, "status": run.Status})
+		return
+	}
+	_, err = s.coord.StopRun(ctx, &loadifyv1.StopRunRequest{RunId: runID, Graceful: true})
+	if err != nil {
+		// The coordinator has no live run for this id — it's orphaned in the DB
+		// (coordinator restarted, or the run ended without being finalized).
+		// Reconcile it directly so the Stop button actually works instead of
+		// leaving the run stuck "running" forever.
+		if status.Code(err) == codes.NotFound {
+			s.finalizeRunReason(runID, "aborted", "stopped by user (run was no longer active on the coordinator)")
+			writeJSON(w, http.StatusOK, map[string]string{"run_id": runID, "status": "aborted"})
+			return
+		}
 		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}

@@ -407,7 +407,9 @@ export default function LineChart({
               fill="var(--muted)"
               fontSize={10}
               fontFamily="var(--font-mono)"
-              textAnchor="middle"
+              // Anchor edge ticks inward so the first/last labels (e.g. "1m05s")
+              // aren't clipped by the plot's right/left boundary.
+              textAnchor={x(i) > pad.left + innerW - 24 ? "end" : x(i) < pad.left + 24 ? "start" : "middle"}
             >
               {xLabels[i] ?? ""}
             </text>
