@@ -140,6 +140,13 @@ func (s *Service) Connect(stream loadifyv1.WorkerService_ConnectServer) error {
 			send <- &loadifyv1.CoordinatorMessage{Msg: &loadifyv1.CoordinatorMessage_RegisterAck{
 				RegisterAck: &loadifyv1.RegisterAck{LeaseId: workerID, HeartbeatIntervalMs: 2000},
 			}}
+			// A newly-connected worker is fresh capacity. Admit any queued runs
+			// now instead of waiting for a slot to free — otherwise a run started
+			// while no worker was connected (e.g. right after a coordinator
+			// restart) sits queued until an unrelated run finishes.
+			s.mu.Lock()
+			s.drainLocked()
+			s.mu.Unlock()
 		case *loadifyv1.WorkerMessage_Heartbeat:
 			s.reg.Touch(m.Heartbeat.WorkerId, m.Heartbeat.ActiveVus, m.Heartbeat.CpuPct, m.Heartbeat.MemBytes)
 			s.recordPeakCPU(m.Heartbeat.WorkerId)
@@ -221,16 +228,29 @@ func (s *Service) workerFinished(f *loadifyv1.RunFinished) {
 	rs.droppedMetrics += f.DroppedMetrics
 	done := len(rs.finished) >= len(rs.assigned)
 	var cancel context.CancelFunc
-	if done && rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
-		rs.status = loadifyv1.RunStatus_RUN_STATUS_COMPLETED
+	// endedAt.IsZero() makes this cleanup run exactly once (idempotent against a
+	// duplicate RunFinished). Crucially it runs for ANY terminal outcome — the
+	// auto-stop circuit breaker sets rs.status=ABORTED *before* the workers
+	// report in, and that verdict must be preserved while STILL releasing the
+	// run: cancel the aggregator (which closes the live stream apisrv's watchRun
+	// blocks on, so the run finalizes instead of hanging "running"), free the
+	// admission slot, and drain the queue. The old code gated this on
+	// status==RUNNING, so an auto-stopped run leaked all three — it stayed
+	// "running" in the UI forever, its slot was never freed, and the queue
+	// starved.
+	if done && rs.endedAt.IsZero() {
+		if rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
+			rs.status = loadifyv1.RunStatus_RUN_STATUS_COMPLETED
+		}
 		rs.endedAt = time.Now()
 		s.running--
 		cancel = rs.aggCancel
 		s.drainLocked() // a slot freed: admit queued runs
 	}
+	terminalStatus := rs.status
 	s.mu.Unlock()
 	if done && cancel != nil {
-		s.log.Info("run completed", "run", f.RunId)
+		s.log.Info("run terminal", "run", f.RunId, "status", terminalStatus.String())
 		// Give the aggregator a moment to drain late batches, then stop it.
 		go func() {
 			time.Sleep(3 * time.Second)

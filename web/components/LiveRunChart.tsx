@@ -32,6 +32,17 @@ export default function LiveRunChart({ runId, runName }: { runId: string; runNam
   const wsRef = useRef<WebSocket | null>(null);
   const startRef = useRef<number | null>(null);
   const seqRef = useRef(0);
+  // Wall-clock of the last tick received. Ticks arrive ~1/s; if they stop while
+  // the socket stays open (workers stopped, run ending, silent stall) the chart
+  // freezes — this lets the status card say "stalled" instead of lying "live".
+  const lastTickAtRef = useRef(0);
+  // A 1s heartbeat so staleness re-evaluates even when NO ticks arrive (a frozen
+  // stream produces no re-render on its own).
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
   // While a log row is expanded, hold incoming samples in a buffer instead of
   // prepending them — otherwise each tick pushes the row being read down out of
   // view. The buffer is flushed when the row is collapsed. A ref mirrors the
@@ -91,6 +102,7 @@ export default function LiveRunChart({ runId, runName }: { runId: string; runNam
         try {
           const tick = JSON.parse(ev.data) as LiveTick;
           if (startRef.current === null) startRef.current = tick.ts_unix_ms;
+          lastTickAtRef.current = Date.now();
           setTicks((prev) => [...prev.slice(-(MAX_POINTS - 1)), tick]);
           if (tick.samples && tick.samples.length > 0) {
             // Stable per-sample ids keep row expansion anchored as new samples
@@ -133,18 +145,28 @@ export default function LiveRunChart({ runId, runName }: { runId: string; runNam
   }, []);
   const chartName = runName || `run-${runId.slice(0, 8)}`;
 
-  // Distinguish connecting (never opened yet) / live (open, data flowing) /
-  // waiting (open, no ticks yet — e.g. no workers reporting) / closed.
+  // Stalled: socket open and ticks were flowing, but none for a while — the
+  // chart is frozen. Ticks come ~1/s, so >6s of silence is a real stall (the
+  // run is ending / workers stopped / stream wedged), not jitter.
+  const STALE_MS = 6000;
+  const stalled = connected && ticks.length > 0 && lastTickAtRef.current > 0 && Date.now() - lastTickAtRef.current > STALE_MS;
+
+  // Distinguish connecting (never opened) / live (data flowing) / stalled (open
+  // but frozen) / waiting (open, no ticks yet) / closed.
   const statusValue = connected
     ? ticks.length > 0
-      ? t("live.live")
+      ? stalled
+        ? t("live.stalled")
+        : t("live.live")
       : t("live.waiting")
     : everConnected
       ? t("live.closed")
       : t("live.connecting");
   const statusColor = connected
     ? ticks.length > 0
-      ? "var(--green)"
+      ? stalled
+        ? "var(--yellow)"
+        : "var(--green)"
       : "var(--yellow)"
     : everConnected
       ? "var(--red)"
