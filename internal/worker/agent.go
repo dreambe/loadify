@@ -44,7 +44,11 @@ type Agent struct {
 	mu        sync.Mutex
 	runs      map[string]context.CancelFunc
 	runProtos map[string]loadifyv1.Protocol
-	active    int64
+	// activeByRun is the last-reported active-VU count PER run. The heartbeat
+	// reports the sum; finishRun drops a run's entry so a finished/aborted run
+	// stops contributing — otherwise a single leftover value made a node report
+	// phantom VUs with no run in flight, and concurrent runs couldn't be summed.
+	activeByRun map[string]int64
 }
 
 // NewAgent creates an Agent.
@@ -56,9 +60,10 @@ func NewAgent(workerID, region string, log *slog.Logger) *Agent {
 		workerID: workerID,
 		region:   region,
 		log:      log,
-		sendCh:    make(chan *loadifyv1.WorkerMessage, 256),
-		runs:      make(map[string]context.CancelFunc),
-		runProtos: make(map[string]loadifyv1.Protocol),
+		sendCh:      make(chan *loadifyv1.WorkerMessage, 256),
+		runs:        make(map[string]context.CancelFunc),
+		runProtos:   make(map[string]loadifyv1.Protocol),
+		activeByRun: make(map[string]int64),
 	}
 }
 
@@ -254,7 +259,7 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 
 	// Flush metric batches every second.
 	flushDone := make(chan struct{})
-	go a.flushLoop(runCtx, smp, flushDone)
+	go a.flushLoop(runCtx, asg.RunId, smp, flushDone)
 
 	log.Info("run started", "protocol", asg.Protocol)
 	if err := exec.Run(runCtx); err != nil && runCtx.Err() == nil {
@@ -285,7 +290,7 @@ func (a *Agent) startRun(parent context.Context, asg *loadifyv1.RunAssignment) {
 	log.Info("run finished")
 }
 
-func (a *Agent) flushLoop(ctx context.Context, smp *sampler.Sampler, done chan struct{}) {
+func (a *Agent) flushLoop(ctx context.Context, runID string, smp *sampler.Sampler, done chan struct{}) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
@@ -296,7 +301,7 @@ func (a *Agent) flushLoop(ctx context.Context, smp *sampler.Sampler, done chan s
 			return
 		case now := <-t.C:
 			if b := smp.Flush(now); b != nil {
-				a.setActive(b.ActiveVus)
+				a.setActive(runID, b.ActiveVus)
 				a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Metrics{Metrics: b}})
 			}
 		}
@@ -328,6 +333,9 @@ func (a *Agent) finishRun(runID string) {
 	a.mu.Lock()
 	delete(a.runs, runID)
 	delete(a.runProtos, runID)
+	// Drop this run's VU contribution so the node stops reporting its VUs the
+	// moment the run ends (however it ended — completed, aborted, cancelled).
+	delete(a.activeByRun, runID)
 	a.mu.Unlock()
 }
 
@@ -344,14 +352,18 @@ func (a *Agent) enqueue(msg *loadifyv1.WorkerMessage) {
 	}
 }
 
-func (a *Agent) setActive(n int64) {
+func (a *Agent) setActive(runID string, n int64) {
 	a.mu.Lock()
-	a.active = n
+	a.activeByRun[runID] = n
 	a.mu.Unlock()
 }
 
 func (a *Agent) activeVUs() int64 {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.active
+	var total int64
+	for _, n := range a.activeByRun {
+		total += n
+	}
+	return total
 }
