@@ -30,6 +30,7 @@ type metaStore interface {
 	RunStats(ctx context.Context) (postgres.RunStats, error)
 	ListRunsByTest(ctx context.Context, testID string, limit int) ([]postgres.Run, error)
 	ListActiveRuns(ctx context.Context) ([]postgres.Run, error)
+	DeleteRun(ctx context.Context, id string) error
 	SetBaseline(ctx context.Context, testID, runID string) error
 
 	GetUserByEmail(ctx context.Context, email string) (*postgres.User, error)
@@ -70,4 +71,5 @@ type metricsStore interface {
 	Summary(ctx context.Context, runID string) (store.SeriesPoint, int64, error)
 	QuerySeries(ctx context.Context, runID, group string, from, to time.Time, resSeconds int) ([]store.SeriesPoint, error)
 	QuerySamples(ctx context.Context, runID string, f store.SampleFilter) ([]store.Sample, error)
+	DeleteRun(ctx context.Context, runID string) error
 }

@@ -11,10 +11,15 @@ import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import EntityPicker from "@/components/EntityPicker";
 import SortableTh from "@/components/SortableTh";
+import { useConfirm } from "@/components/Confirm";
+import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
-import { useAuth, roleAtLeast } from "@/lib/auth";
+import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
 import type { Capacity, Environment, Run, TestDefinition } from "@/lib/types";
+
+// A run is deletable only once it's terminal (matches the backend guard).
+const terminalStatuses = new Set(["completed", "failed", "aborted"]);
 
 // TestPicker is a searchable test selector: type to filter, pick from the
 // native datalist. Selection maps the typed label back to the test id.
@@ -63,6 +68,8 @@ function runsEqual(a: Run[], b: Run[]): boolean {
 export default function RunsPage() {
   const { t } = useI18n();
   const { user, ready } = useAuth();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [runs, setRuns] = useState<Run[]>([]);
   const [tests, setTests] = useState<TestDefinition[]>([]);
   const [testId, setTestId] = useState("");
@@ -90,6 +97,22 @@ export default function RunsPage() {
       setErr(e.message);
     } finally {
       setLoaded(true);
+    }
+  }
+
+  // deleteRun removes a finished run (and its metrics) after confirmation.
+  // Only shown to the run's creator or an admin, and only for terminal runs.
+  async function deleteRun(r: Run) {
+    const name = r.name || r.id.slice(0, 8);
+    if (!(await confirm({ title: t("runs.deleteTitle") + " · " + name, body: t("runs.deleteBody"), danger: true, confirmLabel: t("common.delete") }))) {
+      return;
+    }
+    try {
+      await api.deleteRun(r.id);
+      toast.success(t("runs.deleted"));
+      refresh();
+    } catch (e: any) {
+      toast.error(e.message);
     }
   }
 
@@ -329,6 +352,12 @@ export default function RunsPage() {
                             <button className="ghost sm" onClick={() => rerun(r)} disabled={busy}>
                               <Icon name="rerun" /> {t("runs.rerun")}
                             </button>
+                            {/* Delete: creator or admin, terminal runs only. */}
+                            {ownsOrAdmin(user, r.created_by) && terminalStatuses.has(r.status) && (
+                              <button className="danger sm" onClick={() => deleteRun(r)}>
+                                {t("common.delete")}
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}

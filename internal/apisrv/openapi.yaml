@@ -476,6 +476,16 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses: { "200": { description: run }, "404": { description: not found } }
+    delete:
+      tags: [runs]
+      summary: Delete a finished run and its metrics (creator or admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: deleted }
+        "403": { description: not the creator or an admin }
+        "409": { description: run still active — stop it first }
+        "404": { description: not found }
   /api/v1/runs/{id}/stop:
     post:
       tags: [runs]

@@ -27,6 +27,7 @@ func (c *capSeriesStore) QuerySeries(_ context.Context, _, _ string, from, to ti
 func (c *capSeriesStore) QuerySamples(context.Context, string, store.SampleFilter) ([]store.Sample, error) {
 	return nil, nil
 }
+func (c *capSeriesStore) DeleteRun(context.Context, string) error { return nil }
 
 // TestRunSeriesUsesRunWindow guards the regression where a finished run older
 // than 24h showed blank charts: the series window must come from the run, not a

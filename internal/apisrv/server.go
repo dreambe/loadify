@@ -161,6 +161,7 @@ func (s *Server) routes() {
 		r.With(operator).Delete("/environments/{id}", s.handleDeleteEnvironment)
 		r.With(operator).Post("/runs", s.handleStartRun)
 		r.With(operator).Post("/runs/{id}/stop", s.handleStopRun)
+		r.With(operator).Delete("/runs/{id}", s.handleDeleteRun)
 
 		// Schedules: viewer reads, operator manages.
 		r.With(viewer).Get("/schedules", s.handleListSchedules)

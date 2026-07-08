@@ -283,3 +283,15 @@ func (s *Store) Summary(ctx context.Context, runID string) (store.SeriesPoint, i
 	}
 	return store.SeriesPoint{ErrorRate: errRate, P50ms: pct.P50, P90ms: pct.P90, P95ms: pct.P95, P99ms: pct.P99}, int64(cnt), nil
 }
+
+// DeleteRun purges a run's rollups and samples. Uses lightweight DELETE
+// (ClickHouse 24.x); metrics are TTL-bounded anyway, so the caller treats a
+// failure here as non-fatal.
+func (s *Store) DeleteRun(ctx context.Context, runID string) error {
+	for _, tbl := range []string{"rollup_1s", "samples"} {
+		if err := s.conn.Exec(ctx, "DELETE FROM "+tbl+" WHERE run_id = ?", runID); err != nil {
+			return fmt.Errorf("clickhouse: delete %s for run %s: %w", tbl, runID, err)
+		}
+	}
+	return nil
+}

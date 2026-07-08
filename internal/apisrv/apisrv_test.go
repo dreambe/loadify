@@ -98,6 +98,7 @@ func (f *fakeMeta) ListRunsByTest(_ context.Context, _ string, _ int) ([]postgre
 	return nil, nil
 }
 func (f *fakeMeta) SetBaseline(_ context.Context, _, _ string) error { return nil }
+func (f *fakeMeta) DeleteRun(_ context.Context, _ string) error       { return nil }
 func (f *fakeMeta) ListActiveRuns(_ context.Context) ([]postgres.Run, error) {
 	return f.activeRuns, nil
 }
@@ -199,6 +200,7 @@ func (fakeMetrics) QuerySeries(_ context.Context, _, _ string, _, _ time.Time, _
 func (fakeMetrics) QuerySamples(_ context.Context, _ string, _ store.SampleFilter) ([]store.Sample, error) {
 	return nil, nil
 }
+func (fakeMetrics) DeleteRun(_ context.Context, _ string) error { return nil }
 
 // fakeCoord implements loadifyv1.CoordinatorServiceClient; only the methods used
 // by the tests do anything.

@@ -182,6 +182,7 @@ export const api = {
     }),
   stopRun: (id: string) =>
     req<{ run_id: string; status: string }>(`/api/v1/runs/${id}/stop`, { method: "POST" }),
+  deleteRun: (id: string) => req<void>(`/api/v1/runs/${id}`, { method: "DELETE" }),
   shareRun: (id: string) =>
     req<{ token: string; expires_at: string }>(`/api/v1/runs/${id}/share`, { method: "POST" }),
   // Persistent CLI/agent token (Feishu-style): getApiToken returns the current

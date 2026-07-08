@@ -346,6 +346,20 @@ func (s *Store) RunStats(ctx context.Context) (RunStats, error) {
 	return st, err
 }
 
+// DeleteRun removes a run row. The test_definitions.baseline_run_id FK is
+// ON DELETE SET NULL, so any test that used this run as its baseline is
+// automatically un-baselined. Returns pgx.ErrNoRows if the run doesn't exist.
+func (s *Store) DeleteRun(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM runs WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func scanRuns(rows pgx.Rows) ([]Run, error) {
 	out := []Run{}
 	for rows.Next() {

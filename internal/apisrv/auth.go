@@ -453,6 +453,37 @@ func (s *Server) handleStopRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"run_id": runID, "status": "stopping"})
 }
 
+// handleDeleteRun deletes a finished run and its metrics. Creator-or-admin only.
+func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	runID := chi.URLParam(r, "id")
+	run, err := s.pg.GetRun(ctx, runID)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if s.denyIfNotOwner(w, r, run.CreatedBy) {
+		return
+	}
+	// Don't delete a live run out from under the engine — stop it first.
+	if run.Status == "running" || run.Status == "pending" || run.Status == "queued" {
+		writeErr(w, http.StatusConflict, "stop the run before deleting it")
+		return
+	}
+	// Purge metrics first (best-effort — they're TTL-bounded, so a ClickHouse
+	// hiccup shouldn't block removing the run), then delete the authoritative
+	// Postgres row. The baseline FK (ON DELETE SET NULL) un-baselines any test.
+	if err := s.ch.DeleteRun(ctx, runID); err != nil {
+		s.log.Warn("delete run metrics failed (continuing)", "run", runID, "err", err)
+	}
+	if err := s.pg.DeleteRun(ctx, runID); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // issueToken writes a token response for the user.
 func (s *Server) issueToken(w http.ResponseWriter, u *postgres.User) {
 	token, err := s.mintToken(u)
