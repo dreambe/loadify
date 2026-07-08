@@ -561,36 +561,63 @@ func buildRunSnapshot(td *postgres.TestDefinition, planJSON json.RawMessage, scr
 	return out
 }
 
-// watchRun blocks on the live stream; when it closes the run is finished, so we
-// finalize it. If apisrv restarts and loses this goroutine, the reaper
-// (StartReaper) finalizes the orphaned run instead.
+// watchRun follows a run's live stream and finalizes it when it TRULY ends.
+// A broken stream does not by itself mean the run finished — the coordinator
+// may have restarted while the worker keeps executing (and gets rehydrated).
+// So on any stream break we consult the authoritative run state and only
+// finalize on a terminal status; if it's still running we re-attach. This is
+// what stops a transient coordinator disconnect / redeploy from finalizing a
+// live run early as "completed". The reaper is the backstop if apisrv itself
+// restarts and loses this goroutine.
 func (s *Server) watchRun(runID string, alert plan.AlertConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
-	stream, err := s.coord.StreamLive(ctx, &loadifyv1.LiveRequest{RunId: runID})
-	if err == nil {
-		ev := newAlertEvaluator(alert)
-		for {
-			tick, rerr := stream.Recv()
-			if rerr != nil {
-				break
-			}
-			// Early-warning alert: fire once when the error rate spikes mid-run.
-			if rate, fire := ev.observe(tick); fire {
-				s.log.Warn("run error-rate alert", "run", runID, "error_rate", rate)
-				go s.notifyAlert(runID, rate)
+	ev := newAlertEvaluator(alert)
+	unresolved := 0 // consecutive times the coordinator couldn't be reached
+	for {
+		if stream, err := s.coord.StreamLive(ctx, &loadifyv1.LiveRequest{RunId: runID}); err == nil {
+			for {
+				tick, rerr := stream.Recv()
+				if rerr != nil {
+					break
+				}
+				// Early-warning alert: fire once when the error rate spikes mid-run.
+				if rate, fire := ev.observe(tick); fire {
+					s.log.Warn("run error-rate alert", "run", runID, "error_rate", rate)
+					go s.notifyAlert(runID, rate)
+				}
 			}
 		}
+		// The stream ended. Decide from the authoritative state whether the run
+		// is actually terminal or just briefly disconnected.
+		st, serr := s.coord.GetRunState(context.Background(), &loadifyv1.RunStateRequest{RunId: runID})
+		if serr != nil {
+			// Coordinator unreachable (likely restarting). Retry a bounded while
+			// before giving up to the reaper — never finalize on a blind guess.
+			if unresolved++; unresolved > 20 {
+				s.log.Warn("watchRun: run state unresolvable, leaving to reaper", "run", runID)
+				return
+			}
+			time.Sleep(time.Second)
+			continue
+		}
+		unresolved = 0
+		switch st.Status {
+		case loadifyv1.RunStatus_RUN_STATUS_PENDING, loadifyv1.RunStatus_RUN_STATUS_QUEUED, loadifyv1.RunStatus_RUN_STATUS_RUNNING:
+			// Still live (e.g. rehydrated after a coordinator restart) — re-attach.
+			time.Sleep(time.Second)
+			continue
+		case loadifyv1.RunStatus_RUN_STATUS_ABORTED:
+			// Allow rollups to flush before summarizing.
+			time.Sleep(2 * time.Second)
+			s.finalizeRunReason(runID, "aborted", st.Reason)
+			return
+		default: // COMPLETED / FAILED / terminal
+			time.Sleep(2 * time.Second)
+			s.finalizeRunReason(runID, "completed", "")
+			return
+		}
 	}
-	// Allow rollups to flush, then summarize. If the coordinator aborted the run
-	// (e.g. the auto-stop circuit breaker), finalize it as aborted with reason.
-	time.Sleep(2 * time.Second)
-	status, reason := "completed", ""
-	if st, serr := s.coord.GetRunState(context.Background(), &loadifyv1.RunStateRequest{RunId: runID}); serr == nil &&
-		st.Status == loadifyv1.RunStatus_RUN_STATUS_ABORTED {
-		status, reason = "aborted", st.Reason
-	}
-	s.finalizeRunReason(runID, status, reason)
 }
 
 // regressP95Pct is the p95 increase over baseline that flags a regression.

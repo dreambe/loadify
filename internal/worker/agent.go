@@ -34,6 +34,13 @@ type Agent struct {
 	sendCh      chan *loadifyv1.WorkerMessage
 	droppedSend atomic.Int64 // metric messages dropped because sendCh was full
 
+	// base is the agent's long-lived context (spanning reconnects). Runs are
+	// rooted here, NOT in the per-session stream context, so a transient
+	// coordinator disconnect / redeploy doesn't cancel in-flight runs — they
+	// keep executing and are re-advertised (ActiveRuns) on reconnect for the
+	// coordinator to rehydrate.
+	base context.Context
+
 	mu        sync.Mutex
 	runs      map[string]context.CancelFunc
 	runProtos map[string]loadifyv1.Protocol
@@ -58,6 +65,7 @@ func NewAgent(workerID, region string, log *slog.Logger) *Agent {
 // Run connects to the coordinator and serves assignments until ctx is done.
 // It reconnects with backoff on stream errors.
 func (a *Agent) Run(ctx context.Context, conn *grpc.ClientConn) error {
+	a.base = ctx // root in-flight runs here so they survive stream reconnects
 	client := loadifyv1.NewWorkerServiceClient(conn)
 	backoff := time.Second
 	for {
@@ -160,7 +168,9 @@ func (a *Agent) handle(ctx context.Context, msg *loadifyv1.CoordinatorMessage) {
 	case *loadifyv1.CoordinatorMessage_RegisterAck:
 		a.log.Info("registered with coordinator", "lease", m.RegisterAck.LeaseId)
 	case *loadifyv1.CoordinatorMessage_Assignment:
-		go a.startRun(ctx, m.Assignment)
+		// Root the run in the agent's long-lived context, not this session's:
+		// a stream reconnect must not cancel an in-flight run.
+		go a.startRun(a.base, m.Assignment)
 	case *loadifyv1.CoordinatorMessage_Stop:
 		a.stopRun(m.Stop.RunId)
 	}
