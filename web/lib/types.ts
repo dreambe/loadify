@@ -134,8 +134,13 @@ export interface WorkerInfo {
   active_vus: number;
   last_seen_unix_ms: number;
   cpu_pct?: number;
-  mem_bytes?: number;
+  mem_bytes?: number; // host memory used
   cpu_cores?: number;
+  mem_total_bytes?: number; // host memory total
+  net_rx_bps?: number;
+  net_tx_bps?: number;
+  net_rx_pps?: number;
+  net_tx_pps?: number;
 }
 
 export interface LiveTick {

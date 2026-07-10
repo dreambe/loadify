@@ -51,7 +51,12 @@ message HeartbeatRequest {
   string worker_id = 1;
   double cpu_pct = 2;
   int64 active_vus = 3;
-  int64 mem_bytes = 4;
+  int64 mem_bytes = 4;        // host memory USED (bytes)
+  int64 mem_total_bytes = 5;  // host memory total (bytes), for a usage %
+  int64 net_rx_bps = 6;       // network receive rate (bytes/sec)
+  int64 net_tx_bps = 7;       // network transmit rate (bytes/sec)
+  int64 net_rx_pps = 8;       // receive packets/sec
+  int64 net_tx_pps = 9;       // transmit packets/sec
 }
 
 message RunAssignment {

@@ -148,7 +148,16 @@ func (s *Service) Connect(stream loadifyv1.WorkerService_ConnectServer) error {
 			s.drainLocked()
 			s.mu.Unlock()
 		case *loadifyv1.WorkerMessage_Heartbeat:
-			s.reg.Touch(m.Heartbeat.WorkerId, m.Heartbeat.ActiveVus, m.Heartbeat.CpuPct, m.Heartbeat.MemBytes)
+			s.reg.Touch(m.Heartbeat.WorkerId, registry.Stats{
+				ActiveVUs:     m.Heartbeat.ActiveVus,
+				CPUPct:        m.Heartbeat.CpuPct,
+				MemBytes:      m.Heartbeat.MemBytes,
+				MemTotalBytes: m.Heartbeat.MemTotalBytes,
+				NetRxBps:      m.Heartbeat.NetRxBps,
+				NetTxBps:      m.Heartbeat.NetTxBps,
+				NetRxPps:      m.Heartbeat.NetRxPps,
+				NetTxPps:      m.Heartbeat.NetTxPps,
+			})
 			s.recordPeakCPU(m.Heartbeat.WorkerId)
 		case *loadifyv1.WorkerMessage_Metrics:
 			s.ingest(m.Metrics)

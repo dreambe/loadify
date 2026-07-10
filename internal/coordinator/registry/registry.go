@@ -15,12 +15,26 @@ type Worker struct {
 	CPUCores   int32
 	Supported  []loadifyv1.Protocol
 	Send       chan *loadifyv1.CoordinatorMessage
-	ActiveVUs  int64
-	CPUPct     float64
-	MemBytes   int64
-	LastSeen   time.Time
-	Connected  time.Time
-	healthyTTL time.Duration
+	ActiveVUs     int64
+	CPUPct        float64
+	MemBytes      int64 // host memory used
+	MemTotalBytes int64 // host memory total
+	NetRxBps      int64
+	NetTxBps      int64
+	NetRxPps      int64
+	NetTxPps      int64
+	LastSeen      time.Time
+	Connected     time.Time
+	healthyTTL    time.Duration
+}
+
+// Stats is a heartbeat's per-node telemetry, applied by Touch.
+type Stats struct {
+	ActiveVUs                          int64
+	CPUPct                             float64
+	MemBytes, MemTotalBytes            int64
+	NetRxBps, NetTxBps                 int64
+	NetRxPps, NetTxPps                 int64
 }
 
 // Healthy reports whether the worker has been seen recently.
@@ -80,13 +94,16 @@ func (r *Registry) Remove(id string) {
 }
 
 // Touch updates liveness and load from a heartbeat.
-func (r *Registry) Touch(id string, activeVUs int64, cpuPct float64, memBytes int64) {
+func (r *Registry) Touch(id string, s Stats) {
 	r.mu.Lock()
 	if w := r.workers[id]; w != nil {
 		w.LastSeen = time.Now()
-		w.ActiveVUs = activeVUs
-		w.CPUPct = cpuPct
-		w.MemBytes = memBytes
+		w.ActiveVUs = s.ActiveVUs
+		w.CPUPct = s.CPUPct
+		w.MemBytes = s.MemBytes
+		w.MemTotalBytes = s.MemTotalBytes
+		w.NetRxBps, w.NetTxBps = s.NetRxBps, s.NetTxBps
+		w.NetRxPps, w.NetTxPps = s.NetRxPps, s.NetTxPps
 	}
 	r.mu.Unlock()
 }
@@ -174,6 +191,11 @@ func (r *Registry) List() []*loadifyv1.WorkerInfo {
 			CpuPct:         w.CPUPct,
 			MemBytes:       w.MemBytes,
 			CpuCores:       w.CPUCores,
+			MemTotalBytes:  w.MemTotalBytes,
+			NetRxBps:       w.NetRxBps,
+			NetTxBps:       w.NetTxBps,
+			NetRxPps:       w.NetRxPps,
+			NetTxPps:       w.NetTxPps,
 		})
 	}
 	return out

@@ -153,16 +153,24 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 	cpu := sysstat.NewCPUSampler()
+	net := sysstat.NewNetSampler()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			memUsed, memTotal := sysstat.MemHost()
+			ns := net.Sample()
 			a.enqueue(&loadifyv1.WorkerMessage{Msg: &loadifyv1.WorkerMessage_Heartbeat{Heartbeat: &loadifyv1.HeartbeatRequest{
-				WorkerId:  a.workerID,
-				ActiveVus: a.activeVUs(),
-				CpuPct:    cpu.Sample(),
-				MemBytes:  sysstat.MemBytes(),
+				WorkerId:      a.workerID,
+				ActiveVus:     a.activeVUs(),
+				CpuPct:        cpu.Sample(),
+				MemBytes:      memUsed,
+				MemTotalBytes: memTotal,
+				NetRxBps:      ns.RxBps,
+				NetTxBps:      ns.TxBps,
+				NetRxPps:      ns.RxPps,
+				NetTxPps:      ns.TxPps,
 			}}})
 		}
 	}
