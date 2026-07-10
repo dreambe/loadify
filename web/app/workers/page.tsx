@@ -34,6 +34,9 @@ export default function WorkersPage() {
 
   const healthy = workers.filter((w) => w.status === "healthy").length;
   const totalVUs = workers.reduce((s, w) => s + (w.active_vus || 0), 0);
+  // Stable ordering: the API returns workers in map-iteration order, which
+  // reshuffles every poll. Sort by node name so rows stay put.
+  const sorted = [...workers].sort((a, b) => a.worker_id.localeCompare(b.worker_id, undefined, { numeric: true }));
 
   return (
     <>
@@ -63,7 +66,7 @@ export default function WorkersPage() {
               </tr>
             </thead>
             <tbody>
-              {workers.map((w) => (
+              {sorted.map((w) => (
                 <tr key={w.worker_id}>
                   <td>{w.worker_id}</td>
                   <td>{w.region}</td>
@@ -77,7 +80,7 @@ export default function WorkersPage() {
                   </td>
                   <td>{fmtBytes(w.mem_bytes)}</td>
                   <td>{w.cpu_cores || "–"}</td>
-                  <td>{w.active_vus}</td>
+                  <td style={{ fontVariantNumeric: "tabular-nums" }}>{w.active_vus ?? 0}</td>
                   <td className="muted">
                     {w.last_seen_unix_ms ? new Date(w.last_seen_unix_ms).toLocaleTimeString() : "–"}
                   </td>

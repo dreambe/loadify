@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import Icon from "@/components/Icon";
-import LineChart from "@/components/LineChart";
 import RunStatus from "@/components/RunStatus";
 import { api } from "@/lib/api";
 import { getToken, useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
-import { latencyColors } from "@/lib/colors";
-import type { Run, WorkerInfo } from "@/lib/types";
+import Help from "@/components/Help";
+import type { Run, TestDefinition, WorkerInfo } from "@/lib/types";
 
 const terminalStatuses = new Set(["completed", "failed", "aborted"]);
 
@@ -19,8 +18,8 @@ export default function DashboardPage() {
   const { t } = useI18n();
   const { ready } = useAuth();
   const [runs, setRuns] = useState<Run[]>([]);
+  const [tests, setTests] = useState<TestDefinition[]>([]);
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
-  const [hover, setHover] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
   // Whole-table KPI aggregates from the server (correct beyond the capped runs
@@ -38,11 +37,12 @@ export default function DashboardPage() {
       return;
     }
     const load = () => {
-      Promise.all([api.listRuns(), api.listWorkers(), api.runStats()])
-        .then(([r, w, st]) => {
+      Promise.all([api.listRuns(), api.listWorkers(), api.runStats(), api.listTests()])
+        .then(([r, w, st, ts]) => {
           setRuns(r);
           setWorkers(w);
           setRstats(st);
+          setTests(ts);
           setErr("");
         })
         .catch((e: any) => setErr(e?.message || "load failed"))
@@ -70,17 +70,29 @@ export default function DashboardPage() {
     return { healthy, total: workers.length, running, last24h, passRate };
   }, [runs, workers, rstats]);
 
-  // p95 of the most recent finished runs, oldest→newest, for the SLA trend line.
-  const trend = useMemo(() => {
-    const finished = runs
-      .filter((r) => terminalStatuses.has(r.status) && r.summary?.summary?.p95_ms != null)
-      .slice(0, 20)
-      .reverse();
-    return {
-      labels: finished.map((r) => new Date(r.created_at).toLocaleDateString()),
-      p95: finished.map((r) => r.summary!.summary!.p95_ms || 0),
-    };
-  }, [runs]);
+  // Per-test p95 trend. Latency is only comparable WITHIN one test/target — a
+  // 10ms cache API and a 2s LLM API share no meaningful axis — so we group by
+  // test and give each its own sparkline + latest verdict, instead of one
+  // cross-test line that averages apples and oranges.
+  const perTest = useMemo(() => {
+    const nameOf = (id: string) => tests.find((t) => t.id === id)?.name;
+    const byId = new Map<string, Run[]>();
+    for (const r of runs) {
+      if (!r.test_def_id) continue;
+      (byId.get(r.test_def_id) ?? byId.set(r.test_def_id, []).get(r.test_def_id)!).push(r);
+    }
+    return [...byId.entries()]
+      .map(([id, rs]) => {
+        // runs come newest-first; take finished ones with a p95, oldest→newest.
+        const finished = rs.filter((r) => terminalStatuses.has(r.status) && r.summary?.summary?.p95_ms != null);
+        const p95 = finished.map((r) => r.summary!.summary!.p95_ms!).reverse();
+        const latest = rs[0];
+        return { id, name: nameOf(id) || latest?.name || id.slice(0, 8), p95, latest, lastAt: new Date(rs[0].created_at).getTime() };
+      })
+      .filter((tst) => tst.p95.length > 0)
+      .sort((a, b) => b.lastAt - a.lastAt)
+      .slice(0, 8);
+  }, [runs, tests]);
 
   const recent = runs.slice(0, 6);
 
@@ -106,7 +118,11 @@ export default function DashboardPage() {
           <Metric label={t("dashboard.workers")} value={`${stats.healthy}/${stats.total}`} accent={stats.healthy === 0 ? "var(--red)" : undefined} />
           <Metric label={t("dashboard.running")} value={String(stats.running)} accent={stats.running > 0 ? "var(--accent)" : undefined} />
           <Metric label={t("dashboard.last24h")} value={String(stats.last24h)} />
-          <Metric label={t("dashboard.slaPass")} value={stats.passRate == null ? "–" : `${stats.passRate}%`} accent={slaColor} />
+          <Metric
+            label={<>{t("dashboard.slaPass")}<Help tip={t("dashboard.slaPassHelp")} /></>}
+            value={stats.passRate == null ? "–" : `${stats.passRate}%`}
+            accent={slaColor}
+          />
         </div>
 
         <div className="panel">
@@ -144,16 +160,35 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {trend.p95.length > 1 && (
+        {perTest.length > 0 && (
           <div className="panel">
-            <h2>{t("dashboard.slaTrend")}</h2>
-            <LineChart
-              unit="ms"
-              series={[{ label: "p95", color: latencyColors.p95, data: trend.p95 }]}
-              xLabels={trend.labels}
-              hoverIndex={hover}
-              onHover={setHover}
-            />
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <h2 style={{ margin: 0 }}>
+                {t("dashboard.perTestTrend")}
+                <Help tip={t("dashboard.perTestTrendHelp")} />
+              </h2>
+            </div>
+            <div className="pertest-grid">
+              {perTest.map((tst) => (
+                <Link key={tst.id} href={`/tests`} className="pertest-card">
+                  <div className="pertest-name" title={tst.name}>{tst.name}</div>
+                  <div className="row" style={{ alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <Sparkline data={tst.p95} />
+                    <div style={{ textAlign: "right", flex: "none" }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: 15 }}>
+                        {fmtMs(tst.p95[tst.p95.length - 1])}
+                      </div>
+                      <div className="muted" style={{ fontSize: 11 }}>p95 · {tst.p95.length} {t("dashboard.perTestRuns")}</div>
+                    </div>
+                  </div>
+                  {tst.latest && (
+                    <div style={{ marginTop: 6 }}>
+                      <RunStatus run={tst.latest} />
+                    </div>
+                  )}
+                </Link>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -161,7 +196,32 @@ export default function DashboardPage() {
   );
 }
 
-function Metric({ label, value, accent }: { label: string; value: string; accent?: string }) {
+// Sparkline draws a tiny inline p95 trend for one test (comparable within it).
+function Sparkline({ data }: { data: number[] }) {
+  const w = 120;
+  const h = 34;
+  if (data.length === 0) return <svg width={w} height={h} />;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const span = max - min || 1;
+  const n = data.length;
+  const x = (i: number) => (n === 1 ? w : (i / (n - 1)) * (w - 2) + 1);
+  const y = (v: number) => h - 3 - ((v - min) / span) * (h - 6);
+  const pts = data.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  const line = pts.map((p, i) => (i === 0 ? "M" : "L") + p).join(" ");
+  const last = data[data.length - 1];
+  const rising = data.length > 1 && last >= data[0];
+  const stroke = rising ? "var(--yellow)" : "var(--accent)";
+  return (
+    <svg width={w} height={h} role="img" aria-label="p95 sparkline">
+      <path d={`${line} L${x(n - 1).toFixed(1)},${h} L${x(0).toFixed(1)},${h} Z`} fill={stroke} fillOpacity={0.12} stroke="none" />
+      <path d={line} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinejoin="round" />
+      <circle cx={x(n - 1)} cy={y(last)} r={2} fill={stroke} />
+    </svg>
+  );
+}
+
+function Metric({ label, value, accent }: { label: ReactNode; value: string; accent?: string }) {
   return (
     <div className="metric">
       <div className="label">{label}</div>

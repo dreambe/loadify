@@ -673,6 +673,36 @@ a.cta:focus-visible {
   white-space: nowrap;
 }
 
+/* --- per-test trend cards (dashboard) ------------------------------------ */
+.pertest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.pertest-card {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.pertest-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.pertest-name {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* --- badges -------------------------------------------------------------- */
 
 .badge {
