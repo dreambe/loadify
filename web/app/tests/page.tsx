@@ -235,10 +235,10 @@ export default function TestsPage() {
     setTags((td.tags || []).join(", "));
     const as = (td.plan as any)?.auto_stop;
     setAutoStop(!as || as.enabled !== false);
-    setAutoStopPct(as?.error_rate_pct || 50);
+    setAutoStopPct(as?.error_rate_pct ?? 50);
     const al = (td.plan as any)?.alert;
     setAlertOn(!al || al.enabled !== false);
-    setAlertPct(al?.error_rate_pct || 30);
+    setAlertPct(al?.error_rate_pct ?? 30);
     setErr("");
     setOk("");
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -581,7 +581,7 @@ export default function TestsPage() {
                 {autoStop && (
                   <div>
                     <label style={{ margin: 0 }}>{t("tests.autoStopPct")}</label>
-                    <NumberInput min={1} max={100} value={autoStopPct} onChange={setAutoStopPct} style={{ width: 90 }} />
+                    <NumberInput float min={0} max={100} value={autoStopPct} onChange={setAutoStopPct} style={{ width: 90 }} />
                   </div>
                 )}
               </div>
@@ -594,7 +594,7 @@ export default function TestsPage() {
                 {alertOn && (
                   <div>
                     <label style={{ margin: 0 }}>{t("tests.alertPct")}</label>
-                    <NumberInput min={1} max={100} value={alertPct} onChange={setAlertPct} style={{ width: 90 }} />
+                    <NumberInput float min={0} max={100} value={alertPct} onChange={setAlertPct} style={{ width: 90 }} />
                   </div>
                 )}
               </div>

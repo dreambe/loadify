@@ -286,7 +286,8 @@ func (a *Aggregator) evalAutoStop(ticks []*loadifyv1.LiveTick) {
 	}
 	a.autoFired = true
 	onStop := a.onStop
-	reason := fmt.Sprintf("auto-stopped: error rate %.0f%% > %.0f%% over %ds", rate, a.autoStop.ErrorRatePct, win)
+	// %g so a fractional threshold (e.g. 0.0001%) isn't rounded to "0%".
+	reason := fmt.Sprintf("auto-stopped: error rate %g%% > %g%% over %ds", rate, a.autoStop.ErrorRatePct, win)
 	a.mu.Unlock()
 	a.log.Warn("auto-stop triggered", "run", a.runID, "reason", reason)
 	onStop(a.runID, reason)
