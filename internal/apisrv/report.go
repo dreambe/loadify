@@ -154,7 +154,9 @@ func fmtTime(t *time.Time) string {
 	if t == nil {
 		return "–"
 	}
-	return t.Format("2006-01-02 15:04:05")
+	// DB timestamps are UTC; render in the deployment's local zone (TZ env) so
+	// the report reads in the operator's timezone, not UTC.
+	return t.Local().Format("2006-01-02 15:04:05")
 }
 
 // svgPath maps a series to an SVG polyline path scaled into a 600x120 box.

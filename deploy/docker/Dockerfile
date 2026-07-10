@@ -30,7 +30,11 @@ COPY . .
 RUN buf generate
 ARG SERVICE=apisrv
 ARG TARGETOS TARGETARCH
+# -tags timetzdata embeds the IANA tz database into the binary, so the TZ env
+# var works even on a minimal runtime base (alpine/scratch) that ships no
+# /usr/share/zoneinfo — lets reports/run-names render in the operator's zone.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath \
+    -tags timetzdata \
     -ldflags "-s -w" \
     -o /out/app ./cmd/${SERVICE}
 
