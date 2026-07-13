@@ -16,6 +16,7 @@ import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { useAuth, roleAtLeast, ownsOrAdmin } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
+import { fmtMs, fmtErrRate } from "@/lib/format";
 import type { Capacity, Environment, Run, TestDefinition } from "@/lib/types";
 
 // A run is deletable only once it's terminal (matches the backend guard).
@@ -63,6 +64,21 @@ function runsEqual(a: Run[], b: Run[]): boolean {
     }
   }
   return true;
+}
+
+// RunResult is the run's headline outcome for the list — the number you scan
+// for. Shows p95 latency and, when nonzero, the error rate. A run with no
+// summary yet (running/queued) shows "–".
+function RunResult({ run }: { run: Run }) {
+  const s = run.summary?.summary;
+  if (!s || s.p95_ms == null) return <span className="muted">–</span>;
+  const err = s.error_rate ?? 0;
+  return (
+    <span className="run-result">
+      <span className="muted">p95</span> {fmtMs(s.p95_ms)}
+      {err > 0 && <span className="run-result-err"> · {fmtErrRate(err)}</span>}
+    </span>
+  );
 }
 
 export default function RunsPage() {
@@ -139,6 +155,17 @@ export default function RunsPage() {
 
   const testName = (id: string) => tests.find((td) => td.id === id)?.name || id.slice(0, 8);
 
+  // identityOf collapses the redundant "name + test" pair into one column. A run
+  // name defaults server-side to "<test> @ <time>", which duplicates the test
+  // column and the started-at column — so for that derived form we show just the
+  // test name and let the Started column carry the time. Only a custom name adds
+  // real information, so it becomes the primary line with the test as a subtitle.
+  const identityOf = (r: Run) => {
+    const test = testName(r.test_def_id);
+    const derived = !r.name || r.name.startsWith(`${test} @ `);
+    return derived ? { primary: test, sub: "" } : { primary: r.name, sub: test };
+  };
+
   // clampWorkers keeps the count within [1, online nodes] — you can't shard
   // across more workers than are connected.
   const clampWorkers = (raw: string) => Math.max(1, Math.min(maxWorkers || 1, parseInt(raw, 10) || 1));
@@ -185,7 +212,7 @@ export default function RunsPage() {
   const sortedRuns = [...filteredRuns].sort((a, b) => {
     const key = (r: Run) =>
       sort.key === "name"
-        ? (r.name || r.id).toLowerCase()
+        ? testName(r.test_def_id).toLowerCase()
         : sort.key === "status"
           ? r.status
           : r.started_at || r.created_at;
@@ -323,29 +350,34 @@ export default function RunsPage() {
               <table>
                 <thead>
                   <tr>
-                    <SortableTh label={t("runs.colName")} active={sort.key === "name"} dir={sort.dir} onToggle={() => toggleSort("name")} />
-                    <th>{t("runs.colTest")}</th>
+                    <SortableTh label={t("runs.colTest")} active={sort.key === "name"} dir={sort.dir} onToggle={() => toggleSort("name")} />
+                    <th>{t("runs.colResult")}</th>
                     <SortableTh label={t("runs.colStatus")} active={sort.key === "status"} dir={sort.dir} onToggle={() => toggleSort("status")} />
-                    <th>{t("runs.colCreator")}</th>
+                    <th className="col-nowrap">{t("runs.colCreator")}</th>
                     <SortableTh label={t("runs.colStarted")} active={sort.key === "started"} dir={sort.dir} onToggle={() => toggleSort("started")} />
                     {canRun && <th>{t("runs.colActions")}</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {runPager.slice.map((r) => (
+                  {runPager.slice.map((r) => {
+                    const id = identityOf(r);
+                    return (
                     <tr key={r.id}>
                       <td>
-                        <Link href={`/runs/${r.id}`}>{r.name || r.id.slice(0, 8)}</Link>
+                        <Link href={`/runs/${r.id}`}>{id.primary}</Link>
+                        {id.sub && <div className="run-sub muted">{id.sub}</div>}
                       </td>
-                      <td className="muted">{testName(r.test_def_id)}</td>
+                      <td>
+                        <RunResult run={r} />
+                      </td>
                       <td>
                         <RunStatus run={r} />
                       </td>
-                      <td className="muted">
+                      <td className="muted col-nowrap">
                         {r.creator_name || t("run.creatorSystem")}
                         {r.source === "schedule" ? ` · ${t("run.scheduled")}` : ""}
                       </td>
-                      <td className="muted">{r.started_at ? new Date(r.started_at).toLocaleString() : "–"}</td>
+                      <td className="muted col-nowrap">{r.started_at ? new Date(r.started_at).toLocaleString() : "–"}</td>
                       {canRun && (
                         <td>
                           <div className="actions">
@@ -362,7 +394,8 @@ export default function RunsPage() {
                         </td>
                       )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               <Pager page={runPager.page} pages={runPager.pages} total={runPager.total} onPage={runPager.setPage} />

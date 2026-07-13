@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 // usePager slices a client-side list into pages and resets when it shrinks.
 export function usePager<T>(items: T[], pageSize = 10) {
@@ -25,10 +26,11 @@ export function Pager({
   total: number;
   onPage: (p: number) => void;
 }) {
+  const { t } = useI18n();
   if (pages <= 1) return null;
   return (
     <div className="pager">
-      <span>{total}</span>
+      <span className="muted">{t("pager.total").replace("{n}", String(total))}</span>
       <button className="secondary" disabled={page === 0} onClick={() => onPage(page - 1)}>
         ‹
       </button>

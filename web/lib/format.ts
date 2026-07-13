@@ -13,3 +13,14 @@ export function fmtInt(n: number | undefined | null): string {
   if (n == null || !Number.isFinite(n)) return "–";
   return Math.round(n).toLocaleString();
 }
+
+// fmtErrRate renders a 0..1 error fraction as a percentage. A nonzero rate below
+// 0.01% keeps two significant figures instead of rounding to "0.00%", so a tiny-
+// but-present error rate stays visible (matches the fine-grained thresholds).
+export function fmtErrRate(n: number | undefined | null): string {
+  if (n == null || !Number.isFinite(n)) return "–";
+  const pct = n * 100;
+  if (pct <= 0) return "0%";
+  if (pct < 0.01) return `${Number(pct.toPrecision(2))}%`;
+  return `${pct.toFixed(2)}%`;
+}

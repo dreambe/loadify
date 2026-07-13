@@ -413,6 +413,37 @@ td .actions {
   margin-left: -9px;
   flex-wrap: nowrap;
 }
+/* Columns whose content is a single short token (status, creator, timestamp,
+   action buttons) must never wrap character-by-character — that's what made
+   "通过"→"通/过" and "再次执行"→"再次执/行" stack vertically. Only the flexible
+   identity column is allowed to wrap. */
+td.col-nowrap,
+th.col-nowrap {
+  white-space: nowrap;
+}
+td .actions button {
+  white-space: nowrap;
+}
+/* Run identity cell: the test/name is the primary line; a custom run name adds
+   the test as a muted subtitle beneath. */
+.run-sub {
+  font-size: 12px;
+  margin-top: 2px;
+}
+/* Run result cell: the headline p95 (+ error rate) in mono, tabular figures so
+   the numbers line up down the column. */
+.run-result {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.run-result .muted {
+  font-size: 11px;
+}
+.run-result-err {
+  color: var(--red);
+}
 tbody tr {
   transition: background 0.12s ease;
 }
@@ -717,6 +748,7 @@ a.cta:focus-visible {
   border: 1px solid var(--border-strong);
   color: var(--muted);
   background: rgba(126, 141, 166, 0.08);
+  white-space: nowrap;
 }
 .badge::before {
   content: "";
