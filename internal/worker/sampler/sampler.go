@@ -3,14 +3,31 @@
 package sampler
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/metrics"
 	"github.com/dreambe/loadify/internal/worker/protocols"
 )
+
+// validUTF8 makes a captured body snippet safe to place in a protobuf string
+// field. Bodies are truncated to a byte cap upstream, which can split a
+// multi-byte rune (e.g. a Chinese character in an HTTP request/response body)
+// and leave invalid UTF-8; binary or compressed (gzip) responses are invalid
+// too. protobuf REFUSES to marshal a string field that isn't valid UTF-8 —
+// "string field contains invalid UTF-8" — which fails EVERY metric send and
+// wedges the worker in an endless reconnect loop that delivers no data. Strip
+// the offending bytes so the snippet is always marshalable.
+func validUTF8(s string) string {
+	if s == "" || utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "�")
+}
 
 // Per-flush caps on the number of raw samples retained for the live log, so the
 // response-log stream stays bounded regardless of throughput. Errors are kept
@@ -76,9 +93,9 @@ func (s *Sampler) maybeSampleLocked(r protocols.Result) {
 		RecvBytes: r.RecvBytes,
 		ErrorKind: r.ErrorKind,
 		Method:    r.Method,
-		Url:       r.URL,
-		ReqBody:   r.ReqBody,
-		RespBody:  r.RespBody,
+		Url:       validUTF8(r.URL),
+		ReqBody:   validUTF8(r.ReqBody),
+		RespBody:  validUTF8(r.RespBody),
 	})
 }
 
