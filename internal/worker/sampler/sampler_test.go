@@ -58,12 +58,14 @@ func TestFlushMarshalsWithInvalidUTF8Body(t *testing.T) {
 	binaryResp := string([]byte{0xff, 0xfe, 0x00, 0x9c, 0x80})
 
 	s.Record(protocols.Result{
-		Group:     "g",
-		Method:    "POST",
-		URL:       "http://api/v1/messages",
-		Status:    200,
-		OK:        false,
-		ErrorKind: "x",
+		Group:  "g",
+		Method: "POST",
+		URL:    "http://api/v1/messages",
+		Status: 200,
+		OK:     false,
+		// A failed body assertion reports "got <truncated actual>"; the snippet
+		// can end mid-rune just like a captured body.
+		ErrorKind: "assert body contains usage: got " + partialRune,
 		ReqBody:   partialRune,
 		RespBody:  binaryResp,
 		LatencyUs: 1000,
@@ -77,11 +79,12 @@ func TestFlushMarshalsWithInvalidUTF8Body(t *testing.T) {
 		t.Fatalf("samples = %d, want 1", len(batch.Samples))
 	}
 	sm := batch.Samples[0]
-	if !utf8.ValidString(sm.ReqBody) {
-		t.Errorf("ReqBody is not valid UTF-8: %q", sm.ReqBody)
-	}
-	if !utf8.ValidString(sm.RespBody) {
-		t.Errorf("RespBody is not valid UTF-8: %q", sm.RespBody)
+	for _, f := range []struct {
+		name, val string
+	}{{"ReqBody", sm.ReqBody}, {"RespBody", sm.RespBody}, {"ErrorKind", sm.ErrorKind}, {"Url", sm.Url}} {
+		if !utf8.ValidString(f.val) {
+			t.Errorf("%s is not valid UTF-8: %q", f.name, f.val)
+		}
 	}
 }
 

@@ -91,7 +91,11 @@ func (s *Sampler) maybeSampleLocked(r protocols.Result) {
 		TtfbUs:    r.TTFBUs,
 		SentBytes: r.SentBytes,
 		RecvBytes: r.RecvBytes,
-		ErrorKind: r.ErrorKind,
+		// ErrorKind can embed a truncated response-body snippet (a failed
+		// assertion reports "got <actual>"), so it needs the same UTF-8 guard as
+		// the bodies — otherwise a Chinese/binary body in an assertion failure
+		// would wedge the send exactly like a raw body would.
+		ErrorKind: validUTF8(r.ErrorKind),
 		Method:    r.Method,
 		Url:       validUTF8(r.URL),
 		ReqBody:   validUTF8(r.ReqBody),

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dreambe/loadify/internal/plan"
 )
@@ -174,9 +175,18 @@ func stringify(v any) string {
 	}
 }
 
+// truncate caps an assertion's "actual" snippet at ~80 bytes, backing up to a
+// rune boundary so a multi-byte character (e.g. Chinese in a JSON body) is never
+// split into invalid UTF-8. The sampler sanitizes again before the wire, but
+// keeping the snippet clean here avoids a trailing replacement char.
 func truncate(s string) string {
-	if len(s) > 80 {
-		return s[:80] + "…"
+	const cap = 80
+	if len(s) <= cap {
+		return s
 	}
-	return s
+	b := s[:cap]
+	for len(b) > 0 && !utf8.ValidString(b) {
+		b = b[:len(b)-1]
+	}
+	return b + "…"
 }
