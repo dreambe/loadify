@@ -153,6 +153,28 @@ func (p *Plan) AutoStopOrDefault() AutoStopConfig {
 // AutoStopEnabled reports whether the breaker is on (default true).
 func (c AutoStopConfig) AutoStopEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
+// RequestTimeout returns the effective per-request timeout for the plan's
+// protocol, defaulting to 30s (the drivers' own fallback) when unset. The stall
+// breaker is sized off this so it never trips within a single request's
+// lifetime — a legitimately slow target (e.g. long non-streaming LLM calls with
+// a large timeout) must never be mistaken for a hang.
+func (p *Plan) RequestTimeout() time.Duration {
+	const def = 30 * time.Second
+	var ms int64
+	switch {
+	case p.HTTP != nil:
+		ms = p.HTTP.TimeoutMs
+	case p.GRPC != nil:
+		ms = p.GRPC.TimeoutMs
+	case p.SSE != nil:
+		ms = p.SSE.TimeoutMs
+	}
+	if ms <= 0 {
+		return def
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 // AlertConfig fires a one-shot notification mid-run when the trailing-window
 // error rate crosses a threshold — an early warning before auto-stop aborts.
 // Enabled by default at a threshold below the auto-stop default.

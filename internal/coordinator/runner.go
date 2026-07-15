@@ -21,6 +21,18 @@ type runState struct {
 	startedAt time.Time
 	endedAt   time.Time
 	plannedMs int64 // total ramp duration, for queue-ETA estimation
+	// abortAt is when a terminal verdict was requested (user stop or auto-stop
+	// breaker) but the run hasn't finalized yet. The finalize watchdog forces
+	// cleanup after a grace period if no worker reports Finished (stuck/gone).
+	abortAt time.Time
+	// workersLostAt is when the run first observed ALL its assigned workers gone
+	// from the registry; the reaper aborts the run if they don't return.
+	workersLostAt time.Time
+	// slotHeld is true once the run has been dispatched and is counted in
+	// s.running. Finalization decrements the slot exactly once, gated on this, so
+	// a queued run (never dispatched) that gets force-finalized can't underflow
+	// the admission counter.
+	slotHeld bool
 	// Generator-saturation accounting, aggregated across the run's workers.
 	droppedIterations int64
 	droppedMetrics    int64

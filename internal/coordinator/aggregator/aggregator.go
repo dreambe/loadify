@@ -43,6 +43,12 @@ type Aggregator struct {
 	onStop    func(runID, reason string)
 	autoWin   []secStat
 	autoFired bool
+	// Stall breaker: consecutive finalized seconds with active VUs but zero
+	// completed requests. Trips at stallSec (0 disables). Catches a target that
+	// accepts load but never responds — invisible to the error-rate breaker,
+	// which needs completed requests to form a rate.
+	stallSec    int
+	stallStreak int
 }
 
 type secStat struct{ count, errors int64 }
@@ -74,6 +80,16 @@ func (a *Aggregator) SetAutoStop(cfg plan.AutoStopConfig, onStop func(runID, rea
 	a.mu.Lock()
 	a.autoStop = cfg
 	a.onStop = onStop
+	a.mu.Unlock()
+}
+
+// SetStallSec arms the stall breaker: abort after n consecutive seconds of
+// active VUs with no completed requests (0 disables). The caller sizes n well
+// beyond a single request's timeout so a slow-but-working target is never
+// mistaken for a hang.
+func (a *Aggregator) SetStallSec(n int) {
+	a.mu.Lock()
+	a.stallSec = n
 	a.mu.Unlock()
 }
 
@@ -257,6 +273,29 @@ func (a *Aggregator) evalAutoStop(ticks []*loadifyv1.LiveTick) {
 	if !a.autoStop.AutoStopEnabled() || a.onStop == nil || a.autoFired || len(ticks) == 0 {
 		a.mu.Unlock()
 		return
+	}
+	// Stall breaker: load is being generated (VUs active) but nothing is
+	// completing. The error-rate breaker below is blind to this — it needs
+	// completed requests to form a rate — so a target that accepts connections
+	// and black-holes them would otherwise run forever. Any second with a
+	// completed request (rps>0) resets the streak.
+	if a.stallSec > 0 {
+		for _, tk := range ticks {
+			if tk.ActiveVus > 0 && tk.Rps == 0 {
+				a.stallStreak++
+			} else {
+				a.stallStreak = 0
+			}
+			if a.stallStreak >= a.stallSec {
+				a.autoFired = true
+				onStop := a.onStop
+				reason := fmt.Sprintf("auto-stopped: target not responding — %d VUs active but 0 completed requests for %ds", tk.ActiveVus, a.stallStreak)
+				a.mu.Unlock()
+				a.log.Warn("auto-stop triggered (stall)", "run", a.runID, "reason", reason)
+				onStop(a.runID, reason)
+				return
+			}
+		}
 	}
 	win := a.autoStop.WindowSec
 	if win <= 0 {

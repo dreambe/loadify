@@ -25,6 +25,20 @@ import (
 // assignGrace is the lead time given to workers so they start in sync.
 const assignGrace = 2 * time.Second
 
+// stopGrace is how long a stop/auto-stop waits for workers to report Finished
+// before the coordinator force-finalizes the run itself. Without this, a run
+// whose workers are stuck or gone stays "running" forever and the Stop button
+// does nothing.
+const stopGrace = 8 * time.Second
+
+// orphanGrace is how long a RUNNING run may have ALL its assigned workers
+// missing from the registry before the reaper aborts it. Covers a worker that
+// crashed or dropped without ever reporting Finished.
+const orphanGrace = 15 * time.Second
+
+// aggDrainGrace lets the aggregator flush late batches before it is torn down.
+const aggDrainGrace = 3 * time.Second
+
 // Service backs both gRPC services.
 type Service struct {
 	loadifyv1.UnimplementedWorkerServiceServer
@@ -115,8 +129,10 @@ func (s *Service) Connect(stream loadifyv1.WorkerService_ConnectServer) error {
 	}()
 
 	defer func() {
-		if workerID != "" {
-			s.reg.Remove(workerID)
+		// Only remove if THIS stream still owns the registry entry. If the worker
+		// already reconnected on a newer stream, that stream's Add replaced the
+		// handle; a stale teardown must not evict the live worker (see Remove).
+		if workerID != "" && s.reg.Remove(workerID, send) {
 			s.log.Info("worker disconnected", "worker", workerID)
 		}
 	}()
@@ -202,6 +218,7 @@ func (s *Service) rehydrate(workerID string, active []*loadifyv1.ActiveRun) {
 			finished:  make(map[string]bool),
 			status:    loadifyv1.RunStatus_RUN_STATUS_RUNNING,
 			startedAt: time.Now(),
+			slotHeld:  true,
 		}
 		s.running++
 		s.log.Info("rehydrated run from worker", "run", ar.RunId, "worker", workerID)
@@ -237,34 +254,136 @@ func (s *Service) workerFinished(f *loadifyv1.RunFinished) {
 	rs.droppedMetrics += f.DroppedMetrics
 	done := len(rs.finished) >= len(rs.assigned)
 	var cancel context.CancelFunc
-	// endedAt.IsZero() makes this cleanup run exactly once (idempotent against a
-	// duplicate RunFinished). Crucially it runs for ANY terminal outcome — the
-	// auto-stop circuit breaker sets rs.status=ABORTED *before* the workers
-	// report in, and that verdict must be preserved while STILL releasing the
-	// run: cancel the aggregator (which closes the live stream apisrv's watchRun
-	// blocks on, so the run finalizes instead of hanging "running"), free the
-	// admission slot, and drain the queue. The old code gated this on
-	// status==RUNNING, so an auto-stopped run leaked all three — it stayed
-	// "running" in the UI forever, its slot was never freed, and the queue
-	// starved.
-	if done && rs.endedAt.IsZero() {
-		if rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
-			rs.status = loadifyv1.RunStatus_RUN_STATUS_COMPLETED
-		}
-		rs.endedAt = time.Now()
-		s.running--
-		cancel = rs.aggCancel
-		s.drainLocked() // a slot freed: admit queued runs
+	if done {
+		cancel = s.finalizeLocked(rs, loadifyv1.RunStatus_RUN_STATUS_COMPLETED)
 	}
 	terminalStatus := rs.status
 	s.mu.Unlock()
 	if done && cancel != nil {
 		s.log.Info("run terminal", "run", f.RunId, "status", terminalStatus.String())
-		// Give the aggregator a moment to drain late batches, then stop it.
-		go func() {
-			time.Sleep(3 * time.Second)
-			cancel()
-		}()
+		s.stopAggregatorAfterGrace(cancel)
+	}
+}
+
+// finalizeLocked runs the once-only terminal cleanup for a run: it stamps
+// endedAt, frees the admission slot, drains the queue, and returns the
+// aggregator's cancel to invoke after the lock is dropped (nil if the run had
+// already finalized — making this idempotent against a duplicate RunFinished or
+// a force-finalize racing the real one).
+//
+// A run still RUNNING adopts fallbackStatus (COMPLETED on the normal
+// worker-finished path). A run already marked terminal — the auto-stop breaker
+// and user-stop both set rs.status=ABORTED *before* workers report in — keeps
+// its verdict and reason. The old inline code gated the whole cleanup on
+// status==RUNNING, so an auto-stopped run leaked its slot and hung "running"
+// forever; routing every terminal path through here fixes that. Caller holds
+// s.mu.
+func (s *Service) finalizeLocked(rs *runState, fallbackStatus loadifyv1.RunStatus) context.CancelFunc {
+	if rs == nil || !rs.endedAt.IsZero() {
+		return nil
+	}
+	if rs.status == loadifyv1.RunStatus_RUN_STATUS_RUNNING {
+		rs.status = fallbackStatus
+	}
+	rs.endedAt = time.Now()
+	if rs.slotHeld {
+		rs.slotHeld = false
+		s.running--
+		s.drainLocked() // a slot freed: admit queued runs
+	}
+	return rs.aggCancel
+}
+
+// stopAggregatorAfterGrace tears down a run's aggregator after a short drain
+// window, closing the live stream apisrv's watchRun blocks on so the run
+// finalizes instead of hanging "running".
+func (s *Service) stopAggregatorAfterGrace(cancel context.CancelFunc) {
+	if cancel == nil {
+		return
+	}
+	go func() {
+		time.Sleep(aggDrainGrace)
+		cancel()
+	}()
+}
+
+// forceFinalize terminalizes a run the coordinator can no longer expect its
+// workers to finish (they're stuck or gone), so a stop actually stops and a
+// zombie run can't hang "running" forever. Idempotent: a no-op once the run has
+// ended. Preserves an existing abort reason; otherwise stamps defaultReason.
+func (s *Service) forceFinalize(runID, defaultReason string) {
+	s.mu.Lock()
+	rs := s.runs[runID]
+	// Only force-finalize a dispatched run. A still-queued run holds no slot and
+	// no aggregator; stopping it is a separate queue concern, not this watchdog's.
+	if rs == nil || !rs.endedAt.IsZero() || !rs.slotHeld {
+		s.mu.Unlock()
+		return
+	}
+	if rs.reason == "" {
+		rs.reason = defaultReason
+	}
+	cancel := s.finalizeLocked(rs, loadifyv1.RunStatus_RUN_STATUS_ABORTED)
+	reason := rs.reason
+	s.mu.Unlock()
+	s.log.Warn("run force-finalized", "run", runID, "reason", reason)
+	s.stopAggregatorAfterGrace(cancel)
+}
+
+// reapOnce force-aborts RUNNING runs whose assigned workers have ALL been
+// missing from the registry for longer than orphanGrace — a worker that crashed
+// or dropped its connection without reporting Finished would otherwise strand
+// the run as "running" forever. Called periodically by Watchdog; exposed for
+// tests to drive deterministically.
+func (s *Service) reapOnce(now time.Time) {
+	present := make(map[string]bool)
+	for _, w := range s.reg.List() {
+		present[w.WorkerId] = true
+	}
+	var orphaned []string
+	s.mu.Lock()
+	for id, rs := range s.runs {
+		if rs.status != loadifyv1.RunStatus_RUN_STATUS_RUNNING || !rs.endedAt.IsZero() || len(rs.assigned) == 0 {
+			rs.workersLostAt = time.Time{}
+			continue
+		}
+		anyPresent := false
+		for wid := range rs.assigned {
+			if present[wid] {
+				anyPresent = true
+				break
+			}
+		}
+		if anyPresent {
+			rs.workersLostAt = time.Time{}
+			continue
+		}
+		if rs.workersLostAt.IsZero() {
+			rs.workersLostAt = now
+			continue
+		}
+		if now.Sub(rs.workersLostAt) >= orphanGrace {
+			orphaned = append(orphaned, id)
+		}
+	}
+	s.mu.Unlock()
+	for _, id := range orphaned {
+		s.forceFinalize(id, "aborted: assigned workers disconnected")
+	}
+}
+
+// Watchdog periodically reaps orphaned runs until ctx is done. Start it once at
+// coordinator startup.
+func (s *Service) Watchdog(ctx context.Context) {
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			s.reapOnce(now)
+		}
 	}
 }
 
@@ -397,6 +516,18 @@ func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
 	// Arm the auto-stop circuit breaker from the plan (enabled by default).
 	if p, perr := plan.Parse(req.PlanJson); perr == nil {
 		agg.SetAutoStop(p.AutoStopOrDefault(), s.autoStopRun)
+		// Size the stall breaker at 3× the request timeout (min 60s), so a
+		// legitimately slow target (e.g. long non-streaming LLM calls) whose
+		// requests still complete/time out within one timeout is never aborted;
+		// only a target generating load with zero completions for far longer
+		// trips it.
+		if p.AutoStopOrDefault().AutoStopEnabled() {
+			stallSec := int(3 * p.RequestTimeout().Seconds())
+			if stallSec < 60 {
+				stallSec = 60
+			}
+			agg.SetStallSec(stallSec)
+		}
 	}
 	go agg.Run(aggCtx)
 
@@ -435,6 +566,7 @@ func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
 		aggCancel()
 		return 0, status.Error(codes.Unavailable, "failed to dispatch to any worker")
 	}
+	rs.slotHeld = true
 	s.runs[req.RunId] = rs
 	s.running++
 	s.log.Info("run started", "run", req.RunId, "workers", len(rs.assigned))
@@ -472,6 +604,9 @@ func (s *Service) StopRun(_ context.Context, req *loadifyv1.StopRunRequest) (*lo
 		rs.status = loadifyv1.RunStatus_RUN_STATUS_ABORTED
 		rs.reason = "stopped by user"
 	}
+	if rs != nil && rs.abortAt.IsZero() {
+		rs.abortAt = time.Now()
+	}
 	s.mu.Unlock()
 	if rs == nil {
 		return nil, status.Error(codes.NotFound, "run not found")
@@ -484,6 +619,13 @@ func (s *Service) StopRun(_ context.Context, req *loadifyv1.StopRunRequest) (*lo
 			}
 		}
 	}
+	// Workers were signalled — but a stuck or already-gone worker may never
+	// report Finished. Force-finalize after a grace period so Stop actually
+	// stops: the run terminalizes to its aborted verdict, its slot frees and the
+	// live stream closes, instead of hanging "running" forever.
+	time.AfterFunc(stopGrace, func() {
+		s.forceFinalize(req.RunId, "stopped by user (workers did not acknowledge)")
+	})
 	return &loadifyv1.StopRunResponse{RunId: req.RunId}, nil
 }
 

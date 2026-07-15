@@ -86,11 +86,21 @@ func (r *Registry) Add(reg *loadifyv1.RegisterRequest, send chan *loadifyv1.Coor
 	return w
 }
 
-// Remove drops a worker.
-func (r *Registry) Remove(id string) {
+// Remove drops a worker, but only if the currently-registered handle is still
+// the one owned by `send` (i.e. this very stream). A worker that reconnects gets
+// a NEW send channel via Add; if the OLD stream's teardown then ran an
+// unconditional delete, it would evict the live, reconnected worker — making it
+// vanish from the cluster while it's still connected and heartbeating, and
+// orphaning any run assigned to it. The identity check turns a stale stream's
+// teardown into a no-op. Returns true if the worker was actually removed.
+func (r *Registry) Remove(id string, send chan *loadifyv1.CoordinatorMessage) bool {
 	r.mu.Lock()
-	delete(r.workers, id)
-	r.mu.Unlock()
+	defer r.mu.Unlock()
+	if w := r.workers[id]; w != nil && w.Send == send {
+		delete(r.workers, id)
+		return true
+	}
+	return false
 }
 
 // Touch updates liveness and load from a heartbeat.
