@@ -72,14 +72,24 @@ func NewAgent(workerID, region string, log *slog.Logger) *Agent {
 func (a *Agent) Run(ctx context.Context, conn *grpc.ClientConn) error {
 	a.base = ctx // root in-flight runs here so they survive stream reconnects
 	client := loadifyv1.NewWorkerServiceClient(conn)
+	const maxBackoff = 8 * time.Second
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		start := time.Now()
 		err := a.session(ctx, client)
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// A session that stayed up a while then dropped is a transient blip, not a
+		// failure loop: reset the backoff so the reconnect is prompt. Otherwise
+		// backoff ratchets to its cap and STAYS there for the process's life, so a
+		// single later blip would keep the worker offline long enough for the
+		// coordinator to reap its in-flight run as "workers disconnected".
+		if time.Since(start) > 30*time.Second {
+			backoff = time.Second
 		}
 		a.log.Warn("coordinator session ended, reconnecting", "err", err, "backoff", backoff)
 		select {
@@ -87,7 +97,7 @@ func (a *Agent) Run(ctx context.Context, conn *grpc.ClientConn) error {
 			return ctx.Err()
 		case <-time.After(backoff):
 		}
-		if backoff < 15*time.Second {
+		if backoff < maxBackoff {
 			backoff *= 2
 		}
 	}

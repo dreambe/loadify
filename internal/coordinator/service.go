@@ -33,8 +33,11 @@ const stopGrace = 8 * time.Second
 
 // orphanGrace is how long a RUNNING run may have ALL its assigned workers
 // missing from the registry before the reaper aborts it. Covers a worker that
-// crashed or dropped without ever reporting Finished.
-const orphanGrace = 15 * time.Second
+// crashed or dropped without ever reporting Finished. Kept comfortably above the
+// worker's max reconnect backoff (8s) plus restart/rehydrate time, so a worker
+// riding out a transient blip re-attaches and keeps its run instead of being
+// reaped.
+const orphanGrace = 30 * time.Second
 
 // aggDrainGrace lets the aggregator flush late batches before it is torn down.
 const aggDrainGrace = 3 * time.Second
