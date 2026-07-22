@@ -135,6 +135,18 @@ services:
       # unique across all workers (the coordinator keys on it).
       LOADIFY_WORKER_ID: "${LOADIFY_WORKER_ID:-}"
       LOADIFY_WORKER_REGION: "${LOADIFY_WORKER_REGION:-compose}"
+    # Cap worker memory so a runaway run (huge bodies × many VUs) can only OOM-kill
+    # THIS container — which then restarts — instead of exhausting host RAM and
+    # taking the whole stack down. Absolute value (Docker has no percent-of-host);
+    # 0 = unlimited (default). Set LOADIFY_WORKER_MEM_LIMIT per box, e.g. "6g".
+    mem_limit: "${LOADIFY_WORKER_MEM_LIMIT:-0}"
+    healthcheck:
+      # distroless has no shell/curl — the binary probes its own /healthz.
+      test: ["CMD", "/app", "-healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
     depends_on:
       coordinatord: { condition: service_started }
 
