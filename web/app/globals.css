@@ -799,6 +799,28 @@ a.cta:focus-visible {
   border-color: var(--border-strong);
   background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
+/* Verdict badges carry a SHAPE (✓ pass / ✕ fail), not just a red/green dot, so
+   the outcome is distinguishable without relying on color — the badges are
+   green vs red, the classic red-green-colorblind confusion. State badges
+   (running/queued/completed/stopped) keep the neutral dot. */
+.badge.ok::before,
+.badge.failed::before,
+.badge.aborted::before {
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
+  font-weight: 700;
+  line-height: 1;
+  font-size: 11px;
+}
+.badge.ok::before {
+  content: "✓";
+}
+.badge.failed::before,
+.badge.aborted::before {
+  content: "✕";
+}
 
 @keyframes pulse {
   0%,
