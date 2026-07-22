@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { liveSocketURL } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { LiveTick, LogSample } from "@/lib/types";
-import { chartColor, latencyColors, latencyBandColor } from "@/lib/colors";
+import { chartColor, latencyColors, latencyDash, latencyBandColor } from "@/lib/colors";
 import LineChart, { formatElapsed } from "./LineChart";
 
 const MAX_POINTS = 120;
@@ -212,10 +212,10 @@ export default function LiveRunChart({ runId, runName }: { runId: string; runNam
         <LineChart
           unit="ms"
           series={[
-            { label: "p50", color: latencyColors.p50, data: ticks.map((tk) => tk.p50_ms) },
-            { label: "p90", color: latencyColors.p90, data: ticks.map((tk) => tk.p90_ms) },
-            { label: "p95", color: latencyColors.p95, data: ticks.map((tk) => tk.p95_ms) },
-            { label: "p99", color: latencyColors.p99, data: ticks.map((tk) => tk.p99_ms) },
+            { label: "p50", color: latencyColors.p50, dash: latencyDash.p50, data: ticks.map((tk) => tk.p50_ms) },
+            { label: "p90", color: latencyColors.p90, dash: latencyDash.p90, data: ticks.map((tk) => tk.p90_ms) },
+            { label: "p95", color: latencyColors.p95, dash: latencyDash.p95, data: ticks.map((tk) => tk.p95_ms) },
+            { label: "p99", color: latencyColors.p99, dash: latencyDash.p99, data: ticks.map((tk) => tk.p99_ms) },
           ]}
           band={{ lower: ticks.map((tk) => tk.p50_ms), upper: ticks.map((tk) => tk.p99_ms), color: latencyBandColor }}
           xLabels={xLabels}

@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
-import { compareColors } from "@/lib/colors";
+import { compareColors, compareDash } from "@/lib/colors";
 import type { Run, SeriesPoint, TestDefinition } from "@/lib/types";
 
 interface Side {
@@ -231,8 +231,8 @@ function CompareInner() {
               <h2>QPS</h2>
               <LineChart
                 series={[
-                  { label: "A", color: compareColors.a, data: a.series.map((p) => p.rps) },
-                  { label: "B", color: compareColors.b, data: b.series.map((p) => p.rps) },
+                  { label: "A", color: compareColors.a, dash: compareDash.a, data: a.series.map((p) => p.rps) },
+                  { label: "B", color: compareColors.b, dash: compareDash.b, data: b.series.map((p) => p.rps) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}
@@ -244,8 +244,8 @@ function CompareInner() {
               <LineChart
                 unit="ms"
                 series={[
-                  { label: "A", color: compareColors.a, data: a.series.map((p) => p.p95_ms) },
-                  { label: "B", color: compareColors.b, data: b.series.map((p) => p.p95_ms) },
+                  { label: "A", color: compareColors.a, dash: compareDash.a, data: a.series.map((p) => p.p95_ms) },
+                  { label: "B", color: compareColors.b, dash: compareDash.b, data: b.series.map((p) => p.p95_ms) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}
@@ -257,8 +257,8 @@ function CompareInner() {
               <LineChart
                 unit="%"
                 series={[
-                  { label: "A", color: compareColors.a, data: a.series.map((p) => p.error_rate * 100) },
-                  { label: "B", color: compareColors.b, data: b.series.map((p) => p.error_rate * 100) },
+                  { label: "A", color: compareColors.a, dash: compareDash.a, data: a.series.map((p) => p.error_rate * 100) },
+                  { label: "B", color: compareColors.b, dash: compareDash.b, data: b.series.map((p) => p.error_rate * 100) },
                 ]}
                 xLabels={xLabels}
                 hoverIndex={hover}

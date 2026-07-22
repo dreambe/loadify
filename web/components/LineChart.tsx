@@ -13,6 +13,10 @@ export interface Series {
   label: string;
   color: string;
   data: number[];
+  // Optional SVG stroke-dasharray so series are distinguishable by line style,
+  // not color alone (accessibility). Omit/"" for a solid line. The legend draws
+  // the same dash so the two can be matched.
+  dash?: string;
 }
 
 export default function LineChart({
@@ -423,6 +427,7 @@ export default function LineChart({
             fill="none"
             stroke={s.color}
             strokeWidth={2}
+            strokeDasharray={s.dash || undefined}
             strokeLinejoin="round"
             strokeLinecap="round"
           />
@@ -533,6 +538,9 @@ export default function LineChart({
               }
               title={off ? t("chart.show") : t("chart.hide")}
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
                 background: "transparent",
                 border: "none",
                 padding: 0,
@@ -545,7 +553,21 @@ export default function LineChart({
                 fontWeight: 500,
               }}
             >
-              ● {s.label}
+              {/* Draw the series' actual line style so it can be matched against
+                  the chart by shape, not color alone (accessibility). */}
+              <svg width={20} height={8} viewBox="0 0 20 8" aria-hidden style={{ flex: "none", overflow: "visible" }}>
+                <line
+                  x1={0}
+                  y1={4}
+                  x2={20}
+                  y2={4}
+                  stroke={off ? "var(--muted)" : s.color}
+                  strokeWidth={2}
+                  strokeDasharray={s.dash || undefined}
+                  strokeLinecap="round"
+                />
+              </svg>
+              {s.label}
             </button>
           );
         })}

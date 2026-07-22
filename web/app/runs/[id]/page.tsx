@@ -5,7 +5,7 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import LiveRunChart from "@/components/LiveRunChart";
 import { RampPreview } from "@/components/RampBuilder";
-import LineChart, { formatElapsed } from "@/components/LineChart";
+import LineChart, { formatElapsed, type Series } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL, shareRunURL, setShareToken } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
 import Modal from "@/components/Modal";
@@ -17,7 +17,7 @@ import Icon from "@/components/Icon";
 import { useAuth, roleAtLeast, ownsOrAdmin, getToken } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
 import { fmtMs } from "@/lib/format";
-import { chartColor, latencyColors, latencyBandColor } from "@/lib/colors";
+import { chartColor, latencyColors, latencyDash, latencyBandColor } from "@/lib/colors";
 import type { Run, SeriesPoint, TrendPoint } from "@/lib/types";
 
 export default function RunDetailPage({ params }: { params: { id: string } }) {
@@ -181,7 +181,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
     unit?: string;
     help?: string;
     header?: React.ReactNode;
-    series: { label: string; color: string; data: number[] }[];
+    series: Series[];
     band?: { lower: number[]; upper: number[]; color: string };
     markIndices?: number[];
     markColor?: string;
@@ -198,10 +198,10 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
       help: vuMode ? t("run.coOmissionNote") : undefined,
       header: vuMode ? <span className="badge queued">{t("run.coOmissionBadge")}</span> : undefined,
       series: [
-        { label: "p50", color: latencyColors.p50, data: series.map((p) => p.p50_ms) },
-        { label: "p90", color: latencyColors.p90, data: series.map((p) => p.p90_ms) },
-        { label: "p95", color: latencyColors.p95, data: series.map((p) => p.p95_ms) },
-        { label: "p99", color: latencyColors.p99, data: series.map((p) => p.p99_ms) },
+        { label: "p50", color: latencyColors.p50, dash: latencyDash.p50, data: series.map((p) => p.p50_ms) },
+        { label: "p90", color: latencyColors.p90, dash: latencyDash.p90, data: series.map((p) => p.p90_ms) },
+        { label: "p95", color: latencyColors.p95, dash: latencyDash.p95, data: series.map((p) => p.p95_ms) },
+        { label: "p99", color: latencyColors.p99, dash: latencyDash.p99, data: series.map((p) => p.p99_ms) },
       ],
       band: { lower: series.map((p) => p.p50_ms), upper: series.map((p) => p.p99_ms), color: latencyBandColor },
     },
