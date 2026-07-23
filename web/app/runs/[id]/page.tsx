@@ -468,6 +468,10 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
         {!terminal && run?.status !== "queued" && (
           <LiveRunChart runId={runId} runName={run?.name || `run-${runId.slice(0, 8)}`} />
         )}
+        {/* Target-service vitals, live alongside the load while the run is in flight. */}
+        {!terminal && run?.status !== "queued" && run?.started_at && (
+          <TargetMetricsPanels runId={runId} startMs={new Date(run.started_at).getTime()} live />
+        )}
 
         {terminal && (
           <div>
@@ -536,6 +540,11 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 {renderLineChart(d)}
               </div>
             ))}
+            {/* Target-service vitals sit right below the load charts (same region),
+                labelled as the system-under-test's own metrics. */}
+            {run?.started_at && (
+              <TargetMetricsPanels runId={runId} startMs={new Date(run.started_at).getTime()} live={false} />
+            )}
             {run?.summary?.checks && run.summary.checks.length > 0 && (
               <div className="panel">
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -612,17 +621,6 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             {run?.summary != null && <SummaryReport run={run} t={t} />}
             <ErrorDrilldown runId={runId} series={series} />
           </div>
-        )}
-
-        {/* System-under-test's own metrics (from the operator's Prometheus),
-            shown for both live and finished runs; the component renders nothing
-            when the feature is off or the test didn't opt in. */}
-        {run?.started_at && (
-          <TargetMetricsPanels
-            runId={runId}
-            startMs={new Date(run.started_at).getTime()}
-            live={run.status === "running"}
-          />
         )}
 
         {run?.test_snapshot != null && <SnapshotPanel snapshot={run.test_snapshot} t={t} />}

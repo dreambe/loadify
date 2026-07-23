@@ -54,15 +54,18 @@ func New(base string) *Client {
 type queryDef struct{ panel, unit, label, promql string }
 
 // defaultQueries are the standard node_exporter expressions, parameterized by
-// the target's instance label. Escaped instance is substituted for %s.
+// the target's instance label. `$I` (which may appear several times per query)
+// is replaced with the escaped instance. Disk is aggregated across real
+// filesystems (no mountpoint assumption) so any target reports overall usage.
 func defaultQueries(inst string) []queryDef {
-	q := func(s string) string { return fmt.Sprintf(s, inst) }
+	q := func(s string) string { return strings.ReplaceAll(s, "$I", inst) }
+	const realFS = `fstype!~"tmpfs|overlay|squashfs|ramfs|devtmpfs|autofs|fuse.*"`
 	return []queryDef{
-		{"cpu", "%", "used", q(`100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle",instance="%s"}[1m])))`)},
-		{"mem", "%", "used", q(`100 * (1 - node_memory_MemAvailable_bytes{instance="%s"} / node_memory_MemTotal_bytes{instance="%s"})`)},
-		{"disk", "%", "used", q(`100 * (1 - node_filesystem_avail_bytes{instance="%s",mountpoint="/",fstype!="tmpfs"} / node_filesystem_size_bytes{instance="%s",mountpoint="/",fstype!="tmpfs"})`)},
-		{"net", "B/s", "rx", q(`sum by (instance) (rate(node_network_receive_bytes_total{instance="%s",device!="lo"}[1m]))`)},
-		{"net", "B/s", "tx", q(`sum by (instance) (rate(node_network_transmit_bytes_total{instance="%s",device!="lo"}[1m]))`)},
+		{"cpu", "%", "used", q(`100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle",instance="$I"}[1m])))`)},
+		{"mem", "%", "used", q(`100 * (1 - node_memory_MemAvailable_bytes{instance="$I"} / node_memory_MemTotal_bytes{instance="$I"})`)},
+		{"disk", "%", "used", q(`100 * (1 - sum(node_filesystem_avail_bytes{instance="$I",` + realFS + `}) / sum(node_filesystem_size_bytes{instance="$I",` + realFS + `}))`)},
+		{"net", "B/s", "rx", q(`sum by (instance) (rate(node_network_receive_bytes_total{instance="$I",device!="lo"}[1m]))`)},
+		{"net", "B/s", "tx", q(`sum by (instance) (rate(node_network_transmit_bytes_total{instance="$I",device!="lo"}[1m]))`)},
 	}
 }
 
