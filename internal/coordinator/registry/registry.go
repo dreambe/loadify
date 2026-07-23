@@ -52,6 +52,16 @@ func (w *Worker) cpuUtilization() float64 {
 	return w.CPUPct
 }
 
+// memUtilization returns host memory used as a 0-100 percentage of total. It is
+// 0 when the worker doesn't report memory (MemTotalBytes==0, e.g. non-Linux) so
+// such a worker is never excluded by the memory admission gate.
+func (w *Worker) memUtilization() float64 {
+	if w.MemTotalBytes <= 0 {
+		return 0
+	}
+	return 100 * float64(w.MemBytes) / float64(w.MemTotalBytes)
+}
+
 // Registry is a concurrency-safe set of connected workers.
 type Registry struct {
 	mu      sync.RWMutex
@@ -156,12 +166,13 @@ func (r *Registry) Healthy(proto loadifyv1.Protocol) []*Worker {
 	return out
 }
 
-// Available returns healthy workers supporting proto whose CPU utilization is
-// below cpuMaxPct. A cpuMaxPct of 0 disables the CPU gate. CPUPct is reported
-// per single core (it can exceed 100 on a multi-core box), so it is normalized
-// by the worker's core count to a 0-100 share of total capacity before the
-// comparison — otherwise a lightly-loaded multi-core worker would be excluded.
-func (r *Registry) Available(proto loadifyv1.Protocol, cpuMaxPct float64) []*Worker {
+// Available returns healthy workers supporting proto whose CPU AND memory
+// utilization are below their thresholds. A threshold of 0 disables that gate.
+// CPUPct is per single core (can exceed 100 on a multi-core box), so it is
+// normalized by core count to a 0-100 share before comparison; memory is host
+// used/total. A node over either threshold takes no new runs so load isn't
+// piled onto a stressed box (memory especially — an OOM there kills the run).
+func (r *Registry) Available(proto loadifyv1.Protocol, cpuMaxPct, memMaxPct float64) []*Worker {
 	now := time.Now()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -174,6 +185,9 @@ func (r *Registry) Available(proto loadifyv1.Protocol, cpuMaxPct float64) []*Wor
 			continue
 		}
 		if cpuMaxPct > 0 && w.cpuUtilization() >= cpuMaxPct {
+			continue
+		}
+		if memMaxPct > 0 && w.memUtilization() >= memMaxPct {
 			continue
 		}
 		out = append(out, w)

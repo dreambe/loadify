@@ -1118,6 +1118,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		"workers_total":     cs.WorkersTotal,
 		"workers_available": cs.WorkersAvailable,
 		"cpu_max_pct":       cs.CpuMaxPct,
+		"mem_max_pct":       cs.MemMaxPct,
 		"can_accept":        cs.CanAccept,
 	})
 }

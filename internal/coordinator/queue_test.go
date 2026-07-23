@@ -28,7 +28,7 @@ func TestAdmissionQueuesWhenAtCapacity(t *testing.T) {
 	defer target.Close()
 
 	svc := coordinator.New(nil, nil)
-	svc.SetLimits(1, 0) // one run at a time
+	svc.SetLimits(1, 0, 0) // one run at a time
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

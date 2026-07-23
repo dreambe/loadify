@@ -5,7 +5,7 @@ import Nav from "@/components/Nav";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n, statusLabel } from "@/lib/i18n";
-import type { WorkerInfo } from "@/lib/types";
+import type { WorkerInfo, Capacity } from "@/lib/types";
 
 export default function WorkersPage() {
   const { t } = useI18n();
@@ -13,6 +13,9 @@ export default function WorkersPage() {
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
+  // Per-node memory protection threshold (a node over it takes no new runs);
+  // drawn as a marker line on each node's memory bar.
+  const [memMaxPct, setMemMaxPct] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
@@ -26,6 +29,8 @@ export default function WorkersPage() {
         .catch((e: any) => setErr(e?.message || "load failed"))
         .finally(() => setLoaded(true));
     load();
+    // The protection threshold is static config — fetch it once.
+    api.getCapacity().then((c) => setMemMaxPct(c.mem_max_pct)).catch(() => {});
     const id = setInterval(load, 3000);
     return () => clearInterval(id);
   }, [ready]);
@@ -82,7 +87,11 @@ export default function WorkersPage() {
                   </td>
                   <td>
                     {w.mem_total_bytes ? (
-                      <LoadBar pct={(100 * (w.mem_bytes || 0)) / w.mem_total_bytes} label={`${fmtBytes(w.mem_bytes)} / ${fmtBytes(w.mem_total_bytes)}`} />
+                      <LoadBar
+                        pct={(100 * (w.mem_bytes || 0)) / w.mem_total_bytes}
+                        label={`${fmtBytes(w.mem_bytes)} / ${fmtBytes(w.mem_total_bytes)}`}
+                        threshold={memMaxPct}
+                      />
                     ) : (
                       fmtBytes(w.mem_bytes)
                     )}
@@ -135,14 +144,37 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 // LoadBar renders a percentage as a small bar (green/yellow/red). An optional
-// label replaces the "NN%" readout (e.g. "1.2 / 8 GB" for memory).
-function LoadBar({ pct, label }: { pct: number; label?: string }) {
+// label replaces the "NN%" readout (e.g. "1.2 / 8 GB" for memory). An optional
+// `threshold` (0 = none) draws a marker line at that percent — the protection
+// ceiling: a node at/above it takes no new runs. The bar goes red once it
+// crosses the line, amber as it approaches, green otherwise.
+function LoadBar({ pct, label, threshold = 0 }: { pct: number; label?: string; threshold?: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
-  const color = clamped >= 85 ? "var(--red)" : clamped >= 60 ? "var(--yellow)" : "var(--green)";
+  const warnAt = threshold > 0 ? threshold - 15 : 60;
+  const critAt = threshold > 0 ? threshold : 85;
+  const color = clamped >= critAt ? "var(--red)" : clamped >= warnAt ? "var(--yellow)" : "var(--green)";
+  const overLimit = threshold > 0 && clamped >= threshold;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 80, height: 8, background: "var(--panel-2)", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
+    <div
+      style={{ display: "flex", alignItems: "center", gap: 8 }}
+      title={threshold > 0 ? `保护线 ${threshold.toFixed(0)}% —— 节点内存达到即暂不接新任务${overLimit ? "(当前已超线)" : ""}` : undefined}
+    >
+      <div style={{ position: "relative", width: 80, height: 8, background: "var(--panel-2)", borderRadius: 4, overflow: "hidden", border: "1px solid var(--border)" }}>
         <div style={{ width: `${clamped}%`, height: "100%", background: color }} />
+        {threshold > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              top: -1,
+              bottom: -1,
+              left: `${Math.min(100, threshold)}%`,
+              width: 2,
+              background: "var(--text)",
+              opacity: 0.7,
+              transform: "translateX(-1px)",
+            }}
+          />
+        )}
       </div>
       <span className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
         {label ? `${clamped.toFixed(0)}% · ${label}` : `${pct.toFixed(0)}%`}

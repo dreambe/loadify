@@ -57,6 +57,7 @@ type Service struct {
 	running int
 	maxRuns int
 	cpuMax  float64
+	memMax  float64
 }
 
 // New creates a coordinator Service. writer may be nil (rollups discarded).
@@ -70,7 +71,8 @@ func New(writer store.RollupWriter, log *slog.Logger) *Service {
 		log:     log,
 		runs:    make(map[string]*runState),
 		maxRuns: 64, // effectively unlimited until SetLimits tightens it
-		cpuMax:  85, // per-node protection threshold (SetLimits may override)
+		cpuMax:  85, // per-node CPU protection threshold (SetLimits may override)
+		memMax:  85, // per-node memory protection threshold (SetLimits may override)
 	}
 }
 
@@ -93,14 +95,15 @@ func (s *Service) RegisterMetrics() {
 }
 
 // SetLimits configures admission control: at most maxConcurrent runs dispatch
-// at once, and workers at or above cpuMaxPct are not eligible (0 disables the
-// CPU gate). Runs that can't be admitted are queued.
-func (s *Service) SetLimits(maxConcurrent int, cpuMaxPct float64) {
+// at once, and workers at or above cpuMaxPct CPU or memMaxPct memory are not
+// eligible (0 disables that gate). Runs that can't be admitted are queued.
+func (s *Service) SetLimits(maxConcurrent int, cpuMaxPct, memMaxPct float64) {
 	s.mu.Lock()
 	if maxConcurrent > 0 {
 		s.maxRuns = maxConcurrent
 	}
 	s.cpuMax = cpuMaxPct
+	s.memMax = memMaxPct
 	s.mu.Unlock()
 }
 
@@ -437,7 +440,7 @@ func (s *Service) StartRun(_ context.Context, req *loadifyv1.StartRunRequest) (*
 
 // canDispatchLocked reports whether a run for proto can start right now.
 func (s *Service) canDispatchLocked(proto loadifyv1.Protocol) bool {
-	return s.running < s.maxRuns && len(s.reg.Available(proto, s.cpuMax)) > 0
+	return s.running < s.maxRuns && len(s.reg.Available(proto, s.cpuMax, s.memMax)) > 0
 }
 
 // rampDurationMs sums a ramp's stage durations (the run's planned wall-clock
@@ -492,7 +495,7 @@ func (s *Service) GetCapacity(_ context.Context, _ *loadifyv1.CapacityRequest) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	total := len(s.reg.Healthy(loadifyv1.Protocol_PROTOCOL_UNSPECIFIED))
-	avail := len(s.reg.Available(loadifyv1.Protocol_PROTOCOL_UNSPECIFIED, s.cpuMax))
+	avail := len(s.reg.Available(loadifyv1.Protocol_PROTOCOL_UNSPECIFIED, s.cpuMax, s.memMax))
 	return &loadifyv1.CapacitySnapshot{
 		MaxRuns:          int32(s.maxRuns),
 		Running:          int32(s.running),
@@ -500,6 +503,7 @@ func (s *Service) GetCapacity(_ context.Context, _ *loadifyv1.CapacityRequest) (
 		WorkersTotal:     int32(total),
 		WorkersAvailable: int32(avail),
 		CpuMaxPct:        s.cpuMax,
+		MemMaxPct:        s.memMax,
 		CanAccept:        s.running < s.maxRuns && avail > 0,
 	}, nil
 }
@@ -507,7 +511,7 @@ func (s *Service) GetCapacity(_ context.Context, _ *loadifyv1.CapacityRequest) (
 // dispatchLocked selects workers, slices the ramp and sends assignments. The
 // caller holds s.mu. It returns the number of workers assigned.
 func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
-	candidates := s.reg.Available(req.Protocol, s.cpuMax)
+	candidates := s.reg.Available(req.Protocol, s.cpuMax, s.memMax)
 	if len(candidates) == 0 {
 		return 0, status.Error(codes.FailedPrecondition, "no healthy workers available")
 	}
@@ -580,7 +584,7 @@ func (s *Service) dispatchLocked(req *loadifyv1.StartRunRequest) (int, error) {
 func (s *Service) drainLocked() {
 	for len(s.queue) > 0 && s.running < s.maxRuns {
 		req := s.queue[0]
-		if len(s.reg.Available(req.Protocol, s.cpuMax)) == 0 {
+		if len(s.reg.Available(req.Protocol, s.cpuMax, s.memMax)) == 0 {
 			return // keep queued until a capable worker is free
 		}
 		s.queue = s.queue[1:]

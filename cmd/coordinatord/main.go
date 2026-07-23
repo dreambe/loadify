@@ -51,12 +51,12 @@ func main() {
 	log.Info("clickhouse ready")
 
 	svc := coordinator.New(writer, log)
-	svc.SetLimits(cfg.MaxConcurrentRuns, float64(cfg.WorkerCPUMaxPct))
+	svc.SetLimits(cfg.MaxConcurrentRuns, float64(cfg.WorkerCPUMaxPct), float64(cfg.WorkerMemMaxPct))
 	svc.RegisterMetrics()
 	// Reap orphaned runs (assigned workers vanished without reporting Finished)
 	// so a crashed/dropped worker can't strand a run as "running" forever.
 	go svc.Watchdog(ctx)
-	log.Info("admission limits", "max_concurrent_runs", cfg.MaxConcurrentRuns, "worker_cpu_max_pct", cfg.WorkerCPUMaxPct)
+	log.Info("admission limits", "max_concurrent_runs", cfg.MaxConcurrentRuns, "worker_cpu_max_pct", cfg.WorkerCPUMaxPct, "worker_mem_max_pct", cfg.WorkerMemMaxPct)
 	if cfg.ClusterToken == "" {
 		log.Warn("cluster token not set — gRPC plane is UNAUTHENTICATED; set LOADIFY_CLUSTER_TOKEN in any real deployment")
 	} else {

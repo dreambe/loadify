@@ -92,6 +92,7 @@ message CapacitySnapshot {
   int32 workers_available = 5; // healthy workers below the CPU protection threshold
   double cpu_max_pct = 6;      // per-node CPU protection threshold (0 = disabled)
   bool can_accept = 7;         // a new run would start immediately (not queue)
+  double mem_max_pct = 8;      // per-node memory protection threshold (0 = disabled)
 }
 
 message ListWorkersRequest {}

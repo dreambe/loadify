@@ -54,6 +54,7 @@ export interface Capacity {
   workers_total: number;
   workers_available: number;
   cpu_max_pct: number;
+  mem_max_pct: number; // per-node memory protection threshold (0 = disabled)
   can_accept: boolean;
 }
 

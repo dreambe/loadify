@@ -22,7 +22,7 @@ func addWorker(s *Service, id string) {
 // result) and exposed via GetRunState.
 func TestSaturationAggregation(t *testing.T) {
 	s := New(nil, nil)
-	s.SetLimits(4, 0)
+	s.SetLimits(4, 0, 0)
 	addWorker(s, "w1")
 	ctx := context.Background()
 	plan := []byte(`{"protocol":"http","http":{"url":"http://x"}}`)
@@ -55,7 +55,7 @@ func TestRampDurationMs(t *testing.T) {
 // position 1 and a non-zero ETA derived from the first run's planned duration.
 func TestCapacityAndQueueETA(t *testing.T) {
 	s := New(nil, nil)
-	s.SetLimits(1, 0) // one concurrent run, CPU gate off
+	s.SetLimits(1, 0, 0) // one concurrent run, CPU gate off
 	addWorker(s, "w1")
 
 	ctx := context.Background()

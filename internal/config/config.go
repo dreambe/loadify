@@ -53,6 +53,7 @@ type Coordinator struct {
 	HTTPAddr           string // healthz/metrics
 	MaxConcurrentRuns  int    // admission cap; extra runs queue
 	WorkerCPUMaxPct    int    // per-node protection threshold: workers at/above this CPU% take no new runs (0 = off)
+	WorkerMemMaxPct    int    // per-node protection threshold: workers at/above this host-mem% take no new runs (0 = off)
 	ClickHouse         ClickHouse
 	Postgres           Postgres
 }
@@ -97,6 +98,7 @@ func LoadCoordinator() Coordinator {
 		// Default-on per-node protection: a worker pegged at/above 85% CPU stops
 		// accepting new runs (set to 0 to disable the gate entirely).
 		WorkerCPUMaxPct:   EnvInt("LOADIFY_WORKER_CPU_MAX_PCT", 85),
+		WorkerMemMaxPct:   EnvInt("LOADIFY_WORKER_MEM_MAX_PCT", 85),
 		ClickHouse:        loadClickHouse(),
 		Postgres:          loadPostgres(),
 	}
