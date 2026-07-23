@@ -113,8 +113,9 @@ func main() {
 		JWTSecret:   cfg.JWTSecret,
 		JWTTTL:      time.Duration(cfg.JWTTTLHours) * time.Hour,
 		Feishu:      feishu,
-		FrontendURL: cfg.FrontendURL,
-		WebhookURL:  cfg.WebhookURL,
+		FrontendURL:   cfg.FrontendURL,
+		WebhookURL:    cfg.WebhookURL,
+		PrometheusURL: cfg.PrometheusURL,
 	})
 	httpSrv := &http.Server{Addr: cfg.HTTPAddr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 

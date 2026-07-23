@@ -8,6 +8,7 @@ import { RampPreview } from "@/components/RampBuilder";
 import LineChart, { formatElapsed, type Series } from "@/components/LineChart";
 import { api, exportCSVURL, reportURL, shareRunURL, setShareToken } from "@/lib/api";
 import ErrorDrilldown from "@/components/ErrorDrilldown";
+import TargetMetricsPanels from "@/components/TargetMetricsPanels";
 import Modal from "@/components/Modal";
 import InspectDrawer from "@/components/InspectDrawer";
 import Help from "@/components/Help";
@@ -611,6 +612,17 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
             {run?.summary != null && <SummaryReport run={run} t={t} />}
             <ErrorDrilldown runId={runId} series={series} />
           </div>
+        )}
+
+        {/* System-under-test's own metrics (from the operator's Prometheus),
+            shown for both live and finished runs; the component renders nothing
+            when the feature is off or the test didn't opt in. */}
+        {run?.started_at && (
+          <TargetMetricsPanels
+            runId={runId}
+            startMs={new Date(run.started_at).getTime()}
+            live={run.status === "running"}
+          />
         )}
 
         {run?.test_snapshot != null && <SnapshotPanel snapshot={run.test_snapshot} t={t} />}

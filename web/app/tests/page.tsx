@@ -98,6 +98,8 @@ export default function TestsPage() {
   const [autoStopPct, setAutoStopPct] = useState(50);
   const [alertOn, setAlertOn] = useState(true);
   const [alertPct, setAlertPct] = useState(30);
+  const [targetMon, setTargetMon] = useState(false);
+  const [targetInstance, setTargetInstance] = useState("");
   const [importing, setImporting] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
@@ -209,6 +211,8 @@ export default function TestsPage() {
     setAutoStopPct(50);
     setAlertOn(true);
     setAlertPct(30);
+    setTargetMon(false);
+    setTargetInstance("");
   }
 
   // loadIntoForm fills the builder from an existing test (edit keeps the id,
@@ -239,6 +243,9 @@ export default function TestsPage() {
     const al = (td.plan as any)?.alert;
     setAlertOn(!al || al.enabled !== false);
     setAlertPct(al?.error_rate_pct ?? 30);
+    const tm = (td.plan as any)?.target_monitor;
+    setTargetMon(!!tm?.enabled);
+    setTargetInstance(tm?.instance || "");
     setErr("");
     setOk("");
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -348,6 +355,13 @@ export default function TestsPage() {
       planObj.alert = alertOn
         ? { enabled: true, error_rate_pct: alertPct }
         : { enabled: false };
+      // Target-service monitoring: only persist when enabled AND an instance is
+      // given (an empty instance can't be queried).
+      if (targetMon && targetInstance.trim()) {
+        planObj.target_monitor = { enabled: true, instance: targetInstance.trim() };
+      } else {
+        delete planObj.target_monitor;
+      }
     }
     let datasetObj: unknown;
     if (dataset.trim()) {
@@ -595,6 +609,24 @@ export default function TestsPage() {
                   <div>
                     <label style={{ margin: 0 }}>{t("tests.alertPct")}</label>
                     <NumberInput float min={0} max={100} value={alertPct} onChange={setAlertPct} style={{ width: 90 }} />
+                  </div>
+                )}
+              </div>
+              <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+                <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="checkbox" checked={targetMon} onChange={(e) => setTargetMon(e.target.checked)} />
+                  {t("tests.targetEnable")}
+                  <Help tip={t("tests.targetMonitorHelp")} />
+                </label>
+                {targetMon && (
+                  <div style={{ flex: 1, minWidth: 240 }}>
+                    <label style={{ margin: 0 }}>{t("tests.targetInstance")}</label>
+                    <input
+                      value={targetInstance}
+                      onChange={(e) => setTargetInstance(e.target.value)}
+                      placeholder="10.0.0.5:9100"
+                      style={{ width: "100%" }}
+                    />
                   </div>
                 )}
               </div>

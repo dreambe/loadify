@@ -221,6 +221,20 @@ export interface AuditEntry {
   status: number;
 }
 
+// Target-service metrics pulled from the operator's Prometheus for a run's
+// window (CPU/mem/disk/net of the system-under-test), rendered natively on the
+// run page next to loadify's load charts.
+export interface TargetMetricPanel {
+  key: string; // "cpu" | "mem" | "disk" | "net"
+  unit: string;
+  series: { label: string; points: { ts: number; v: number }[] }[];
+}
+export interface TargetMetrics {
+  enabled: boolean;
+  instance?: string;
+  panels: TargetMetricPanel[];
+}
+
 export interface SeriesPoint {
   ts: string;
   rps: number;

@@ -8,12 +8,14 @@ import (
 	_ "embed"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	loadifyv1 "github.com/dreambe/loadify/api/gen/go/loadify/v1"
 	"github.com/dreambe/loadify/internal/auth"
 	"github.com/dreambe/loadify/internal/obs"
+	"github.com/dreambe/loadify/internal/targetmetrics"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -37,6 +39,10 @@ type Server struct {
 	jwtTTL      time.Duration
 	frontendURL string
 	webhookURL  string
+	// prom queries the operator's Prometheus for the target service's own
+	// metrics (CPU/mem/disk/net) on the run page; nil when LOADIFY_PROMETHEUS_URL
+	// is unset (the feature is then off and the run page hides the section).
+	prom *targetmetrics.Client
 	// revCache memoizes per-user revocation state (disabled / creds-changed) so
 	// token validation doesn't hit the database on every request.
 	revCache sync.Map
@@ -56,6 +62,9 @@ type Config struct {
 	FrontendURL string
 	// WebhookURL, when set, receives a JSON POST whenever a run finishes.
 	WebhookURL string
+	// PrometheusURL, when set, enables the run page's target-service metrics
+	// (CPU/mem/disk/net pulled from the operator's Prometheus).
+	PrometheusURL string
 }
 
 // New builds the Server and its routes.
@@ -77,6 +86,9 @@ func New(c Config) *Server {
 		frontendURL: c.FrontendURL,
 		webhookURL:  c.WebhookURL,
 		loginRL:     newRateLimiter(loginMaxAttempts, loginWindow),
+	}
+	if strings.TrimSpace(c.PrometheusURL) != "" {
+		s.prom = targetmetrics.New(c.PrometheusURL)
 	}
 	// Honor account disable / credential changes for already-issued tokens.
 	s.authmw.Validate = s.validateClaims
@@ -137,6 +149,7 @@ func (s *Server) routes() {
 		// shared link drives the real interactive run page without login.
 		r.With(s.runRead).Get("/runs/{id}", s.handleGetRun)
 		r.With(s.runRead).Get("/runs/{id}/series", s.handleRunSeries)
+		r.With(s.runRead).Get("/runs/{id}/target-metrics", s.handleTargetMetrics)
 		r.With(s.runRead).Get("/runs/{id}/samples", s.handleRunSamples)
 		r.With(s.runRead).Get("/runs/{id}/export.csv", s.handleRunExport) // token via ?token= or ?share=
 		r.With(s.runRead).Get("/runs/{id}/metrics", s.handleRunMetrics)   // Prometheus text (?token= or ?share=)

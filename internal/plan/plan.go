@@ -52,6 +52,10 @@ type Plan struct {
 	// Alert fires a one-shot mid-run notification when the error rate spikes —
 	// an early warning before the auto-stop breaker trips. nil = enabled default.
 	Alert *AlertConfig `json:"alert,omitempty"`
+	// TargetMonitor pulls the system-under-test's own metrics (CPU/mem/disk/net)
+	// from a Prometheus during the run, so the run page can show the TARGET's
+	// vitals natively alongside loadify's load charts on one timeline.
+	TargetMonitor *TargetMonitor `json:"target_monitor,omitempty"`
 	// MaxVUs caps the worker pool for the open (arrival-rate) model. 0 lets the
 	// worker derive a safe bound from the peak target rate.
 	MaxVUs int `json:"max_vus,omitempty"`
@@ -152,6 +156,21 @@ func (p *Plan) AutoStopOrDefault() AutoStopConfig {
 
 // AutoStopEnabled reports whether the breaker is on (default true).
 func (c AutoStopConfig) AutoStopEnabled() bool { return c.Enabled == nil || *c.Enabled }
+
+// TargetMonitor identifies the system-under-test in the operator's Prometheus so
+// loadify can query and render the target's own CPU/mem/disk/net during a run.
+// Instance is the node_exporter `instance` label of the target host (e.g.
+// "10.0.0.5:9100"); the standard node_exporter queries are derived from it.
+type TargetMonitor struct {
+	Enabled  bool   `json:"enabled,omitempty"`
+	Instance string `json:"instance,omitempty"`
+}
+
+// TargetMonitorEnabled reports whether target monitoring is usable (on + has an
+// instance to query).
+func (p *Plan) TargetMonitorEnabled() bool {
+	return p.TargetMonitor != nil && p.TargetMonitor.Enabled && strings.TrimSpace(p.TargetMonitor.Instance) != ""
+}
 
 // RequestTimeout returns the effective per-request timeout for the plan's
 // protocol, defaulting to 30s (the drivers' own fallback) when unset. The stall

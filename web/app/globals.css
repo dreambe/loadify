@@ -711,6 +711,18 @@ a.cta:focus-visible {
   gap: 10px;
   margin-top: 10px;
 }
+/* Target-service metric panels on the run page (CPU/mem/disk/net), two per row. */
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px 20px;
+}
+.target-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
 .pertest-card {
   display: block;
   padding: 12px;

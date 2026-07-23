@@ -42,6 +42,7 @@ type APIServer struct {
 	WebhookURL        string
 	AdminEmail        string
 	AdminPassword     string
+	PrometheusURL     string // operator's Prometheus, for target-service metrics on the run page (empty = feature off)
 	Postgres          Postgres
 	ClickHouse        ClickHouse
 }
@@ -83,6 +84,7 @@ func LoadAPIServer() APIServer {
 		WebhookURL:        env("LOADIFY_WEBHOOK_URL", ""),
 		AdminEmail:        env("LOADIFY_ADMIN_EMAIL", ""),
 		AdminPassword:     env("LOADIFY_ADMIN_PASSWORD", ""),
+		PrometheusURL:     env("LOADIFY_PROMETHEUS_URL", ""),
 		Postgres:          loadPostgres(),
 		ClickHouse:        loadClickHouse(),
 	}

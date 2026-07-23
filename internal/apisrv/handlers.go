@@ -908,6 +908,50 @@ func (s *Server) handleRunStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleTargetMetrics returns the system-under-test's own resource metrics
+// (CPU/mem/disk/net) pulled from the operator's Prometheus over the run's time
+// window, so the run page renders the TARGET's vitals natively alongside the
+// load. `enabled` is false (and panels empty) when the deployment has no
+// Prometheus configured or the test didn't opt into target monitoring — the
+// frontend then hides the section.
+func (s *Server) handleTargetMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	run, err := s.pg.GetRun(ctx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	// Read the target-monitor config from the run's own snapshot (self-contained
+	// and immune to later test edits).
+	var snap struct {
+		Plan json.RawMessage `json:"plan"`
+	}
+	_ = json.Unmarshal(run.Snapshot, &snap)
+	p, perr := plan.Parse(snap.Plan)
+	if s.prom == nil || perr != nil || !p.TargetMonitorEnabled() {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "panels": []any{}})
+		return
+	}
+	// Window: run start → end (or now while running). Nothing to query before it
+	// starts.
+	if run.StartedAt == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "panels": []any{}})
+		return
+	}
+	start := *run.StartedAt
+	end := time.Now()
+	if run.EndedAt != nil {
+		end = *run.EndedAt
+	}
+	panels, err := s.prom.Collect(ctx, p.TargetMonitor.Instance, start, end)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "prometheus query failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "instance": p.TargetMonitor.Instance, "panels": panels})
+}
+
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := withTimeout(r.Context())
 	defer cancel()

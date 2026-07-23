@@ -1,7 +1,7 @@
 "use client";
 
 import { clearSession, getToken } from "./auth";
-import type { AuditEntry, Capacity, DrillSample, Environment, Run, Schedule, SeriesPoint, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
+import type { AuditEntry, Capacity, DrillSample, Environment, Run, Schedule, SeriesPoint, TargetMetrics, TestDefinition, TrendPoint, User, WorkerInfo } from "./types";
 
 // Default to SAME-ORIGIN (relative /api): the app is meant to run behind a
 // reverse proxy that serves the web UI and routes /api to apisrv, so it works on
@@ -191,6 +191,7 @@ export const api = {
   resetApiToken: () => req<{ token: string }>(`/api/v1/auth/token`, { method: "POST" }),
   runSeries: (id: string, group = "*", res = 1) =>
     reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
+  targetMetrics: (id: string) => req<TargetMetrics>(`/api/v1/runs/${id}/target-metrics`),
   runSamples: (
     id: string,
     filter: { status_class?: string; error_kind?: string; group?: string; limit?: number; from_ms?: number; to_ms?: number } = {}
