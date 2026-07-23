@@ -711,11 +711,18 @@ a.cta:focus-visible {
   gap: 10px;
   margin-top: 10px;
 }
-/* Target-service metric panels on the run page (CPU/mem/disk/net), two per row. */
+/* Target-service metric panels on the run page: a fixed 2-column grid (so four
+   metrics read as a tidy 2×2, more as 2×N), collapsing to one column when the
+   panel is too narrow. */
 .target-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+@media (max-width: 640px) {
+  .target-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .target-panel-title {
   font-size: 13px;

@@ -49,8 +49,12 @@ func TestCollectParsesAndGroups(t *testing.T) {
 		}
 	}
 	if cpu := keys["cpu"]; cpu != nil {
-		if len(cpu.Series) != 1 || len(cpu.Series[0].Points) != 2 {
+		// cpu carries used + iowait lines.
+		if len(cpu.Series) < 1 || len(cpu.Series[0].Points) != 2 {
 			t.Fatalf("cpu series/points = %d/%v", len(cpu.Series), cpu.Series)
+		}
+		if cpu.Series[0].Label != "used" {
+			t.Errorf("cpu first series = %q, want used", cpu.Series[0].Label)
 		}
 		p0 := cpu.Series[0].Points[0]
 		if p0.TS != 1700000000000 || p0.V != 42.5 {

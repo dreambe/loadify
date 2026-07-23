@@ -10,9 +10,13 @@ import type { TargetMetrics, TargetMetricPanel } from "@/lib/types";
 // Localized panel titles by metric key; unknown keys fall back to the key.
 const TITLE_KEY: Record<string, string> = {
   cpu: "target.cpu",
+  load: "target.load",
   mem: "target.mem",
   disk: "target.disk",
   net: "target.net",
+  diskio: "target.diskio",
+  conns: "target.conns",
+  fds: "target.fds",
 };
 
 // TargetMetricsPanels shows the system-under-test's own resource metrics

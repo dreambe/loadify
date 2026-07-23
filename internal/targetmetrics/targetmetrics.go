@@ -60,12 +60,22 @@ type queryDef struct{ panel, unit, label, promql string }
 func defaultQueries(inst string) []queryDef {
 	q := func(s string) string { return strings.ReplaceAll(s, "$I", inst) }
 	const realFS = `fstype!~"tmpfs|overlay|squashfs|ramfs|devtmpfs|autofs|fuse.*"`
+	// Ordered for a 2-column layout, pairing related signals. Each panel skips
+	// itself if the target doesn't expose that metric (graceful on partial
+	// node_exporter setups). iowait is folded into CPU as a second line since a
+	// disk-bound target reads very differently from a CPU-bound one.
 	return []queryDef{
 		{"cpu", "%", "used", q(`100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle",instance="$I"}[1m])))`)},
+		{"cpu", "%", "iowait", q(`100 * avg by (instance) (rate(node_cpu_seconds_total{mode="iowait",instance="$I"}[1m]))`)},
+		{"load", "", "1m", q(`node_load1{instance="$I"}`)},
 		{"mem", "%", "used", q(`100 * (1 - node_memory_MemAvailable_bytes{instance="$I"} / node_memory_MemTotal_bytes{instance="$I"})`)},
 		{"disk", "%", "used", q(`100 * (1 - sum(node_filesystem_avail_bytes{instance="$I",` + realFS + `}) / sum(node_filesystem_size_bytes{instance="$I",` + realFS + `}))`)},
 		{"net", "B/s", "rx", q(`sum by (instance) (rate(node_network_receive_bytes_total{instance="$I",device!="lo"}[1m]))`)},
 		{"net", "B/s", "tx", q(`sum by (instance) (rate(node_network_transmit_bytes_total{instance="$I",device!="lo"}[1m]))`)},
+		{"diskio", "B/s", "read", q(`sum by (instance) (rate(node_disk_read_bytes_total{instance="$I"}[1m]))`)},
+		{"diskio", "B/s", "write", q(`sum by (instance) (rate(node_disk_written_bytes_total{instance="$I"}[1m]))`)},
+		{"conns", "", "established", q(`node_netstat_Tcp_CurrEstab{instance="$I"}`)},
+		{"fds", "", "open", q(`node_filefd_allocated{instance="$I"}`)},
 	}
 }
 
