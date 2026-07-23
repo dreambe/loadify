@@ -165,6 +165,7 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
 
   // X-axis: elapsed test time from the first series point.
   const seriesBase = series.length > 0 ? new Date(series[0].ts).getTime() : 0;
+  const seriesTs = series.map((p) => new Date(p.ts).getTime());
   const xLabels = series.map((p) => formatElapsed((new Date(p.ts).getTime() - seriesBase) / 1000));
 
   // Seconds that had errors — flagged with a dot on the error chart so it's
@@ -540,10 +541,24 @@ export default function RunDetailPage({ params }: { params: { id: string } }) {
                 {renderLineChart(d)}
               </div>
             ))}
-            {/* Target-service vitals sit right below the load charts (same region),
-                labelled as the system-under-test's own metrics. */}
+            {/* Target-service vitals sit right below the load charts (same region)
+                and share their x-grid + crosshair + zoom, so the target's state
+                lines up in time with the applied load. */}
             {run?.started_at && (
-              <TargetMetricsPanels runId={runId} startMs={new Date(run.started_at).getTime()} live={false} />
+              <TargetMetricsPanels
+                runId={runId}
+                startMs={new Date(run.started_at).getTime()}
+                live={false}
+                sync={{
+                  gridTs: seriesTs,
+                  xLabels,
+                  hover,
+                  onHover: setHover,
+                  zoom,
+                  onZoom: setZoom,
+                  onSelect: setSelected,
+                }}
+              />
             )}
             {run?.summary?.checks && run.summary.checks.length > 0 && (
               <div className="panel">

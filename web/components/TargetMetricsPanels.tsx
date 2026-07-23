@@ -19,12 +19,35 @@ const TITLE_KEY: Record<string, string> = {
   fds: "target.fds",
 };
 
+// Shared crosshair/zoom + x-grid so the target charts line up with (and pan/zoom
+// together with) loadify's load charts above. Optional — omitted for the live
+// view, where each chart keeps its own axis.
+interface SyncProps {
+  gridTs?: number[]; // per-point timestamps of the load charts' x-axis (ms)
+  xLabels?: string[];
+  hover?: number | null;
+  onHover?: (i: number | null) => void;
+  zoom?: { lo: number; hi: number } | null;
+  onZoom?: (z: { lo: number; hi: number } | null) => void;
+  onSelect?: (i: number) => void;
+}
+
 // TargetMetricsPanels shows the system-under-test's own resource metrics
-// (CPU/mem/disk/net), pulled from the operator's Prometheus for this run's
-// window and drawn on loadify's native charts — so the target's vitals sit next
-// to the applied load on the same page. Renders nothing when the deployment has
+// (CPU/mem/disk/net/…), pulled from the operator's Prometheus for this run's
+// window and drawn on loadify's native charts — the target's vitals beside the
+// applied load, on ONE shared timeline. Renders nothing when the deployment has
 // no Prometheus or the test didn't opt into target monitoring.
-export default function TargetMetricsPanels({ runId, startMs, live }: { runId: string; startMs: number; live: boolean }) {
+export default function TargetMetricsPanels({
+  runId,
+  startMs,
+  live,
+  sync,
+}: {
+  runId: string;
+  startMs: number;
+  live: boolean;
+  sync?: SyncProps;
+}) {
   const { t } = useI18n();
   const [data, setData] = useState<TargetMetrics | null>(null);
 
@@ -47,31 +70,71 @@ export default function TargetMetricsPanels({ runId, startMs, live }: { runId: s
       </h2>
       <div className="target-grid">
         {data.panels.map((p) => (
-          <TargetPanel key={p.key} p={p} startMs={startMs} title={t(TITLE_KEY[p.key] || p.key)} />
+          <TargetPanel key={p.key} p={p} startMs={startMs} title={t(TITLE_KEY[p.key] || p.key)} sync={sync} />
         ))}
       </div>
     </div>
   );
 }
 
-function TargetPanel({ p, startMs, title }: { p: TargetMetricPanel; startMs: number; title: string }) {
-  // All series in a panel share the query_range grid, so the first series' ts
-  // axis labels every point.
-  const ts = p.series[0]?.points.map((pt) => pt.ts) ?? [];
-  const xLabels = ts.map((x) => formatElapsed((x - startMs) / 1000));
-  // rx/tx (or multiple lines) get distinct colors AND line styles for a11y.
+// resampleStep aligns a target series (its own sparse Prometheus timestamps)
+// onto the load charts' x-grid via step-fill: each grid slot takes the latest
+// sample at or before it, NaN before the first sample (so the line just starts
+// when data does). This lets one shared hover index / zoom window mean the same
+// instant on every chart despite different native resolutions.
+function resampleStep(points: { ts: number; v: number }[], grid: number[]): number[] {
+  const out = new Array(grid.length).fill(NaN);
+  let j = 0;
+  for (let i = 0; i < grid.length; i++) {
+    while (j < points.length && points[j].ts <= grid[i]) j++;
+    if (j > 0) out[i] = points[j - 1].v;
+  }
+  return out;
+}
+
+function TargetPanel({ p, startMs, title, sync }: { p: TargetMetricPanel; startMs: number; title: string; sync?: SyncProps }) {
   const palette = [chartColor.accent, chartColor.yellow, chartColor.violet, chartColor.green];
   const dash = ["", "6 4", "2 3", "10 4 2 4"];
-  const series = p.series.map((s, i) => ({
-    label: s.label,
-    color: palette[i % palette.length],
-    dash: dash[i % dash.length],
-    data: s.points.map((pt) => pt.v),
-  }));
+
+  const aligned = sync?.gridTs && sync.gridTs.length > 0;
+  let xLabels: string[];
+  let series: { label: string; color: string; dash: string; data: number[] }[];
+
+  if (aligned) {
+    // Same x-grid as the load charts → shared crosshair/zoom line up in time.
+    xLabels = sync!.xLabels ?? sync!.gridTs!.map((tms) => formatElapsed((tms - startMs) / 1000));
+    series = p.series.map((s, i) => ({
+      label: s.label,
+      color: palette[i % palette.length],
+      dash: dash[i % dash.length],
+      data: resampleStep(s.points, sync!.gridTs!),
+    }));
+  } else {
+    // Standalone (live view): the series' own timestamps.
+    const ts = p.series[0]?.points.map((pt) => pt.ts) ?? [];
+    xLabels = ts.map((x) => formatElapsed((x - startMs) / 1000));
+    series = p.series.map((s, i) => ({
+      label: s.label,
+      color: palette[i % palette.length],
+      dash: dash[i % dash.length],
+      data: s.points.map((pt) => pt.v),
+    }));
+  }
+
   return (
     <div>
       <div className="target-panel-title">{title}</div>
-      <LineChart series={series} xLabels={xLabels} unit={p.unit} height={160} />
+      <LineChart
+        series={series}
+        xLabels={xLabels}
+        unit={p.unit}
+        height={160}
+        hoverIndex={aligned ? sync!.hover : undefined}
+        onHover={aligned ? sync!.onHover : undefined}
+        zoom={aligned ? sync!.zoom : undefined}
+        onZoom={aligned ? sync!.onZoom : undefined}
+        onSelect={aligned ? sync!.onSelect : undefined}
+      />
     </div>
   );
 }
