@@ -980,6 +980,16 @@ a.cta:focus-visible {
   color: var(--muted);
   flex: none;
 }
+/* Dropdown affordance for the searchable combobox (EntityPicker). */
+.combo-caret {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--muted);
+  cursor: pointer;
+}
 .combo-list {
   position: absolute;
   top: calc(100% + 4px);

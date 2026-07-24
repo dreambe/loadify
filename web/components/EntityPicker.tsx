@@ -129,15 +129,24 @@ export default function EntityPicker<T>({
         autoComplete="off"
         value={text}
         placeholder={placeholder}
-        style={{ width: "100%" }}
+        style={{ width: "100%", paddingRight: 28 }}
         onChange={(e) => {
           setText(e.target.value);
           setOpen(true);
           onChange(resolve(e.target.value));
         }}
         onFocus={() => setOpen(true)}
+        // Reopen on click even when already focused — otherwise, after picking an
+        // option (which closes the list) you'd have to blur and refocus to pick
+        // another; onFocus won't re-fire while focused.
+        onClick={() => setOpen(true)}
         onKeyDown={onKeyDown}
       />
+      <span className="combo-caret" aria-hidden onMouseDown={(e) => { e.preventDefault(); setOpen((o) => !o); }}>
+        <svg width="10" height="6" viewBox="0 0 10 6">
+          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
       {open && (
         <ul className="combo-list" id={popId} role="listbox">
           {filtered.length === 0 ? (

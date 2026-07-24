@@ -244,6 +244,7 @@ export default function TestsPage() {
     setTargetValue("");
     setTargetSelector("");
     setTargetAdvanced(false);
+    setTargetPromOn(true);
   }
 
   // loadIntoForm fills the builder from an existing test (edit keeps the id,
@@ -664,13 +665,15 @@ export default function TestsPage() {
                   {t("tests.targetEnable")}
                   <Help tip={t("tests.targetMonitorHelp")} />
                 </label>
-                {targetMon && !targetPromOn && (
-                  <p className="muted" style={{ marginTop: 6, color: "var(--yellow)" }}>
-                    {t("tests.targetNoProm")}
-                  </p>
-                )}
-                {targetMon && targetPromOn && (
+                {/* Expansion depends only on the checkbox — never on the async
+                    service fetch — so re-checking always re-expands deterministically. */}
+                {targetMon && (
                   <div style={{ marginTop: 8, maxWidth: 380 }}>
+                    {!targetPromOn && (
+                      <p className="muted" style={{ marginTop: 0, marginBottom: 8, color: "var(--yellow)" }}>
+                        {t("tests.targetNoProm")}
+                      </p>
+                    )}
                     {/* Primary: pick a service from what's actually in Prometheus.
                         A styled combobox (not a native select/datalist) so it
                         matches the rest of the form. */}
