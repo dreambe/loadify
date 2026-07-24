@@ -166,6 +166,7 @@ func (s *Server) routes() {
 		r.With(operator).Post("/tests/debug", s.handleDebugRequest)
 		r.With(operator).Post("/tests/debug-scenario", s.handleDebugScenario)
 		r.With(operator).Post("/tests/import", s.handleImport)
+		r.With(operator).Get("/prometheus/services", s.handlePromServices)
 
 		// Environments: viewer reads, operator manages.
 		r.With(viewer).Get("/environments", s.handleListEnvironments)

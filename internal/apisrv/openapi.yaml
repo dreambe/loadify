@@ -503,6 +503,29 @@ paths:
         - { name: res, in: query, schema: { type: integer, default: 1 }, description: resolution in seconds }
         - { name: from, in: query, schema: { type: string, format: date-time } }
       responses: { "200": { description: array of points } }
+  /api/v1/runs/{id}/target-metrics:
+    get:
+      tags: [runs]
+      summary: Target service's own metrics (CPU/mem/disk/net) from the operator's Prometheus
+      description: >
+        Returns the system-under-test's resource metrics over the run's window,
+        pulled from the Prometheus at LOADIFY_PROMETHEUS_URL using the test's
+        target_monitor selector. `enabled` is false (panels empty) when no
+        Prometheus is configured or the test didn't opt in.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: "{ enabled, instance, panels[] }" } }
+  /api/v1/prometheus/services:
+    get:
+      tags: [tests]
+      summary: Discover target services (label values) + labels from Prometheus
+      description: >
+        Lists the values of a label (default job = the service list) and the
+        available label names, to populate the test editor's target-monitor
+        dropdowns. Empty when no Prometheus is configured.
+      parameters:
+        - { name: label, in: query, schema: { type: string, default: job } }
+      responses: { "200": { description: "{ enabled, label, labels[], values[] }" } }
   /api/v1/runs/{id}/live:
     get:
       tags: [runs]

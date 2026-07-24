@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -159,17 +160,52 @@ func (c AutoStopConfig) AutoStopEnabled() bool { return c.Enabled == nil || *c.E
 
 // TargetMonitor identifies the system-under-test in the operator's Prometheus so
 // loadify can query and render the target's own CPU/mem/disk/net during a run.
-// Instance is the node_exporter `instance` label of the target host (e.g.
-// "10.0.0.5:9100"); the standard node_exporter queries are derived from it.
+// The usual case is a service picked from a dropdown: Label (default "job") +
+// Value → the matcher `label="value"`. Selector is an advanced raw PromQL label
+// matcher that overrides Label/Value. Instance is the pre-dropdown field, kept
+// as a fallback (equivalent to Label="instance").
 type TargetMonitor struct {
 	Enabled  bool   `json:"enabled,omitempty"`
+	Label    string `json:"label,omitempty"`
+	Value    string `json:"value,omitempty"`
+	Selector string `json:"selector,omitempty"`
 	Instance string `json:"instance,omitempty"`
 }
 
-// TargetMonitorEnabled reports whether target monitoring is usable (on + has an
-// instance to query).
+// promLabelName keeps only valid PromQL label-name characters, so a picked label
+// can be spliced into a query safely.
+var promLabelName = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+
+// Selector builds the raw PromQL label matcher (contents of `{...}`) for the
+// target, or "" when nothing is configured. A custom Selector wins; otherwise
+// Label="Value" (Value quote/backslash-escaped); Instance is the legacy
+// fallback.
+func (m *TargetMonitor) EffectiveSelector() string {
+	if m == nil {
+		return ""
+	}
+	if s := strings.TrimSpace(m.Selector); s != "" {
+		return s
+	}
+	esc := func(v string) string { return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(strings.TrimSpace(v)) }
+	label := strings.TrimSpace(m.Label)
+	if label == "" {
+		label = "job"
+	}
+	label = promLabelName.ReplaceAllString(label, "")
+	if v := strings.TrimSpace(m.Value); v != "" && label != "" {
+		return label + `="` + esc(v) + `"`
+	}
+	if inst := strings.TrimSpace(m.Instance); inst != "" {
+		return `instance="` + esc(inst) + `"`
+	}
+	return ""
+}
+
+// TargetMonitorEnabled reports whether target monitoring is usable (on + has a
+// selector to query).
 func (p *Plan) TargetMonitorEnabled() bool {
-	return p.TargetMonitor != nil && p.TargetMonitor.Enabled && strings.TrimSpace(p.TargetMonitor.Instance) != ""
+	return p.TargetMonitor != nil && p.TargetMonitor.Enabled && p.TargetMonitor.EffectiveSelector() != ""
 }
 
 // RequestTimeout returns the effective per-request timeout for the plan's

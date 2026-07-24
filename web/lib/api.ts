@@ -192,6 +192,12 @@ export const api = {
   runSeries: (id: string, group = "*", res = 1) =>
     reqList<SeriesPoint>(`/api/v1/runs/${id}/series?group=${encodeURIComponent(group)}&res=${res}`),
   targetMetrics: (id: string) => req<TargetMetrics>(`/api/v1/runs/${id}/target-metrics`),
+  // Discover target services (label values, default job) + available labels from
+  // the operator's Prometheus, to populate the test editor's dropdowns.
+  promServices: (label = "job") =>
+    req<{ enabled: boolean; label: string; labels: string[]; values: string[] }>(
+      `/api/v1/prometheus/services?label=${encodeURIComponent(label)}`
+    ),
   runSamples: (
     id: string,
     filter: { status_class?: string; error_kind?: string; group?: string; limit?: number; from_ms?: number; to_ms?: number } = {}

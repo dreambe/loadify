@@ -944,12 +944,43 @@ func (s *Server) handleTargetMetrics(w http.ResponseWriter, r *http.Request) {
 	if run.EndedAt != nil {
 		end = *run.EndedAt
 	}
-	panels, err := s.prom.Collect(ctx, p.TargetMonitor.Instance, start, end)
+	sel := p.TargetMonitor.EffectiveSelector()
+	panels, err := s.prom.Collect(ctx, sel, start, end)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "prometheus query failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "instance": p.TargetMonitor.Instance, "panels": panels})
+	// A friendly label for the section header: the picked value if any, else the
+	// raw selector.
+	name := strings.TrimSpace(p.TargetMonitor.Value)
+	if name == "" {
+		name = sel
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "instance": name, "panels": panels})
+}
+
+// handlePromServices powers the test editor's target dropdowns: it lists the
+// values of a label (default "job" = the service list) from the operator's
+// Prometheus, plus the available label names for the "distinguish by" picker.
+// Empty when no Prometheus is configured.
+func (s *Server) handlePromServices(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := withTimeout(r.Context())
+	defer cancel()
+	if s.prom == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "labels": []string{}, "values": []string{}})
+		return
+	}
+	label := strings.TrimSpace(r.URL.Query().Get("label"))
+	if label == "" {
+		label = "job"
+	}
+	labels, _ := s.prom.LabelNames(ctx)
+	values, err := s.prom.LabelValues(ctx, label)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "prometheus query failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "label": label, "labels": labels, "values": values})
 }
 
 func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {

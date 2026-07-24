@@ -99,7 +99,13 @@ export default function TestsPage() {
   const [alertOn, setAlertOn] = useState(true);
   const [alertPct, setAlertPct] = useState(30);
   const [targetMon, setTargetMon] = useState(false);
-  const [targetInstance, setTargetInstance] = useState("");
+  const [targetLabel, setTargetLabel] = useState("job"); // which label distinguishes services
+  const [targetValue, setTargetValue] = useState(""); // the picked service
+  const [targetSelector, setTargetSelector] = useState(""); // advanced: raw PromQL matcher (overrides)
+  const [targetAdvanced, setTargetAdvanced] = useState(false);
+  const [targetPromOn, setTargetPromOn] = useState(true); // false when no Prometheus configured
+  const [targetServices, setTargetServices] = useState<string[]>([]); // dropdown values
+  const [targetLabelOpts, setTargetLabelOpts] = useState<string[]>([]); // advanced label dropdown
   const [importing, setImporting] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
@@ -168,6 +174,26 @@ export default function TestsPage() {
     if (ready) refresh();
   }, [ready]);
 
+  // When target monitoring is on, discover the service list (values of the
+  // chosen label) + available labels from the operator's Prometheus for the
+  // dropdowns. Refetches when the distinguishing label changes.
+  useEffect(() => {
+    if (!targetMon) return;
+    let alive = true;
+    api
+      .promServices(targetLabel || "job")
+      .then((r) => {
+        if (!alive) return;
+        setTargetPromOn(r.enabled);
+        setTargetServices(r.values || []);
+        setTargetLabelOpts(r.labels || []);
+      })
+      .catch(() => alive && setTargetPromOn(false));
+    return () => {
+      alive = false;
+    };
+  }, [targetMon, targetLabel]);
+
   const filtered = filter
     ? tests.filter((td) =>
         (td.name + td.protocol + (td.creator_name || "") + " " + (td.tags || []).join(" "))
@@ -212,7 +238,10 @@ export default function TestsPage() {
     setAlertOn(true);
     setAlertPct(30);
     setTargetMon(false);
-    setTargetInstance("");
+    setTargetLabel("job");
+    setTargetValue("");
+    setTargetSelector("");
+    setTargetAdvanced(false);
   }
 
   // loadIntoForm fills the builder from an existing test (edit keeps the id,
@@ -245,7 +274,16 @@ export default function TestsPage() {
     setAlertPct(al?.error_rate_pct ?? 30);
     const tm = (td.plan as any)?.target_monitor;
     setTargetMon(!!tm?.enabled);
-    setTargetInstance(tm?.instance || "");
+    setTargetSelector(tm?.selector || "");
+    setTargetAdvanced(!!tm?.selector || (!!tm?.label && tm.label !== "job"));
+    if (tm?.instance && !tm?.value) {
+      // Legacy single-instance config.
+      setTargetLabel("instance");
+      setTargetValue(tm.instance);
+    } else {
+      setTargetLabel(tm?.label || "job");
+      setTargetValue(tm?.value || "");
+    }
     setErr("");
     setOk("");
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -355,10 +393,12 @@ export default function TestsPage() {
       planObj.alert = alertOn
         ? { enabled: true, error_rate_pct: alertPct }
         : { enabled: false };
-      // Target-service monitoring: only persist when enabled AND an instance is
-      // given (an empty instance can't be queried).
-      if (targetMon && targetInstance.trim()) {
-        planObj.target_monitor = { enabled: true, instance: targetInstance.trim() };
+      // Target-service monitoring: persist when enabled AND we have something to
+      // query — a custom selector (advanced) wins, else the picked service.
+      if (targetMon && targetSelector.trim()) {
+        planObj.target_monitor = { enabled: true, selector: targetSelector.trim() };
+      } else if (targetMon && targetValue.trim()) {
+        planObj.target_monitor = { enabled: true, label: targetLabel || "job", value: targetValue.trim() };
       } else {
         delete planObj.target_monitor;
       }
@@ -612,21 +652,60 @@ export default function TestsPage() {
                   </div>
                 )}
               </div>
-              <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+              <div style={{ marginTop: 10 }}>
                 <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
                   <input type="checkbox" checked={targetMon} onChange={(e) => setTargetMon(e.target.checked)} />
                   {t("tests.targetEnable")}
                   <Help tip={t("tests.targetMonitorHelp")} />
                 </label>
-                {targetMon && (
-                  <div style={{ flex: 1, minWidth: 240 }}>
-                    <label style={{ margin: 0 }}>{t("tests.targetInstance")}</label>
+                {targetMon && !targetPromOn && (
+                  <p className="muted" style={{ marginTop: 6, color: "var(--yellow)" }}>
+                    {t("tests.targetNoProm")}
+                  </p>
+                )}
+                {targetMon && targetPromOn && (
+                  <div style={{ marginTop: 8 }}>
+                    {/* Primary: pick a service from what's actually in Prometheus. */}
+                    <label style={{ margin: 0 }}>{t("tests.targetService")}</label>
                     <input
-                      value={targetInstance}
-                      onChange={(e) => setTargetInstance(e.target.value)}
-                      placeholder="10.0.0.5:9100"
-                      style={{ width: "100%" }}
+                      list="target-services"
+                      value={targetValue}
+                      onChange={(e) => setTargetValue(e.target.value)}
+                      placeholder={t("tests.targetPick")}
+                      disabled={!!targetSelector.trim()}
+                      style={{ width: "100%", maxWidth: 360 }}
                     />
+                    <datalist id="target-services">
+                      {targetServices.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                    <button
+                      type="button"
+                      className="ghost sm"
+                      style={{ marginTop: 6 }}
+                      onClick={() => setTargetAdvanced((v) => !v)}
+                    >
+                      {targetAdvanced ? "▾ " : "▸ "}
+                      {t("tests.targetAdvanced")}
+                    </button>
+                    {targetAdvanced && (
+                      <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: "2px solid var(--border)" }}>
+                        <label style={{ margin: 0 }}>{t("tests.targetLabel")}</label>
+                        <select value={targetLabel} onChange={(e) => { setTargetLabel(e.target.value); setTargetValue(""); }} style={{ maxWidth: 240 }}>
+                          {(targetLabelOpts.length ? targetLabelOpts : [targetLabel]).map((l) => (
+                            <option key={l} value={l}>{l}</option>
+                          ))}
+                        </select>
+                        <label style={{ margin: "8px 0 0" }}>{t("tests.targetSelector")}</label>
+                        <input
+                          value={targetSelector}
+                          onChange={(e) => setTargetSelector(e.target.value)}
+                          placeholder={`job="prism-api"  或  instance=~"web-.*"`}
+                          style={{ width: "100%", maxWidth: 360, fontFamily: "var(--font-mono)" }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -53,44 +53,42 @@ func New(base string) *Client {
 // multi-cpu results to a single line for the target instance.
 type queryDef struct{ panel, unit, label, promql string }
 
-// defaultQueries are the standard node_exporter expressions, parameterized by
-// the target's instance label. `$I` (which may appear several times per query)
-// is replaced with the escaped instance. Disk is aggregated across real
-// filesystems (no mountpoint assumption) so any target reports overall usage.
-func defaultQueries(inst string) []queryDef {
-	q := func(s string) string { return strings.ReplaceAll(s, "$I", inst) }
+// defaultQueries are the standard node_exporter expressions for the target,
+// parameterized by a raw PromQL label matcher `$SEL` (e.g. job="prism-api").
+// Everything is aggregated ACROSS the matched instances to one line per signal
+// — so picking a service that spans several hosts yields a clean service-level
+// view (avg for rates/%, sum for byte/count totals). Ordered for a 2-column
+// layout; each panel self-skips when the target doesn't expose that metric.
+// iowait rides along on CPU (disk-bound vs cpu-bound reads very differently).
+func defaultQueries(sel string) []queryDef {
+	q := func(s string) string { return strings.ReplaceAll(s, "$SEL", sel) }
 	const realFS = `fstype!~"tmpfs|overlay|squashfs|ramfs|devtmpfs|autofs|fuse.*"`
-	// Ordered for a 2-column layout, pairing related signals. Each panel skips
-	// itself if the target doesn't expose that metric (graceful on partial
-	// node_exporter setups). iowait is folded into CPU as a second line since a
-	// disk-bound target reads very differently from a CPU-bound one.
 	return []queryDef{
-		{"cpu", "%", "used", q(`100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle",instance="$I"}[1m])))`)},
-		{"cpu", "%", "iowait", q(`100 * avg by (instance) (rate(node_cpu_seconds_total{mode="iowait",instance="$I"}[1m]))`)},
-		{"load", "", "1m", q(`node_load1{instance="$I"}`)},
-		{"mem", "%", "used", q(`100 * (1 - node_memory_MemAvailable_bytes{instance="$I"} / node_memory_MemTotal_bytes{instance="$I"})`)},
-		{"disk", "%", "used", q(`100 * (1 - sum(node_filesystem_avail_bytes{instance="$I",` + realFS + `}) / sum(node_filesystem_size_bytes{instance="$I",` + realFS + `}))`)},
-		{"net", "B/s", "rx", q(`sum by (instance) (rate(node_network_receive_bytes_total{instance="$I",device!="lo"}[1m]))`)},
-		{"net", "B/s", "tx", q(`sum by (instance) (rate(node_network_transmit_bytes_total{instance="$I",device!="lo"}[1m]))`)},
-		{"diskio", "B/s", "read", q(`sum by (instance) (rate(node_disk_read_bytes_total{instance="$I"}[1m]))`)},
-		{"diskio", "B/s", "write", q(`sum by (instance) (rate(node_disk_written_bytes_total{instance="$I"}[1m]))`)},
-		{"conns", "", "established", q(`node_netstat_Tcp_CurrEstab{instance="$I"}`)},
-		{"fds", "", "open", q(`node_filefd_allocated{instance="$I"}`)},
+		{"cpu", "%", "used", q(`100 * (1 - avg(rate(node_cpu_seconds_total{$SEL,mode="idle"}[1m])))`)},
+		{"cpu", "%", "iowait", q(`100 * avg(rate(node_cpu_seconds_total{$SEL,mode="iowait"}[1m]))`)},
+		{"load", "", "1m", q(`avg(node_load1{$SEL})`)},
+		{"mem", "%", "used", q(`100 * avg(1 - node_memory_MemAvailable_bytes{$SEL} / node_memory_MemTotal_bytes{$SEL})`)},
+		{"disk", "%", "used", q(`100 * (1 - sum(node_filesystem_avail_bytes{$SEL,` + realFS + `}) / sum(node_filesystem_size_bytes{$SEL,` + realFS + `}))`)},
+		{"net", "B/s", "rx", q(`sum(rate(node_network_receive_bytes_total{$SEL,device!="lo"}[1m]))`)},
+		{"net", "B/s", "tx", q(`sum(rate(node_network_transmit_bytes_total{$SEL,device!="lo"}[1m]))`)},
+		{"diskio", "B/s", "read", q(`sum(rate(node_disk_read_bytes_total{$SEL}[1m]))`)},
+		{"diskio", "B/s", "write", q(`sum(rate(node_disk_written_bytes_total{$SEL}[1m]))`)},
+		{"conns", "", "established", q(`sum(node_netstat_Tcp_CurrEstab{$SEL})`)},
+		{"fds", "", "open", q(`sum(node_filefd_allocated{$SEL})`)},
 	}
 }
 
-// Collect runs the default node_exporter panels for `instance` over [start,end]
-// and returns them grouped by panel. A query that errors or returns no data is
-// skipped (its series is omitted) rather than failing the whole request, so a
+// Collect runs the default node_exporter panels for the target `selector` (a
+// raw PromQL label matcher such as `job="prism-api"`) over [start,end] and
+// returns them grouped by panel. A query that errors or returns no data is
+// skipped (its series omitted) rather than failing the whole request, so a
 // partially-instrumented target still shows what it has.
-func (c *Client) Collect(ctx context.Context, instance string, start, end time.Time) ([]Panel, error) {
-	// Substitute a PromQL-safe instance (escape " and \) into the templates.
-	inst := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(instance)
+func (c *Client) Collect(ctx context.Context, selector string, start, end time.Time) ([]Panel, error) {
 	step := stepFor(start, end)
 
 	byPanel := map[string]*Panel{}
 	order := []string{}
-	for _, qd := range defaultQueries(inst) {
+	for _, qd := range defaultQueries(selector) {
 		pts, err := c.queryRange(ctx, qd.promql, start, end, step)
 		if err != nil || len(pts) == 0 {
 			continue
@@ -108,6 +106,45 @@ func (c *Client) Collect(ctx context.Context, instance string, start, end time.T
 		out = append(out, *byPanel[k])
 	}
 	return out, nil
+}
+
+// promStrings is the shape of /api/v1/labels and /label/<n>/values.
+type promStrings struct {
+	Status string   `json:"status"`
+	Data   []string `json:"data"`
+}
+
+// getStrings GETs a Prometheus endpoint returning {status, data:[...]}.
+func (c *Client) getStrings(ctx context.Context, path string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("prometheus %d", resp.StatusCode)
+	}
+	var ps promStrings
+	if err := json.NewDecoder(resp.Body).Decode(&ps); err != nil {
+		return nil, err
+	}
+	return ps.Data, nil
+}
+
+// LabelNames lists the label names present in the target Prometheus (for the
+// "distinguish by" dropdown).
+func (c *Client) LabelNames(ctx context.Context) ([]string, error) {
+	return c.getStrings(ctx, "/api/v1/labels")
+}
+
+// LabelValues lists the values of one label (e.g. all `job`s = the service list
+// for the "select service" dropdown).
+func (c *Client) LabelValues(ctx context.Context, label string) ([]string, error) {
+	return c.getStrings(ctx, "/api/v1/label/"+url.PathEscape(label)+"/values")
 }
 
 // stepFor picks a resolution: ~120 points across the window, clamped to [5s,60s].

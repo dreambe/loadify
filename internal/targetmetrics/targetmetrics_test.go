@@ -26,7 +26,7 @@ func TestCollectParsesAndGroups(t *testing.T) {
 
 	c := New(srv.URL)
 	start := time.Unix(1700000000, 0)
-	panels, err := c.Collect(context.Background(), "t:9100", start, start.Add(2*time.Minute))
+	panels, err := c.Collect(context.Background(), `job="svc-a"`, start, start.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
@@ -62,9 +62,9 @@ func TestCollectParsesAndGroups(t *testing.T) {
 		}
 	}
 
-	// The target instance must be substituted into the PromQL.
-	if len(gotQueries) == 0 || !strings.Contains(gotQueries[0], `instance="t:9100"`) {
-		t.Errorf("instance not substituted into query: %v", gotQueries)
+	// The target selector must be substituted into the PromQL.
+	if len(gotQueries) == 0 || !strings.Contains(gotQueries[0], `job="svc-a"`) {
+		t.Errorf("selector not substituted into query: %v", gotQueries)
 	}
 }
 
