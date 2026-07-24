@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 import Icon from "./Icon";
+import Select from "./Select";
 import JsonExplorer from "./JsonExplorer";
 import NumberInput from "./NumberInput";
 import TemplateInput from "./TemplateInput";
@@ -334,22 +335,22 @@ export default function ScenarioBuilder({
             </div>
             <div>
               <label>{t("http.method")}</label>
-              <select value={st.method} onChange={(e) => setStep(i, { method: e.target.value })}>
-                {METHODS.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
+              <Select value={st.method} onChange={(v) => setStep(i, { method: v })} options={METHODS.map((m) => ({ value: m, label: m }))} />
             </div>
             <div>
               <label>
                 {t("scenario.scope")}
                 <Help tip={t("scenario.scopeHelp")} />
               </label>
-              <select value={st.scope} onChange={(e) => setStep(i, { scope: e.target.value as ScopeValue })}>
-                <option value="">{t("scenario.scopeEach")}</option>
-                <option value="once_per_vu">{t("scenario.scopePerVu")}</option>
-                <option value="once_global">{t("scenario.scopeGlobal")}</option>
-              </select>
+              <Select
+                value={st.scope}
+                onChange={(v) => setStep(i, { scope: v as ScopeValue })}
+                options={[
+                  { value: "", label: t("scenario.scopeEach") },
+                  { value: "once_per_vu", label: t("scenario.scopePerVu") },
+                  { value: "once_global", label: t("scenario.scopeGlobal") },
+                ]}
+              />
             </div>
             <div style={{ flex: 1 }}>
               <label className="req">{t("http.url")}</label>

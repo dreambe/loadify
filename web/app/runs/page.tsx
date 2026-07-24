@@ -10,6 +10,7 @@ import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
 import EntityPicker from "@/components/EntityPicker";
+import Select from "@/components/Select";
 import SortableTh from "@/components/SortableTh";
 import { useConfirm } from "@/components/Confirm";
 import { useToast } from "@/components/Toast";
@@ -280,14 +281,11 @@ export default function RunsPage() {
                     {t("runs.environment")}
                     <Help tip={t("runs.environmentHelp")} />
                   </label>
-                  <select value={envId} onChange={(e) => setEnvId(e.target.value)}>
-                    <option value="">{t("runs.noEnv")}</option>
-                    {envs.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={envId}
+                    onChange={setEnvId}
+                    options={[{ value: "", label: t("runs.noEnv") }, ...envs.map((e) => ({ value: e.id, label: e.name }))]}
+                  />
                 </div>
               )}
               <button onClick={start} disabled={!testId || maxWorkers === 0 || busy}>
@@ -322,14 +320,12 @@ export default function RunsPage() {
                 placeholder={t("runs.filterPh")}
               />
             </div>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: 150 }}>
-              <option value="">{t("runs.allStatuses")}</option>
-              {statuses.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(t, s)}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[{ value: "", label: t("runs.allStatuses") }, ...statuses.map((s) => ({ value: s, label: statusLabel(t, s) }))]}
+              style={{ width: 150 }}
+            />
           </div>
           {!loaded ? (
             <TableSkeleton cols={canRun ? 6 : 5} />

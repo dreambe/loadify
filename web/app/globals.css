@@ -953,6 +953,33 @@ a.cta:focus-visible {
 
 /* A controlled searchable dropdown that replaces the native <datalist> (which
    the browser renders unstyled and lets overflow/detach from the input). */
+/* Styled single-choice dropdown (components/Select): the trigger looks like a
+   themed input (not the default teal button), the popup reuses .combo-list. */
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-align: left;
+}
+.select-trigger:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--accent);
+}
+.select-trigger:active:not(:disabled) {
+  transform: none;
+}
+.select-caret {
+  color: var(--muted);
+  flex: none;
+}
 .combo-list {
   position: absolute;
   top: calc(100% + 4px);

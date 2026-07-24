@@ -5,6 +5,7 @@ import { api, type DebugResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import Help from "./Help";
 import Icon from "./Icon";
+import Select from "./Select";
 import JsonExplorer from "./JsonExplorer";
 import TemplateInput from "./TemplateInput";
 
@@ -227,11 +228,7 @@ export default function HttpRequestBuilder({
       <div className="row">
         <div>
           <label>{t("http.method")}</label>
-          <select value={value.method} onChange={(e) => onChange({ ...value, method: e.target.value })}>
-            {METHODS.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
+          <Select value={value.method} onChange={(v) => onChange({ ...value, method: v })} options={METHODS.map((m) => ({ value: m, label: m }))} />
         </div>
         <div style={{ flex: 1 }}>
           <label className="req">{t("http.url")}</label>
@@ -328,15 +325,16 @@ export default function HttpRequestBuilder({
         const verdict = debug && !debug.error ? evalAssertPreview(a, debug) : null;
         return (
           <div className="row" key={i} style={{ marginBottom: 6, alignItems: "center" }}>
-            <select
+            <Select
               value={a.source}
-              onChange={(e) => setAssert(i, { source: e.target.value as Assert["source"] })}
+              onChange={(v) => setAssert(i, { source: v as Assert["source"] })}
+              options={[
+                { value: "status", label: t("assert.srcStatus") },
+                { value: "body", label: t("assert.srcBody") },
+                { value: "json", label: t("assert.srcJson") },
+              ]}
               style={{ width: 130 }}
-            >
-              <option value="status">{t("assert.srcStatus")}</option>
-              <option value="body">{t("assert.srcBody")}</option>
-              <option value="json">{t("assert.srcJson")}</option>
-            </select>
+            />
             {a.source === "json" && (
               <input
                 placeholder={t("assert.pathPh")}
@@ -345,13 +343,12 @@ export default function HttpRequestBuilder({
                 style={{ width: 200, fontFamily: "var(--font-mono)" }}
               />
             )}
-            <select value={a.op} onChange={(e) => setAssert(i, { op: e.target.value })} style={{ width: 110 }}>
-              {OPS.map((op) => (
-                <option key={op} value={op}>
-                  {t(`assert.op.${op}`)}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={a.op}
+              onChange={(v) => setAssert(i, { op: v })}
+              options={OPS.map((op) => ({ value: op, label: t(`assert.op.${op}`) }))}
+              style={{ width: 110 }}
+            />
             {a.op !== "exists" && (
               <input
                 placeholder={t("assert.valuePh")}

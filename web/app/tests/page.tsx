@@ -7,6 +7,7 @@ import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, protocolLabel } from "@/lib/i18n";
 import Help from "@/components/Help";
 import EntityPicker from "@/components/EntityPicker";
+import Select from "@/components/Select";
 import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
@@ -507,14 +508,18 @@ export default function TestsPage() {
                 </div>
                 <div className="field">
                   <label>{t("tests.protocol")}</label>
-                  <select value={protocol} onChange={(e) => setProtocol(e.target.value)}>
-                    <option value="http">HTTP / HTTPS</option>
-                    <option value="scenario">{t("tests.protoScenario")}</option>
-                    <option value="grpc">gRPC</option>
-                    <option value="websocket">WebSocket</option>
-                    <option value="sse">SSE</option>
-                    <option value="script">{t("tests.protoScript")}</option>
-                  </select>
+                  <Select
+                    value={protocol}
+                    onChange={setProtocol}
+                    options={[
+                      { value: "http", label: "HTTP / HTTPS" },
+                      { value: "scenario", label: t("tests.protoScenario") },
+                      { value: "grpc", label: "gRPC" },
+                      { value: "websocket", label: "WebSocket" },
+                      { value: "sse", label: "SSE" },
+                      { value: "script", label: t("tests.protoScript") },
+                    ]}
+                  />
                 </div>
               </div>
             </FormSection>
@@ -895,12 +900,16 @@ function ImportModal({
         <div className="row">
           <div>
             <label>{t("import.format")}</label>
-            <select value={format} onChange={(e) => setFormat(e.target.value)}>
-              <option value="curl">curl</option>
-              <option value="har">HAR</option>
-              <option value="postman">Postman</option>
-              <option value="openapi">OpenAPI / Swagger</option>
-            </select>
+            <Select
+              value={format}
+              onChange={setFormat}
+              options={[
+                { value: "curl", label: "curl" },
+                { value: "har", label: "HAR" },
+                { value: "postman", label: "Postman" },
+                { value: "openapi", label: "OpenAPI / Swagger" },
+              ]}
+            />
           </div>
           <div>
             <label>{t("import.upload")}</label>

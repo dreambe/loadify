@@ -2,6 +2,7 @@
 
 import { useI18n } from "@/lib/i18n";
 import NumberInput from "./NumberInput";
+import Select from "./Select";
 import type { Threshold } from "@/lib/types";
 
 const METRICS = ["p50_ms", "p90_ms", "p95_ms", "p99_ms", "error_rate", "qps"];
@@ -44,18 +45,10 @@ export default function ThresholdsEditor({
             {value.map((th, i) => (
               <tr key={i}>
                 <td>
-                  <select value={th.metric} onChange={(e) => update(i, { metric: e.target.value })}>
-                    {METRICS.map((m) => (
-                      <option key={m}>{m}</option>
-                    ))}
-                  </select>
+                  <Select value={th.metric} onChange={(v) => update(i, { metric: v })} options={METRICS.map((m) => ({ value: m, label: m }))} />
                 </td>
                 <td>
-                  <select value={th.op} onChange={(e) => update(i, { op: e.target.value })}>
-                    {OPS.map((o) => (
-                      <option key={o}>{o}</option>
-                    ))}
-                  </select>
+                  <Select value={th.op} onChange={(v) => update(i, { op: v })} options={OPS.map((o) => ({ value: o, label: o }))} style={{ width: 90 }} />
                 </td>
                 <td>
                   <NumberInput float value={th.value} onChange={(n) => update(i, { value: n })} style={{ width: 120 }} />

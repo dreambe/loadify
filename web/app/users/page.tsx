@@ -7,6 +7,7 @@ import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, roleLabel } from "@/lib/i18n";
 import Help from "@/components/Help";
 import Modal from "@/components/Modal";
+import Select from "@/components/Select";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/Confirm";
 import type { AuditEntry, User } from "@/lib/types";
@@ -154,11 +155,11 @@ export default function UsersPage() {
                 </div>
                 <div>
                   <label>{t("users.role")}</label>
-                  <select value={role} onChange={(e) => setRole(e.target.value)}>
-                    {["viewer", "operator", "admin"].map((r) => (
-                      <option key={r} value={r}>{roleLabel(t, r)}</option>
-                    ))}
-                  </select>
+                  <Select
+                    value={role}
+                    onChange={setRole}
+                    options={["viewer", "operator", "admin"].map((r) => ({ value: r, label: roleLabel(t, r) }))}
+                  />
                 </div>
                 <div>
                   <label>{t("users.password")}</label>
@@ -197,15 +198,13 @@ export default function UsersPage() {
                         </td>
                         <td>{u.name}</td>
                         <td>
-                          <select
+                          <Select
                             value={u.role}
                             disabled={self}
-                            onChange={(e) => changeRole(u, e.target.value)}
-                          >
-                            {["viewer", "operator", "admin"].map((r) => (
-                      <option key={r} value={r}>{roleLabel(t, r)}</option>
-                    ))}
-                          </select>
+                            onChange={(v) => changeRole(u, v)}
+                            options={["viewer", "operator", "admin"].map((r) => ({ value: r, label: roleLabel(t, r) }))}
+                            style={{ minWidth: 120 }}
+                          />
                         </td>
                         <td>
                           {u.disabled ? (
