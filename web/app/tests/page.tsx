@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth, roleAtLeast } from "@/lib/auth";
 import { useI18n, protocolLabel } from "@/lib/i18n";
 import Help from "@/components/Help";
+import EntityPicker from "@/components/EntityPicker";
 import { Pager, usePager } from "@/components/Pager";
 import EmptyState from "@/components/EmptyState";
 import TableSkeleton from "@/components/TableSkeleton";
@@ -664,45 +665,50 @@ export default function TestsPage() {
                   </p>
                 )}
                 {targetMon && targetPromOn && (
-                  <div style={{ marginTop: 8 }}>
-                    {/* Primary: pick a service from what's actually in Prometheus. */}
+                  <div style={{ marginTop: 8, maxWidth: 380 }}>
+                    {/* Primary: pick a service from what's actually in Prometheus.
+                        A styled combobox (not a native select/datalist) so it
+                        matches the rest of the form. */}
                     <label style={{ margin: 0 }}>{t("tests.targetService")}</label>
-                    <input
-                      list="target-services"
-                      value={targetValue}
-                      onChange={(e) => setTargetValue(e.target.value)}
+                    <EntityPicker
+                      items={targetSelector.trim() ? [] : targetServices}
+                      value={targetSelector.trim() ? "" : targetValue}
+                      onChange={setTargetValue}
+                      idOf={(s) => s}
+                      label={(s) => s}
+                      keys={(s) => [s]}
+                      accept={(raw) => raw}
                       placeholder={t("tests.targetPick")}
-                      disabled={!!targetSelector.trim()}
-                      style={{ width: "100%", maxWidth: 360 }}
+                      listId="target-svc"
                     />
-                    <datalist id="target-services">
-                      {targetServices.map((s) => (
-                        <option key={s} value={s} />
-                      ))}
-                    </datalist>
                     <button
                       type="button"
                       className="ghost sm"
-                      style={{ marginTop: 6 }}
+                      style={{ marginTop: 8 }}
                       onClick={() => setTargetAdvanced((v) => !v)}
                     >
                       {targetAdvanced ? "▾ " : "▸ "}
                       {t("tests.targetAdvanced")}
                     </button>
                     {targetAdvanced && (
-                      <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: "2px solid var(--border)" }}>
+                      <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: "2px solid var(--border)" }}>
                         <label style={{ margin: 0 }}>{t("tests.targetLabel")}</label>
-                        <select value={targetLabel} onChange={(e) => { setTargetLabel(e.target.value); setTargetValue(""); }} style={{ maxWidth: 240 }}>
-                          {(targetLabelOpts.length ? targetLabelOpts : [targetLabel]).map((l) => (
-                            <option key={l} value={l}>{l}</option>
-                          ))}
-                        </select>
-                        <label style={{ margin: "8px 0 0" }}>{t("tests.targetSelector")}</label>
+                        <EntityPicker
+                          items={targetLabelOpts.length ? targetLabelOpts : [targetLabel]}
+                          value={targetLabel}
+                          onChange={(v) => { setTargetLabel(v); setTargetValue(""); }}
+                          idOf={(s) => s}
+                          label={(s) => s}
+                          keys={(s) => [s]}
+                          accept={(raw) => raw}
+                          listId="target-label"
+                        />
+                        <label style={{ margin: "10px 0 0" }}>{t("tests.targetSelector")}</label>
                         <input
                           value={targetSelector}
                           onChange={(e) => setTargetSelector(e.target.value)}
                           placeholder={`job="prism-api"  或  instance=~"web-.*"`}
-                          style={{ width: "100%", maxWidth: 360, fontFamily: "var(--font-mono)" }}
+                          style={{ width: "100%", fontFamily: "var(--font-mono)" }}
                         />
                       </div>
                     )}
